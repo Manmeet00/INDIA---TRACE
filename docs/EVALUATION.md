@@ -24,6 +24,33 @@ Each case runs automatically (`cd Backend && pytest`) and can also be shown in t
 | 14 | **Resolved disruption.** A reviewer records an authoritative reopening. | Status `resolved`; the report no longer counts against routes. | `test_resolved_reports_no_longer_count_against_a_route`, `test_review_accepts_resolved` |
 | 15 | **Collection provenance and failures.** | The query, search type, page fetch result and dates are kept. A repeat collection updates "last seen" instead of duplicating; a failed search is retried once; a run where every search fails is still logged. | `test_targeted_collection_searches_web_and_news_then_fetches_pages`, `test_repeat_collection_records_recheck_instead_of_duplicating`, `test_failed_search_is_retried_once`, `test_all_searches_failing_is_logged_and_reported` |
 
+## End-to-end failure tests
+
+The project plan's end-to-end milestone asks for tests of no results, timeouts, malformed reports, missing coordinates, stale incidents and database failures. Each case runs through the HTTP API in `Backend/tests/test_failures.py`, with external services faked at the network layer. The browser column is `Backend/tests/test_browser.py`, which drives the built dashboard in Chrome against the real API.
+
+| Failure | Expected behaviour | API test | Browser test |
+|---|---|---|---|
+| **No results** | An empty search is logged as a complete run, and the message says no reports does not mean the road is clear. A route with no evidence is *Verify before dispatch*, and its highways show as coverage gaps. | `test_search_with_no_results_is_logged_and_says_absence_is_not_clear`, `test_route_with_no_evidence_is_never_called_clear` | `test_empty_workspace_and_empty_collection_never_suggest_a_clear_road` |
+| **Provider timeout** | 502 naming the host and the wait. The last good route is served, with its fetch time, when one is cached. A page-fetch timeout keeps the reports and records why. Search timeouts are retried once, then the run is logged as failed. | `test_routing_timeout_without_a_cached_copy_is_a_clear_502`, `test_routing_timeout_serves_the_last_good_route_with_its_age`, `test_page_fetch_timeout_keeps_the_reports_and_records_why`, `test_search_timeouts_are_retried_then_logged_as_a_failed_run` | `test_routing_provider_timeout_is_explained`, `test_routing_timeout_on_the_demo_route_falls_back_to_a_labelled_snapshot` |
+| **Hung API** | The dashboard stops waiting after 20 s (60 s for routes, 5 min for collection) and says so. | — | `test_hung_api_request_times_out_in_the_browser` |
+| **Dropped connection or garbled body** | 502, not a crash. | `test_dropped_or_garbled_provider_responses_are_502_not_500` | — |
+| **Malformed reports** | Results without a web URL or text, with credentials in the URL, or with non-text fields are skipped. Nothing is guessed: a non-text title becomes "Untitled public source", and an unreadable date gives unknown freshness. A search response without a result list counts as a failed search. A malformed Fetch response keeps the reports. | `test_malformed_search_results_are_skipped_and_nothing_is_invented`, `test_search_response_without_a_result_list_counts_as_a_failed_search`, `test_malformed_fetch_response_does_not_lose_the_collected_reports` | `test_collect_review_locate_and_replan` |
+| **Malformed provider data** | A geocode or route without usable coordinates is a 502 and is not cached. An unknown place and an undrivable route are explained. | `test_malformed_provider_data_is_a_502_and_is_never_cached`, `test_unknown_place_and_no_drivable_route_are_explained` | — |
+| **Malformed requests** | 422 with nothing saved. | `test_malformed_requests_are_rejected_before_anything_is_saved` | — |
+| **Missing coordinates** | Never matched to a route by distance. Listed as a highway mention, "Where on the road is not known." Adding a reviewer's coordinates puts the report on the map and in the advice. Removing them takes it out again. | `test_report_without_coordinates_is_never_placed_on_a_route`, `test_located_report_stops_counting_once_its_coordinates_are_removed` | `test_collect_review_locate_and_replan` |
+| **Stale incidents** | A stale report confirmed by a reviewer is labelled *Stale*, never *Confirmed*. Route advice says it is past its freshness window. Old collections ask for a new run. | `test_stale_confirmed_report_is_never_shown_as_a_current_confirmation`, `test_old_collection_asks_for_a_new_run` | `test_collect_review_locate_and_replan` |
+| **Stopped API** | *API unavailable*, collection disabled, and route errors say the API is not reachable. | — | `test_stopped_api_is_reported_as_unavailable` |
+| **Database failure** | A missing folder, corrupt file, unwritable path or locked database gives a 503 with a plain reason on every endpoint, with CORS headers. A failed review write is fully rolled back. The API starts and reports the problem, then works again once the database is back. The dashboard shows *API error · Running, but data is unavailable* and keeps the last loaded evidence. | `test_every_endpoint_answers_503_with_cors_when_the_database_fails`, `test_locked_database_asks_to_retry`, `test_failed_review_write_is_rolled_back_completely`, `test_api_starts_and_reports_the_problem_when_the_database_cannot_be_created`, `test_database_restored_after_a_failure_works_again` | `test_database_failure_is_shown_and_recovers` |
+
+Before these fixes, 19 of the API failure tests failed on the old code. The problems were:
+- crashes (500s) on dropped connections and malformed provider data;
+- malformed routes being cached;
+- one malformed Fetch item aborting the whole collection run;
+- 500s without CORS headers on database errors;
+- an API that would not start when the database could not be opened.
+
+The browser tests also found a Leaflet script error (`_leaflet_pos`) when a route was planned again while the map was still zooming. It is fixed by fitting the map to the route without animation.
+
 ## Pilot acceptance checks (report section 13)
 
 | Check | How it is met |

@@ -54,8 +54,11 @@ The pilot corridor is **NH-6 / NH-306, Guwahati – Shillong – Silchar – Aiz
 ```sh
 cd Backend
 pip install -r requirements-dev.txt
-pytest
+pytest                 # everything, including the browser tests
+pytest -m "not e2e"    # backend only, no browser
 ```
+
+The browser tests in `Backend/tests/test_browser.py` build the frontend and drive it in Chrome against the real API on a temporary database. They need `npm install` in `Frontend/` and Google Chrome; set `E2E_BROWSER_CHANNEL=chromium` after `playwright install chromium` to use Playwright's own browser. They are skipped when either is missing. External services are faked, so no test touches the internet or your data. The failure cases they cover are listed in [docs/EVALUATION.md](docs/EVALUATION.md#end-to-end-failure-tests).
 
 ```sh
 cd Frontend

@@ -108,7 +108,10 @@ CREATE TABLE IF NOT EXISTS provider_cache (
 def connect() -> sqlite3.Connection:
     path: Path = get_settings().database_path
     if str(path) != ":memory:":
-        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:  # Reported like any other database failure.
+            raise sqlite3.OperationalError(f"cannot create the database folder {path.parent}: {exc}") from exc
     connection = sqlite3.connect(str(path), timeout=10)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")

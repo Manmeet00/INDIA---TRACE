@@ -6,14 +6,14 @@ left unknown unless a structured coordinate is available from a trusted source.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import http.client
 import json
 import math
 import re
 import sqlite3
 import ssl
-from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
+from typing import Any, Callable
+from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 import certifi
 
@@ -25,7 +25,7 @@ from .evidence import annotate
 
 
 def _request_json(url: str, headers: dict[str, str] | None = None, body: Any = None, timeout: float = 15) -> Any:
-    """GET, or POST a JSON body; provider failures become 502 errors."""
+    """GET, or POST a JSON body; provider failures, timeouts and unreadable responses become 502 errors."""
     headers = {"User-Agent": get_settings().geocoder_user_agent, **(headers or {})}
     data = None
     if body is not None:
@@ -35,8 +35,12 @@ def _request_json(url: str, headers: dict[str, str] | None = None, body: Any = N
     try:
         with urlopen(request, timeout=timeout, context=ssl.create_default_context(cafile=certifi.where())) as response:
             return json.loads(response.read().decode("utf-8"))
-    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
-        raise HTTPException(status_code=502, detail=f"An external routing or search service is unavailable: {exc}") from exc
+    # URLError, timeouts and dropped connections are OSErrors; a cut-off or non-JSON body raises IncompleteRead or ValueError.
+    except (OSError, http.client.HTTPException, ValueError) as exc:
+        host = urlsplit(url).hostname
+        timed_out = isinstance(exc, TimeoutError) or isinstance(getattr(exc, "reason", None), TimeoutError)
+        reason = f"{host} did not answer within {timeout:g} s" if timed_out else f"{host}: {exc}"
+        raise HTTPException(status_code=502, detail=f"An external routing or search service is unavailable ({reason}).") from exc
 
 
 GEOCODE_CACHE_S = 30 * 86400
@@ -45,11 +49,12 @@ HIGHWAY_REF = re.compile(r"NH\s*-?\s*0*(\d{1,3}[A-Z]?)", re.IGNORECASE)
 MIN_HIGHWAY_M = 2000
 
 
-def _cached_json(url: str, max_age_s: float) -> tuple[Any, str]:
+def _cached_json(url: str, max_age_s: float, valid: Callable[[Any], bool]) -> tuple[Any, str]:
     """Provider response and when it was fetched; serves an older copy if the provider fails.
 
     Road geometry and place coordinates change slowly, and the public OSRM and Nominatim
     services are rate-limited and sometimes slow, so successful responses are kept in SQLite.
+    A response that fails `valid` counts as a failure and is never cached.
     """
     with get_connection() as connection:
         row = connection.execute("SELECT response, fetched_at FROM provider_cache WHERE url = ?", (url,)).fetchone()
@@ -57,6 +62,8 @@ def _cached_json(url: str, max_age_s: float) -> tuple[Any, str]:
         return json.loads(row["response"]), row["fetched_at"]
     try:
         data = _request_json(url)
+        if not valid(data):
+            raise HTTPException(status_code=502, detail=f"An external routing or search service is unavailable ({urlsplit(url).hostname} returned an unexpected response).")
     except HTTPException:
         if row:
             return json.loads(row["response"]), row["fetched_at"]
@@ -79,13 +86,41 @@ def _route_highways(route: dict[str, Any]) -> dict[str, int]:
     return {key: round(value) for key, value in sorted(metres.items()) if value >= MIN_HIGHWAY_M}
 
 
+def _number(value: Any) -> bool:
+    try:
+        return math.isfinite(float(value))
+    except (TypeError, ValueError):
+        return False
+
+
+def _valid_geocode(data: Any) -> bool:
+    """A list of places; the first one, if any, must carry numeric coordinates."""
+    return isinstance(data, list) and (not data or (isinstance(data[0], dict) and _number(data[0].get("lat")) and _number(data[0].get("lon"))))
+
+
+def _valid_routes(data: Any) -> bool:
+    """OSRM's answer; when it reports routes, each needs a distance, a duration and a line geometry."""
+    if not isinstance(data, dict):
+        return False
+    if data.get("code") != "Ok":
+        return True  # NoRoute and similar are answers, handled by the caller.
+    routes = data.get("routes")
+    return isinstance(routes, list) and all(
+        isinstance(route, dict) and _number(route.get("distance")) and _number(route.get("duration"))
+        and isinstance(route.get("geometry"), dict) and isinstance(route["geometry"].get("coordinates"), list)
+        and len(route["geometry"]["coordinates"]) >= 2
+        and all(isinstance(point, list) and len(point) >= 2 and _number(point[0]) and _number(point[1])
+                for point in route["geometry"]["coordinates"])
+        for route in routes)
+
+
 def _geocode(place: str) -> dict[str, Any]:
     query = urlencode({"q": f"{place}, India", "format": "jsonv2", "limit": 1, "countrycodes": "in"})
-    results, _ = _cached_json(f"https://nominatim.openstreetmap.org/search?{query}", GEOCODE_CACHE_S)
+    results, _ = _cached_json(f"https://nominatim.openstreetmap.org/search?{query}", GEOCODE_CACHE_S, _valid_geocode)
     if not results:
         raise HTTPException(status_code=422, detail=f"Could not find '{place}' in India. Try a more specific place name.")
     item = results[0]
-    return {"name": item.get("display_name", place), "latitude": float(item["lat"]), "longitude": float(item["lon"])}
+    return {"name": str(item.get("display_name") or place), "latitude": float(item["lat"]), "longitude": float(item["lon"])}
 
 
 def plan_route(payload) -> dict[str, Any]:
@@ -94,6 +129,7 @@ def plan_route(payload) -> dict[str, Any]:
     routes, routing_fetched_at = _cached_json(
         f"https://router.project-osrm.org/route/v1/driving/{coordinates}?{urlencode({'overview':'full','geometries':'geojson','alternatives':'3','steps':'true'})}",
         ROUTE_CACHE_S,
+        _valid_routes,
     )
     if routes.get("code") != "Ok" or not routes.get("routes"):
         raise HTTPException(status_code=422, detail="The routing service could not find a drivable route between these places.")

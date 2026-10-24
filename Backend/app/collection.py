@@ -71,6 +71,12 @@ def _text(value: Any, limit: int) -> str:
     return (value.strip() if isinstance(value, str) else "")[:limit]
 
 
+def _dicts(response: Any, key: str) -> list[dict[str, Any]]:
+    """The objects under response[key]; anything malformed in a provider response is skipped."""
+    items = response.get(key) if isinstance(response, dict) else None
+    return [item for item in items if isinstance(item, dict)] if isinstance(items, list) else []
+
+
 def _store_result(connection: sqlite3.Connection, item: dict[str, Any], search: dict[str, str], now: str) -> str | None:
     """Insert one search hit; returns its id, "duplicate" if the URL is known, or None if unusable."""
     raw_url = _text(item.get("url"), 2000)
@@ -123,8 +129,9 @@ def _fetch_pages(connection: sqlite3.Connection, incident_ids: list[str], key: s
             failed += len(batch)
             continue
         by_url = {row["source_url"]: row for row in batch}
-        for result in response.get("results", []) if isinstance(response, dict) else []:
-            row = by_url.get(result.get("url")) or by_url.get(normalize_source_url(result.get("url") or ""))
+        for result in _dicts(response, "results"):
+            url = _text(result.get("url"), 2000)
+            row = by_url.get(url) or (by_url.get(normalize_source_url(url)) if url else None)
             if row is None:
                 continue
             page_date = _text(result.get("published_date"), 100) or None
@@ -137,8 +144,8 @@ def _fetch_pages(connection: sqlite3.Connection, incident_ids: list[str], key: s
                  _text(result.get("author"), 200) or None, now, page_date, page_date, row["id"]),
             )
             fetched += 1
-        for error in response.get("errors", []) if isinstance(response, dict) else []:
-            row = by_url.get(error.get("url"))
+        for error in _dicts(response, "errors"):
+            row = by_url.get(_text(error.get("url"), 2000))
             if row is not None:
                 connection.execute("UPDATE incidents SET fetch_error = ?, fetched_at = ? WHERE id = ?", (_text(error.get("error"), 300), now, row["id"]))
                 failed += 1
@@ -181,8 +188,12 @@ def collect_candidates(connection: sqlite3.Connection, searches: list[dict[str, 
     if status == "failed":
         connection.commit()  # Keep the failed run in the log even though the request errors.
         raise HTTPException(status_code=502, detail="TinyFish could not return search results. Try again later.")
-    message = (f"{len(new_ids)} new reports from {len(searches)} searches; {fetched} pages read with TinyFish Fetch. "
-               "Search results are unverified evidence candidates; location is unknown until a reviewer confirms it.")
+    if results == 0:
+        message = (f"TinyFish found no reports for {len(searches)} searches. "
+                   "No reports does not mean the road is clear; check official advisories.")
+    else:
+        message = (f"{len(new_ids)} new reports from {len(searches)} searches; {fetched} pages read with TinyFish Fetch. "
+                   "Search results are unverified evidence candidates; location is unknown until a reviewer confirms it.")
     if failed_searches:
         message = f"{failed_searches} of {len(searches)} TinyFish searches failed. " + message
     return {"status": status, "collected": len(new_ids), "duplicates": duplicates, "message": message,

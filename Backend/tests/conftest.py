@@ -1,8 +1,11 @@
 from datetime import datetime, timezone
+import json
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from fastapi.testclient import TestClient
 
+from app import road_intelligence
 from app.config import get_settings
 from app.database import get_connection
 
@@ -21,14 +24,90 @@ def client(tmp_path, monkeypatch):
 
 @pytest.fixture
 def add_incident(client):
-    def add(incident_id, verification="unverified", latitude=None, longitude=None, collected_at=None):
+    def add(incident_id, verification="unverified", latitude=None, longitude=None, collected_at=None,
+            summary="Landslide reported", published_at=None):
         with get_connection() as connection:
             connection.execute(
                 """INSERT INTO incidents
-                (id, title, summary, source_name, source_url, collected_at, latitude, longitude, verification, content_hash)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (incident_id, f"Report {incident_id}", "Landslide reported", "Test source",
+                (id, title, summary, source_name, source_url, collected_at, latitude, longitude, verification, content_hash,
+                published_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (incident_id, f"Report {incident_id}", summary, "Test source",
                  f"https://example.org/{incident_id}", collected_at or datetime.now(timezone.utc).isoformat(),
-                 latitude, longitude, verification, incident_id),
+                 latitude, longitude, verification, incident_id, published_at),
             )
     return add
+
+
+# Guwahati to Shillong as two OSRM routes on NH-6; route 1 passes 25.90, 91.80 and route 2 swings east.
+PLACES = {"Guwahati": (26.18, 91.75), "Shillong": (25.58, 91.88)}
+ROUTE_LINES = [[[91.75, 26.18], [91.80, 25.90], [91.88, 25.58]], [[91.75, 26.18], [92.10, 25.90], [91.88, 25.58]]]
+
+
+def nominatim(request):
+    query = parse_qs(urlsplit(request.full_url).query)["q"][0]
+    return [{"display_name": f"{name}, India", "lat": str(lat), "lon": str(lon)}
+            for name, (lat, lon) in PLACES.items() if query.startswith(name)]
+
+
+def osrm(_request):
+    return {"code": "Ok", "routes": [
+        {"distance": 100000 + 20000 * index, "duration": 4000 + 600 * index,
+         "geometry": {"type": "LineString", "coordinates": line},
+         "legs": [{"steps": [{"ref": "NH6", "distance": 90000}]}]}
+        for index, line in enumerate(ROUTE_LINES)]}
+
+
+class Answer:
+    """A provider response body, or an error raised while reading it (for example a connection cut mid-body)."""
+    def __init__(self, body=b"", error=None):
+        self.body, self.error = body, error
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        return False
+
+    def read(self):
+        if self.error:
+            raise self.error
+        return self.body
+
+
+@pytest.fixture
+def providers(monkeypatch):
+    """External services faked at the network layer, so the real _request_json runs: timeouts, bad bytes and all.
+
+    Map a host to a function of the request returning JSON data, an Answer, or an exception to raise.
+    Requests to a host with no answer fail the test.
+    """
+    answers = {"nominatim.openstreetmap.org": nominatim, "router.project-osrm.org": osrm}
+    calls = []
+
+    def urlopen(request, timeout, context):
+        host = urlsplit(request.full_url).hostname
+        calls.append((host, request))
+        assert host in answers, f"Unexpected external request: {request.full_url}"
+        answer = answers[host](request) if callable(answers[host]) else answers[host]
+        if isinstance(answer, BaseException):
+            raise answer
+        return answer if isinstance(answer, Answer) else Answer(json.dumps(answer).encode())
+
+    monkeypatch.setattr(road_intelligence, "urlopen", urlopen)
+    answers["calls"] = calls
+    return answers
+
+
+
+SEARCH, FETCH = "api.search.tinyfish.ai", "api.fetch.tinyfish.ai"
+
+
+@pytest.fixture
+def tinyfish_network(client, providers, monkeypatch):
+    """TinyFish switched on behind the network fake. Search finds nothing until a test sets providers[SEARCH];
+    Fetch reads every page it is given."""
+    monkeypatch.setenv("TINYFISH_API_KEY", "test-key")
+    get_settings.cache_clear()
+    providers[SEARCH] = {"results": []}
+    providers[FETCH] = lambda request: {"results": [{"url": url, "description": "Page"} for url in json.loads(request.data)["urls"]]}
+    return providers

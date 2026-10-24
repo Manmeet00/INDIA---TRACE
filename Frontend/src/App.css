@@ -27,6 +27,7 @@
 .status-dot, .connection-label i, .map-status i { width: 8px; height: 8px; flex: none; border-radius: 50%; background: #d8a64a; }
 .status-dot.online, .connection-label.online i { background: #2ec27e; box-shadow: 0 0 0 3px rgba(46, 194, 126, .18); }
 .status-dot.offline, .connection-label.offline i { background: #e5534b; }
+.status-dot.degraded, .connection-label.degraded i { background: #f08c00; box-shadow: 0 0 0 3px rgba(240, 140, 0, .2); }
 .sidebar-note { padding: 0 6px; }
 .sidebar-landscape { display: none; }
 .sidebar-note p { margin: 0; color: var(--on-ink-muted); font-size: var(--fs-sm); line-height: 1.55; }

@@ -11,8 +11,17 @@ import { useEvidenceFilters } from './hooks/useEvidenceFilters.js'
 import { INACTIVE_STATES, formatDistance, formatDuration, formatTime } from './lib/format.js'
 import * as api from './services/api.js'
 
+// Degraded: the API answered but could not serve data, usually because its database failed.
+const API_STATUS = {
+  checking: ['Connecting…', 'Checking the API'],
+  online: ['API connected', 'Local intelligence service'],
+  degraded: ['API error', 'Running, but data is unavailable'],
+  offline: ['API unavailable', 'Start backend on port 8000'],
+}
+
 function App() {
-  const { incidents, apiStatus, lastRun, refresh: refreshWorkspace } = useWorkspace()
+  const { incidents, apiStatus, problem, lastRun, refresh: refreshWorkspace } = useWorkspace()
+  const [statusLabel, statusNote] = API_STATUS[apiStatus]
   const [search, setSearch] = useState('')
   const { filters, setFilter, visibleIncidents } = useEvidenceFilters(incidents, search)
   const [plan, setPlan] = useState(null)
@@ -110,14 +119,14 @@ function App() {
         <a className="nav-item" href="#map-section"><Icon name="layers"/> <span>Map view</span></a>
       </nav>
       <div className="sidebar-bottom">
-        <div className="offline-card"><span className={`status-dot ${apiStatus}`} /><span><b>{apiStatus === 'online' ? 'API connected' : apiStatus === 'checking' ? 'Connecting…' : 'API unavailable'}</b><small>{apiStatus === 'online' ? 'Local intelligence service' : 'Start backend on port 8000'}</small></span></div>
+        <div className="offline-card"><span className={`status-dot ${apiStatus}`} /><span><b>{statusLabel}</b><small>{statusNote}</small></span></div>
         <div className="sidebar-note"><span className="sidebar-landscape" aria-hidden="true">⌁</span><p>Road intelligence for essential deliveries across Northeast India.</p></div>
         <div className="team-card"><div className="team-avatar">TT</div><div><b>Team Tech Titans</b><small>INDIA-TRACE workspace</small></div></div>
       </div>
     </aside>
 
     <main className="main-area" id="overview">
-      <header className="topbar"><div className="topbar-brand"><span className="brand-mark small"><span /><span /><span /></span><span><b>INDIA-TRACE</b><small>Road risk dashboard</small></span></div><label className="global-search"><Icon name="search" size={19}/><input aria-label="Search evidence" placeholder="Search locations, roads, sources or reports…" value={search} onChange={(event) => setSearch(event.target.value)}/></label><div className="top-actions"><span className={`connection-label ${apiStatus}`}><i/>{apiStatus === 'online' ? 'API connected' : apiStatus === 'checking' ? 'Connecting' : 'API offline'}</span><div className="profile-avatar">TT</div><span className="profile-name">Tech Titans</span></div></header>
+      <header className="topbar"><div className="topbar-brand"><span className="brand-mark small"><span /><span /><span /></span><span><b>INDIA-TRACE</b><small>Road risk dashboard</small></span></div><label className="global-search"><Icon name="search" size={19}/><input aria-label="Search evidence" placeholder="Search locations, roads, sources or reports…" value={search} onChange={(event) => setSearch(event.target.value)}/></label><div className="top-actions"><span className={`connection-label ${apiStatus}`}><i/>{statusLabel}</span><div className="profile-avatar">TT</div><span className="profile-name">Tech Titans</span></div></header>
 
       <div className="page-content">
         <section className="summary-grid" aria-label="Workspace summary">
@@ -140,7 +149,7 @@ function App() {
           </div>
 
           <aside className="right-column" id="evidence">
-            <EvidenceDesk incident={activeIncident} incidents={incidents} visibleCount={visibleIncidents.length} message={message} refreshing={refreshing} onRefresh={refresh} onSelect={selectIncident} onReview={reviewIncident} onFlag={flagIncident}/>
+            <EvidenceDesk incident={activeIncident} incidents={incidents} visibleCount={visibleIncidents.length} message={message || problem} refreshing={refreshing} onRefresh={refresh} onSelect={selectIncident} onReview={reviewIncident} onFlag={flagIncident}/>
             <EvidenceList incidents={incidents} visibleIncidents={visibleIncidents} activeId={activeIncident?.id} onSelect={setSelectedIncidentId} filters={filters} onFilterChange={setFilter} canCollect={apiStatus === 'online'} collecting={collectionLoading} onCollect={collect} lastRun={lastRun}/>
             <div className="source-footnote"><Icon name="check" size={15}/><span>Evidence is unverified until independently reviewed. Dispatch advice remains cautious.</span></div>
           </aside>

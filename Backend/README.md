@@ -44,4 +44,10 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-Tests use a temporary SQLite database and replace Nominatim, OSRM and TinyFish with fakes, so they run offline.
+Tests use a temporary SQLite database and replace Nominatim, OSRM and TinyFish with fakes, so they run offline. `tests/test_failures.py` fakes those services at the network layer, so the real request, timeout and parsing code runs. `tests/test_browser.py` runs the built dashboard in Chrome against the API (`pytest -m e2e`; skipped without npm or Chrome).
+
+## Failure behaviour
+
+- **Provider timeout or dropped connection:** 502 naming the slow host, for example "router.project-osrm.org did not answer within 15 s". A cached route or geocode is served instead when one exists.
+- **Malformed provider data:** a geocode or route without usable coordinates is a 502 and is never cached. Malformed TinyFish results are skipped one by one and never invented or repaired.
+- **Database failure** (missing, corrupt, unwritable or locked): every endpoint answers 503 with a plain reason and CORS headers, so the dashboard can show it. A failed write is rolled back completely. The API still starts when the database cannot be opened, and `/api/health` reports the problem.

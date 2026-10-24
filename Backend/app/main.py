@@ -5,8 +5,9 @@ import logging
 from uuid import uuid4
 import sqlite3
 
-from fastapi import FastAPI, HTTPException, Query, Response, status
+from fastapi import FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from .collection import collect_candidates, collection_runs, targeted_searches
 from .config import get_settings
@@ -36,7 +37,11 @@ async def _collect_periodically(interval_minutes: int) -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    initialize_database()
+    try:
+        initialize_database()
+    except sqlite3.Error:
+        # Start anyway so /api/health can report the problem; data endpoints answer 503 until it is fixed.
+        logger.exception("Could not initialise the database at %s", settings.database_path)
     task = asyncio.create_task(_collect_periodically(settings.collection_interval_minutes)) if settings.collection_interval_minutes > 0 else None
     yield
     if task:
@@ -55,6 +60,17 @@ app.add_middleware(
 )
 
 
+DATABASE_UNAVAILABLE = "The INDIA-TRACE database is unavailable. Check DATABASE_PATH and free disk space, then restart the API."
+
+
+@app.exception_handler(sqlite3.Error)
+async def database_error(_: Request, exc: sqlite3.Error) -> JSONResponse:
+    """Any database failure is a 503 with a plain explanation, never a bare 500 without CORS headers."""
+    logger.error("Database error: %s", exc)
+    busy = "locked" in str(exc).lower() or "busy" in str(exc).lower()
+    return JSONResponse(status_code=503, content={"detail": "The database is busy. Try again in a moment." if busy else DATABASE_UNAVAILABLE})
+
+
 def find_trace(connection: sqlite3.Connection, trace_id: str) -> sqlite3.Row:
     row = connection.execute("SELECT * FROM traces WHERE id = ?", (trace_id,)).fetchone()
     if row is None:
@@ -65,11 +81,9 @@ def find_trace(connection: sqlite3.Connection, trace_id: str) -> sqlite3.Row:
 @app.get("/health")
 @app.get("/api/health")
 def health():
-    try:
-        with get_connection() as connection:
-            connection.execute("SELECT 1")
-    except sqlite3.Error as exc:
-        raise HTTPException(status_code=503, detail="Database unavailable") from exc
+    # Reading a table, not just SELECT 1, also catches a database that was never initialised.
+    with get_connection() as connection:
+        connection.execute("SELECT 1 FROM incidents LIMIT 1")
     return {"status": "ok", "service": settings.app_name}
 
 

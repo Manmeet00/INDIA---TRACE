@@ -8,7 +8,8 @@ function MapBounds({ geometry }) {
   const map = useMap()
   useEffect(() => {
     const points = geometry.coordinates.map(([longitude, latitude]) => [latitude, longitude])
-    if (points.length > 1) map.fitBounds(points, { padding: [36, 36], maxZoom: 10 })
+    // No animation: planning again remounts the map, and removing it mid-zoom throws in Leaflet (_leaflet_pos).
+    if (points.length > 1) map.fitBounds(points, { padding: [36, 36], maxZoom: 10, animate: false })
   }, [geometry, map])
   return null
 }
