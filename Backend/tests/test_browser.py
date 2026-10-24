@@ -85,7 +85,8 @@ def dashboard(client, providers, built_frontend, browser):
 
 # A device position for pages served from the plain-http test origin, where browsers refuse geolocation.
 # %s is the body run with ok/fail for both one-off requests and the continuous watch the map uses.
-GEOLOCATION = """Object.defineProperty(navigator, 'geolocation', { value: {
+SECURE = "Object.defineProperty(window, 'isSecureContext', { value: true });"  # the test address is plain http
+GEOLOCATION = SECURE + """Object.defineProperty(navigator, 'geolocation', { value: {
     getCurrentPosition: (ok, fail) => { %s },
     watchPosition: (ok, fail) => { %s; return 1 },
     clearWatch: () => {} } })"""
@@ -515,7 +516,7 @@ def test_refused_location_leaves_the_start_for_the_person_to_type(dashboard):
     page = dashboard
     page.add_init_script(geolocation("fail({ code: 1, PERMISSION_DENIED: 1 })"))
     page.open()
-    expect(page.locator(".place-note")).to_have_text("Location permission was refused. Type a starting point instead.")
+    expect(page.locator(".place-note")).to_have_text("Location is blocked for this site: allow it from the icon beside the address bar. Or type a starting point.")
     expect(page.locator("#origin")).to_have_value("")
     expect(page.locator("#origin")).to_have_attribute("placeholder", "Choose starting point")
 
@@ -574,8 +575,37 @@ def test_map_stays_on_the_region_when_location_is_refused(dashboard):
     page = dashboard
     page.add_init_script(geolocation("fail({ code: 1, PERMISSION_DENIED: 1 })"))
     page.open()
-    expect(page.locator(".map-foot")).to_contain_text("Location permission was refused. Showing Northeast India.")
-    expect(page.locator(".locate-button")).to_be_disabled()
+    expect(page.locator(".map-foot")).to_contain_text("Location is blocked for this site: allow it from the icon beside the address bar. Showing Northeast India.")
+    expect(page.locator(".locate-button")).to_be_enabled()  # pressing it asks again, once the person allows it
+
+
+def test_location_button_asks_again_after_a_refusal(dashboard):
+    page = dashboard
+    # The first request is refused (a dismissed prompt); the person then allows location and presses the button.
+    page.add_init_script(SECURE + """Object.defineProperty(navigator, 'geolocation', { value: {
+        getCurrentPosition: (ok, fail) => fail({ code: 1, PERMISSION_DENIED: 1 }),
+        watchPosition: (ok, fail) => { window.watches = (window.watches || 0) + 1;
+          if (window.watches === 1) fail({ code: 1, PERMISSION_DENIED: 1 });
+          else ok({ coords: { latitude: 26.14, longitude: 91.74, accuracy: 50 } }); return window.watches },
+        clearWatch: () => {} } })""")
+    page.open()
+    expect(page.locator(".map-foot")).to_contain_text("Location is blocked for this site")
+    page.locator(".locate-button").click()
+    expect(page.locator(".map-foot")).to_contain_text("Your location · accurate to about 50 m")
+
+
+def test_location_explains_that_it_needs_https_or_localhost(dashboard):
+    page = dashboard
+    page.add_init_script(geolocation("fail({ code: 1, PERMISSION_DENIED: 1 })").replace(SECURE, ""))
+    page.open()
+    expect(page.locator(".map-foot")).to_contain_text("Location only works on https or localhost")
+
+
+def test_location_explains_a_device_without_a_position(dashboard):
+    page = dashboard
+    page.add_init_script(geolocation("fail({ code: 2, PERMISSION_DENIED: 1 })"))
+    page.open()
+    expect(page.locator(".map-foot")).to_contain_text("This device could not find its position: check that Location Services is on for your browser.")
 
 
 def test_map_stays_on_the_region_when_you_are_outside_india(dashboard):

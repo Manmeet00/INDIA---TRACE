@@ -34,7 +34,7 @@ function App() {
     : `Collects every ${schedule.collection_interval_minutes} min${schedule.next_collection_at ? ` · next ${clock(schedule.next_collection_at)}` : ''}`
   const arrivalNote = arrivals ? `${arrivals.count} new report${arrivals.count === 1 ? '' : 's'} arrived at ${clock(arrivals.at)}.` : ''
   const sidebar = useSidebar()
-  const { here, problem: hereProblem } = useHere()
+  const { here, problem: hereProblem, retry: retryHere } = useHere()
   const [search, setSearch] = useState('')
   const { filters, setFilter, visibleIncidents } = useEvidenceFilters(incidents, search)
   const [plan, setPlan] = useState(null)
@@ -203,7 +203,7 @@ function App() {
           </div>
 
           <div className="center-column" id="map-section">
-            <RouteMap plan={plan} mapConfig={mapConfig} here={here} hereProblem={hereProblem} incidents={incidents} selectedRoute={selectedRoute} selectedIncident={activeIncident} onSelectIncident={selectIncident} hiddenTypes={hiddenTypes}/>
+            <RouteMap plan={plan} mapConfig={mapConfig} here={here} hereProblem={hereProblem} onRetryHere={retryHere} incidents={incidents} selectedRoute={selectedRoute} selectedIncident={activeIncident} onSelectIncident={selectIncident} hiddenTypes={hiddenTypes}/>
             <RouteComparison plan={plan} selectedRoute={selectedRoute} onSelectRoute={setSelectedRoute} onSelectIncident={selectIncident}/>
           </div>
 
