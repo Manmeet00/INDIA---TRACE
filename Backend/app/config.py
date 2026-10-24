@@ -20,6 +20,9 @@ class Settings:
             if origin.strip()
         ]
         self.tinyfish_api_key = os.getenv("TINYFISH_API_KEY", "")
+        # Mappls Web Maps static key. Unlike TinyFish, the Mappls SDK runs in the browser and needs this key there,
+        # so restrict it to your domains in the Mappls console. Without it the map uses OpenStreetMap tiles.
+        self.mappls_static_key = os.getenv("MAPPLS_STATIC_KEY", "").strip()
         self.geocoder_user_agent = os.getenv("GEOCODER_USER_AGENT", "INDIA-TRACE/0.1 (hackathon demo)")
         # 0 turns scheduled collection off; otherwise the pilot searches run every N minutes.
         self.collection_interval_minutes = int(os.getenv("COLLECTION_INTERVAL_MINUTES", "0") or 0)

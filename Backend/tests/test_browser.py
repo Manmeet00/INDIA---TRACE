@@ -275,3 +275,89 @@ def test_background_run_source_choice_timeline_recheck_coverage_and_monitoring(d
     monitoring = page.locator("#monitoring")
     expect(monitoring.locator(".figure", has_text="TinyFish searches")).to_contain_text("6 / 12,000")
     expect(monitoring.locator(".figure", has_text="Kept after review")).to_contain_text("not measured")
+
+
+# --- Mappls base map ----------------------------------------------------------------------
+# The real SDK needs a Mappls key and the internet, so these tests serve a stand-in at sdk.mappls.com that
+# follows the documented v3 API (mappls.Map, Polyline, Marker, remove, addListener) and records each call.
+
+FAKE_MAPPLS_SDK = """
+window.__mappls = { maps: [], polylines: [], markers: [] };
+class Listening { constructor() { this.listeners = {}; } addListener(name, fn) { (this.listeners[name] ||= []).push(fn); } fire(name) { (this.listeners[name] || []).forEach((fn) => fn()); } }
+window.mappls = {
+  ControlPosition: { RIGHT_BOTTOM: 'bottom-right' },
+  Map: class extends Listening {
+    constructor(id, options) { super(); this.id = id; this.options = options; this.removed = false;
+      document.getElementById(id).dataset.mappls = 'ready'; window.__mappls.maps.push(this); setTimeout(() => this.fire('load'), 0); }
+    setCenter(center) { this.center = center; } setZoom(zoom) { this.zoom = zoom; } remove() { this.removed = true; }
+  },
+  Polyline: class { constructor(options) { this.options = options; this.removed = false; window.__mappls.polylines.push(this); } },
+  Marker: class extends Listening { constructor(options) { super(); this.options = options; this.removed = false; window.__mappls.markers.push(this); } },
+  remove({ layer }) { layer.removed = true; },
+};
+"""
+
+
+def live(page, kind):
+    return page.evaluate(f"window.__mappls.{kind}.filter((item) => !item.removed).map((item) => item.options)")
+
+
+@pytest.fixture
+def mappls_key(monkeypatch):
+    monkeypatch.setenv("MAPPLS_STATIC_KEY", "browser-key")
+    get_settings.cache_clear()
+    return "browser-key"
+
+
+def test_mappls_draws_routes_markers_and_selects_evidence(dashboard, mappls_key, add_incident):
+    add_incident("slide", "confirmed", 25.90, 91.80, summary="Landslide on NH-6", published_at="2 hours ago")
+    page = dashboard
+    sdk_urls = []
+    page.route("https://sdk.mappls.com/**", lambda route: (sdk_urls.append(route.request.url),
+               route.fulfill(status=200, body=FAKE_MAPPLS_SDK, headers={"content-type": "text/javascript"})))
+    page.open()
+    expect(page.locator(".mappls-canvas[data-mappls=ready]")).to_have_count(1)
+    assert sdk_urls == ["https://sdk.mappls.com/map/sdk/web?v=3.0&access_token=browser-key"]
+    expect(page.locator(".map-foot")).to_contain_text("Map © Mappls (MapmyIndia)")
+    expect(page.locator(".leaflet-container")).to_have_count(0)
+    assert [marker["position"] for marker in live(page, "markers")] == [{"lat": 25.9, "lng": 91.8}]  # located evidence only
+
+    plan(page, "Guwahati, Assam", "Shillong, Meghalaya")
+    expect(page.locator(".route-card")).to_have_count(2)
+    page.wait_for_function("window.__mappls.polylines.filter((item) => !item.removed).length === 2")
+    lines = live(page, "polylines")
+    assert [line["fitbounds"] for line in lines] == [False, True]  # the selected route is drawn last and fitted
+    assert lines[1]["strokeColor"] == "#0878e8" and lines[1]["path"][0] == {"lat": 26.18, "lng": 91.75}
+    assert len(live(page, "markers")) == 3  # origin, destination, the located report
+
+    page.locator(".route-card").nth(1).click()  # choosing the other route redraws with it on top
+    page.wait_for_function("window.__mappls.polylines.filter((item) => !item.removed).slice(-1)[0].options.path[1].lng === 91.8")
+
+    page.fill(".global-search input", "nothing matches this")  # select through the map, not the list
+    page.evaluate("window.__mappls.markers.filter((item) => !item.removed && item.options.position.lat === 25.9)[0].fire('click')")
+    expect(page.locator(".selected-incident h3")).to_have_text("Report slide")
+    assert page.evaluate("window.__mappls.maps.length") == 1  # one map for the whole session
+
+
+def test_mappls_unreachable_falls_back_to_openstreetmap(dashboard, mappls_key):
+    page = dashboard  # the fixture blocks every outside host, so the Mappls script cannot load
+    page.open()
+    expect(page.locator(".map-fallback")).to_have_text("The Mappls map could not load: check MAPPLS_STATIC_KEY and the internet connection. Showing OpenStreetMap instead.")
+    expect(page.locator(".leaflet-container")).to_have_count(1)
+    expect(page.locator(".map-foot")).to_contain_text("OpenStreetMap contributors")
+
+
+def test_rejected_mappls_key_falls_back_to_openstreetmap(dashboard, mappls_key):
+    page = dashboard
+    rejecting = FAKE_MAPPLS_SDK.replace("setTimeout(() => this.fire('load'), 0);", "setTimeout(() => options.token_callback(), 0);")
+    page.route("https://sdk.mappls.com/**", lambda route: route.fulfill(status=200, body=rejecting, headers={"content-type": "text/javascript"}))
+    page.open()
+    expect(page.locator(".map-fallback")).to_have_text("Mappls rejected the map key. Showing OpenStreetMap instead.")
+    expect(page.locator(".leaflet-container")).to_have_count(1)
+
+
+def test_without_a_mappls_key_the_map_is_openstreetmap(dashboard):
+    page = dashboard
+    page.open()
+    expect(page.locator(".leaflet-container")).to_have_count(1)
+    expect(page.locator(".map-fallback")).to_have_count(0)

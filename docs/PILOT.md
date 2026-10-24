@@ -47,6 +47,7 @@ The pilot succeeds when the acceptance checks in [EVALUATION.md](EVALUATION.md) 
 
 ## Before the demo
 
+0. For the Mappls map, put the static key from auth.mappls.com/console in `MAPPLS_STATIC_KEY` in `Backend/.env`, and in the console allow the domains the dashboard will run on (`localhost` for the laptop, plus the deployed address). Without internet or with a rejected key, the map falls back to OpenStreetMap, which also needs internet for its tiles.
 1. Start the backend while online and plan Guwahati → Shillong, Shillong → Silchar and Silchar → Aizawl once. Geocodes are cached for 30 days and routes for 24 hours, and a cached copy is served if OSRM later fails or is slow. Each response shows when it was fetched.
 2. Run collection once. In October most reports are months old, so expect **Stale** labels and no reports in the last 24 hours. That is the correct result, not a fault: no recent reports does not mean the road is clear.
 3. Review a few reports: dismiss off-topic hits, and add coordinates only for reports whose source gives a precise location.

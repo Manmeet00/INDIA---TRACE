@@ -27,6 +27,7 @@ The API listens at `http://127.0.0.1:8000`. Interactive docs are at `/docs`. SQL
 - `POST /api/recheck` / `POST /api/recheck/jobs` — reads report pages again with TinyFish Fetch, now or in the background. Body `{"incident_ids": [...]}` (up to 30); without it, the reports whose `lifecycle` is `needs_recheck`. Each outcome (`page_unchanged`, `page_changed`, `page_unreadable`) is kept in the report's timeline; statuses never change.
 - `POST /api/incidents/{id}/recheck` — re-checks one report and returns it.
 - `GET /api/region` — the active region's configuration (corridor, states, places with districts and alternate spellings, road aliases, searches, allowed source categories, freshness windows, scripts) and report coverage by state.
+- `GET /api/map-config` — `{"provider": "mappls", "mappls_key": ...}` when `MAPPLS_STATIC_KEY` is set, otherwise `{"provider": "osm", "mappls_key": null}`. The Mappls key is a browser key by design (the Mappls Web SDK loads with it), so restrict it to the dashboard's domains in the Mappls console. The TinyFish key is never sent to the browser.
 - `GET /api/metrics` — monitoring and evaluation figures: evidence quality shares, freshness lag, reviewer decisions, collection failures, external calls today against TinyFish's free allowance, route-planning response times. Values without data are `null`.
 - `POST /api/incidents/{id}/flags` — anyone flags a record (`outdated`, `wrong_location`, `duplicate`, `not_relevant`, `other`) with an optional note. Flags never change the status and close on the next review.
 - `PATCH /api/incidents/{id}/review` — save a verification state (`unverified`, `confirmed`, `conflicting`, `unknown`, `resolved`, `dismissed`) and review note. Each review is also appended to `incident_reviews` with the previous state. Location fields left out are kept; fields sent as `null` are cleared. Latitude and longitude must be sent together.
@@ -40,7 +41,7 @@ The original shipment trace API remains available at `/health` and `/api/v1/*` (
 
 ## Configuration
 
-Set app name, API prefix, SQLite path, CORS origins, `TINYFISH_API_KEY`, and geocoder User-Agent in `.env`. Never put service keys in frontend environment variables.
+Set app name, API prefix, SQLite path, CORS origins, `TINYFISH_API_KEY`, `MAPPLS_STATIC_KEY`, `REGION` and geocoder User-Agent in `.env`. Never put service keys in frontend environment variables. The one key the browser receives is the Mappls map key, which Mappls designs for browser use; restrict it to your domains.
 
 ## Tests
 

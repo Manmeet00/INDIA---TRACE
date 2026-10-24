@@ -20,7 +20,8 @@ Open the Vite URL (normally `http://localhost:5173`). The backend normally runs 
 | `src/hooks/useWorkspace.js` | API status, stored evidence and the latest collection run. |
 | `src/hooks/useEvidenceFilters.js` | Search text and the evidence-list filters. |
 | `src/components/RoutePlanner.jsx` | The route form: origin, destination, vehicle and priority. |
-| `src/components/RouteMap.jsx` | The Leaflet map and the map layer toggles (`MapLayers`). |
+| `src/components/RouteMap.jsx` | Chooses the base map (Mappls with a key, OpenStreetMap otherwise or as fallback), the Leaflet map, and the map layer toggles (`MapLayers`). |
+| `src/components/MapplsMap.jsx`, `src/lib/mappls.js` | The Mappls Web SDK v3 map: loads the SDK once and draws routes and evidence on it. |
 | `src/components/RouteComparison.jsx` | Route cards, dispatch guidance, and reports that may affect the route. |
 | `src/components/EvidenceDesk.jsx` | The selected report: provenance, hints, review and correction flags. |
 | `src/components/EvidenceList.jsx` | Collection controls, targeted search, filters and the report list. |

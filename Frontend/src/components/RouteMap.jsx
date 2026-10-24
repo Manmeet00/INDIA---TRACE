@@ -1,7 +1,8 @@
-import { useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { CircleMarker, MapContainer, Polyline, TileLayer, Tooltip, ZoomControl, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import Icon from './Icon.jsx'
+import MapplsMap from './MapplsMap.jsx'
 import { INACTIVE_STATES, MAP_CATEGORIES, formatTime, mapCategory, placeName, statusLabel } from '../lib/format.js'
 
 function MapBounds({ geometry }) {
@@ -29,10 +30,19 @@ function DashboardMap({ plan, incidents, selectedRoute, selectedIncident, onSele
   </MapContainer>
 }
 
-export default function RouteMap({ plan, ...mapProps }) {
-  return <article className="panel map-panel"><div className="map-heading"><div><span className="section-kicker">NORTHEAST INDIA · NETWORK VIEW</span><h2>{plan ? `${placeName(plan.origin)} to ${placeName(plan.destination)}` : 'Regional road intelligence'}</h2></div><span className={`map-status ${plan?.offline_demo ? 'demo' : ''}`}><i/>{plan?.offline_demo ? 'Historical snapshot' : plan ? `Routing fetched ${formatTime(plan.routing_fetched_at)}` : 'Map ready'}</span></div>
-    <div className="map-wrap"><DashboardMap plan={plan} {...mapProps}/>{!plan && <div className="map-empty"><span className="map-empty-icon"><Icon name="route" size={22}/></span><b>Your route will appear here</b><span>Enter locations to compare candidate driving routes.</span></div>}<div className="map-legend"><span><i className="legend-route"/> Selected route</span><span><i className="legend-candidate"/> Other candidates</span><span><i className="legend-incident"/> Geolocated evidence</span></div></div>
-    <div className="map-foot"><span><Icon name="pin" size={14}/>{plan ? `${placeName(plan.origin)} → ${placeName(plan.destination)}` : 'Assam · Meghalaya · Northeast India'}</span><span>Map tiles © OpenStreetMap contributors</span></div>
+// Mappls when the API has a Mappls key, OpenStreetMap otherwise. If Mappls cannot load (no internet, a rejected
+// key) the map falls back to OpenStreetMap and says so, so the dashboard never loses its map.
+export default function RouteMap({ plan, mapConfig, ...mapProps }) {
+  const [mapplsProblem, setMapplsProblem] = useState('')
+  const onUnavailable = useCallback((reason) => setMapplsProblem(reason || 'The Mappls map could not load.'), [])
+  const useMappls = mapConfig?.provider === 'mappls' && !mapplsProblem
+  const status = plan?.offline_demo ? 'Historical snapshot' : plan ? `Routing fetched ${formatTime(plan.routing_fetched_at)}` : 'Map ready'
+  return <article className="panel map-panel"><div className="map-heading"><div><span className="section-kicker">NORTHEAST INDIA · NETWORK VIEW</span><h2>{plan ? `${placeName(plan.origin)} to ${placeName(plan.destination)}` : 'Regional road intelligence'}</h2></div><span className={`map-status ${plan?.offline_demo ? 'demo' : ''}`}><i/>{status}</span></div>
+    {mapplsProblem && <p className="map-fallback" role="status">{mapplsProblem} Showing OpenStreetMap instead.</p>}
+    <div className="map-wrap">{!mapConfig ? <div className="map-canvas"/> : useMappls
+      ? <MapplsMap apiKey={mapConfig.mappls_key} plan={plan} {...mapProps} onUnavailable={onUnavailable}/>
+      : <DashboardMap plan={plan} {...mapProps}/>}{!plan && <div className="map-empty"><span className="map-empty-icon"><Icon name="route" size={22}/></span><b>Your route will appear here</b><span>Enter locations to compare candidate driving routes.</span></div>}<div className="map-legend"><span><i className="legend-route"/> Selected route</span><span><i className="legend-candidate"/> Other candidates</span><span><i className="legend-incident"/> Geolocated evidence</span></div></div>
+    <div className="map-foot"><span><Icon name="pin" size={14}/>{plan ? `${placeName(plan.origin)} → ${placeName(plan.destination)}` : 'Assam · Meghalaya · Northeast India'}</span><span>{useMappls ? 'Map © Mappls (MapmyIndia)' : 'Map tiles © OpenStreetMap contributors'}</span></div>
   </article>
 }
 

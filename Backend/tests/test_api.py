@@ -136,3 +136,11 @@ def test_correction_flags_stay_open_until_a_review_and_never_change_status(clien
     assert client.post("/api/incidents/missing/flags", json={"reason": "other"}).status_code == 404
     reviewed = client.patch("/api/incidents/f1/review", json={"verification": "resolved", "review_note": "Checked: reopened"}).json()
     assert reviewed["open_flags"] == []
+
+
+def test_map_config_uses_mappls_only_when_a_key_is_set(client, monkeypatch):
+    from app.config import get_settings
+    assert client.get("/api/map-config").json() == {"provider": "osm", "mappls_key": None}
+    monkeypatch.setenv("MAPPLS_STATIC_KEY", "browser-key")
+    get_settings.cache_clear()
+    assert client.get("/api/map-config").json() == {"provider": "mappls", "mappls_key": "browser-key"}

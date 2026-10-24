@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { getLatestCollectionRun, getMetrics, getRegion, loadWorkspace } from '../services/api.js'
+import { getLatestCollectionRun, getMapConfig, getMetrics, getRegion, loadWorkspace } from '../services/api.js'
 
 // API status (online, offline, degraded), stored evidence, the latest collection run, the region with its coverage,
 // and monitoring figures; loaded on start and after every change.
@@ -10,6 +10,7 @@ export function useWorkspace() {
   const [problem, setProblem] = useState('')
   const [region, setRegion] = useState(null)
   const [metrics, setMetrics] = useState(null)
+  const [mapConfig, setMapConfig] = useState(null)
 
   const apply = useCallback((workspace) => {
     setApiStatus(workspace.status)
@@ -24,6 +25,8 @@ export function useWorkspace() {
   useEffect(() => {
     let active = true
     loadWorkspace().then((workspace) => { if (active) apply(workspace) })
+    // Without the API the map still works, on OpenStreetMap.
+    getMapConfig().catch(() => ({ provider: 'osm' })).then((config) => { if (active) setMapConfig(config) })
     return () => { active = false }
   }, [apply])
 
@@ -33,5 +36,5 @@ export function useWorkspace() {
     if (workspace.status !== 'online') throw new Error(workspace.problem)
   }, [apply])
 
-  return { incidents, apiStatus, problem, lastRun, region, metrics, refresh }
+  return { incidents, apiStatus, problem, lastRun, region, metrics, mapConfig, refresh }
 }

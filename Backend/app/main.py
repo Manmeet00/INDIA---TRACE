@@ -270,6 +270,14 @@ def region_overview():
     }
 
 
+@app.get("/api/map-config")
+def map_config():
+    """Which base map the dashboard draws. Mappls needs its static key in the browser; the key should be
+    restricted to the dashboard's domains in the Mappls console. Without a key the dashboard uses OpenStreetMap."""
+    key = get_settings().mappls_static_key
+    return {"provider": "mappls", "mappls_key": key} if key else {"provider": "osm", "mappls_key": None}
+
+
 @app.get("/api/metrics")
 def get_metrics():
     """Monitoring and evaluation figures computed from logs and stored reports; unmeasured values are null."""

@@ -73,6 +73,9 @@ export const recheckIncident = (id) => request(`/api/incidents/${id}/recheck`, '
 
 export const getRegion = () => request('/api/region', 'Could not load the region.')
 
+/** { provider: 'mappls' | 'osm', mappls_key }: the base map to draw. */
+export const getMapConfig = () => request('/api/map-config', 'Could not load the map settings.')
+
 export const getMetrics = () => request('/api/metrics', 'Could not load monitoring figures.')
 
 export const reviewIncident = (id, review) => request(`/api/incidents/${id}/review`, 'Could not save evidence review.', { method: 'PATCH', body: review })

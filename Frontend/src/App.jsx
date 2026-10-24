@@ -22,7 +22,7 @@ const API_STATUS = {
 }
 
 function App() {
-  const { incidents, apiStatus, problem, lastRun, region, metrics, refresh: refreshWorkspace } = useWorkspace()
+  const { incidents, apiStatus, problem, lastRun, region, metrics, mapConfig, refresh: refreshWorkspace } = useWorkspace()
   const [statusLabel, statusNote] = API_STATUS[apiStatus]
   const [search, setSearch] = useState('')
   const { filters, setFilter, visibleIncidents } = useEvidenceFilters(incidents, search)
@@ -169,7 +169,7 @@ function App() {
           </div>
 
           <div className="center-column" id="map-section">
-            <RouteMap plan={plan} incidents={incidents} selectedRoute={selectedRoute} selectedIncident={activeIncident} onSelectIncident={setSelectedIncidentId} hiddenTypes={hiddenTypes}/>
+            <RouteMap plan={plan} mapConfig={mapConfig} incidents={incidents} selectedRoute={selectedRoute} selectedIncident={activeIncident} onSelectIncident={selectIncident} hiddenTypes={hiddenTypes}/>
             <RouteComparison plan={plan} selectedRoute={selectedRoute} onSelectRoute={setSelectedRoute} onSelectIncident={selectIncident}/>
           </div>
 
