@@ -58,7 +58,7 @@ def _cached_json(url: str, max_age_s: float, valid: Callable[[Any], bool]) -> tu
     services are rate-limited and sometimes slow, so successful responses are kept in SQLite.
     A response that fails `valid` counts as a failure and is never cached.
     """
-    service = "nominatim" if "nominatim" in url else "osrm"
+    service = "nominatim" if "nominatim" in url else "photon" if "photon" in url else "osrm"
     with get_connection() as connection:
         row = connection.execute("SELECT response, fetched_at FROM provider_cache WHERE url = ?", (url,)).fetchone()
         if row and _age_seconds(row["fetched_at"]) <= max_age_s:
@@ -122,7 +122,19 @@ def _valid_routes(data: Any) -> bool:
         for route in routes)
 
 
+COORDINATES = re.compile(r"^\s*(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)\s*$")
+INDIA_BOX = (6.0, 38.0, 68.0, 98.0)  # south, north, west, east
+
+
 def _geocode(place: str) -> dict[str, Any]:
+    # "26.14, 91.73" is a position from the device (Your location in the dashboard): used as given, never looked up.
+    match = COORDINATES.match(place)
+    if match:
+        latitude, longitude = float(match[1]), float(match[2])
+        south, north, west, east = INDIA_BOX
+        if not (south <= latitude <= north and west <= longitude <= east):
+            raise HTTPException(status_code=422, detail="That position is outside India.")
+        return {"name": "Your location", "latitude": latitude, "longitude": longitude}
     query = urlencode({"q": f"{place}, India", "format": "jsonv2", "limit": 1, "countrycodes": "in"})
     results, _ = _cached_json(f"https://nominatim.openstreetmap.org/search?{query}", GEOCODE_CACHE_S, _valid_geocode)
     if not results:
@@ -134,8 +146,10 @@ def _geocode(place: str) -> dict[str, Any]:
 def plan_route(payload) -> dict[str, Any]:
     # Each place keeps the name the person typed: Nominatim's best match can be a road or station in that town.
     origin_query, destination_query = payload.origin.strip(), payload.destination.strip()
-    origin = {**_geocode(origin_query), "query": origin_query}
-    destination = {**_geocode(destination_query), "query": destination_query}
+    origin = {**_geocode(origin_query)}
+    destination = {**_geocode(destination_query)}
+    origin["query"] = "Your location" if COORDINATES.match(origin_query) else origin_query
+    destination["query"] = "Your location" if COORDINATES.match(destination_query) else destination_query
     coordinates = f"{origin['longitude']},{origin['latitude']};{destination['longitude']},{destination['latitude']}"
     routes, routing_fetched_at = _cached_json(
         f"https://router.project-osrm.org/route/v1/driving/{coordinates}?{urlencode({'overview':'full','geometries':'geojson','alternatives':'3','steps':'true'})}",

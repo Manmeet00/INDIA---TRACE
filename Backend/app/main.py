@@ -16,6 +16,7 @@ from .collection import (NOT_CONFIGURED, collect_candidates, collection_run, col
 from .config import get_settings
 from .database import get_connection, initialize_database
 from .monitoring import log_route_plan, metrics
+from .places import suggest_places
 from .regions import active_region, coverage_by_state
 from .repository import add_event, create_trace, event_from_row, trace_from_row, update_trace
 from .road_intelligence import load_incidents, plan_route
@@ -293,6 +294,12 @@ def region_overview():
         "coverage": coverage_by_state(region, incidents),
         "coverage_note": "A state with no recent reports is a coverage gap, not evidence that its roads are clear.",
     }
+
+
+@app.get("/api/places/suggest")
+def place_suggestions(q: str = Query(min_length=2, max_length=80)):
+    """Type-ahead suggestions for the route form: the region's towns, then places in India from Photon."""
+    return suggest_places(q)
 
 
 @app.post("/api/places/locate")

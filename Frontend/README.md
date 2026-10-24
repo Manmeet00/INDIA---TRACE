@@ -19,7 +19,7 @@ Open the Vite URL (normally `http://localhost:5173`). The backend normally runs 
 | `src/services/api.js` | The service layer. Every backend request goes through it, along with error messages and the offline route snapshot. Components never call `fetch` directly. |
 | `src/hooks/useWorkspace.js` | API status, stored evidence and the latest collection run. |
 | `src/hooks/useEvidenceFilters.js` | Search text and the evidence-list filters. |
-| `src/components/RoutePlanner.jsx` | The route form: origin, destination, vehicle and priority. |
+| `src/components/RoutePlanner.jsx`, `src/components/PlaceInput.jsx` | The route form, maps-app style: start and destination with suggestions as you type and "Your location", vehicle and route preference as chips. |
 | `src/components/RouteMap.jsx` | Chooses the base map (Mappls with a key, OpenStreetMap otherwise or as fallback), the Leaflet map, and the map layer toggles (`MapLayers`). |
 | `src/components/MapplsMap.jsx`, `src/lib/mappls.js` | The Mappls Web SDK v3 map: loads the SDK once and draws routes and evidence on it. |
 | `src/components/RouteComparison.jsx` | Route cards, dispatch guidance, and reports that may affect the route. |

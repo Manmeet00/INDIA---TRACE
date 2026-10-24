@@ -1,26 +1,56 @@
 import { useState } from 'react'
 import Icon from './Icon.jsx'
+import PlaceInput from './PlaceInput.jsx'
 
-// The route form owns its inputs and hands a plan request to onPlan; App decides how to fetch it.
+const VEHICLES = [['truck', 'Truck', 'truck'], ['van', 'Van', 'van'], ['ambulance', 'Ambulance', 'ambulance']]
+const PRIORITIES = [['cautious', 'Cautious'], ['balanced', 'Balanced'], ['fastest', 'Fastest'], ['shortest', 'Shortest']]
+const PRIORITY_NOTES = {
+  cautious: 'Routes with fewer reports nearby first',
+  balanced: 'The routing service’s order',
+  fastest: 'Shortest estimated time first',
+  shortest: 'Shortest distance first',
+}
+
+const place = (text) => ({ text, query: text })
+
+// Directions in the style of a maps app: start and destination joined by a line, travel mode and preference as
+// chips. The form owns its inputs and hands a plan request to onPlan; App decides how to fetch it.
 export default function RoutePlanner({ loading, error, isSnapshot, onPlan }) {
-  const [origin, setOrigin] = useState('Guwahati, Assam')
-  const [destination, setDestination] = useState('Shillong, Meghalaya')
+  const [origin, setOrigin] = useState(place('Guwahati, Assam'))
+  const [destination, setDestination] = useState(place('Shillong, Meghalaya'))
   const [vehicle, setVehicle] = useState('truck')
   const [priority, setPriority] = useState('cautious')
 
   const submit = (event) => {
     event.preventDefault()
-    onPlan({ origin, destination, vehicle_type: vehicle, priority })
+    onPlan({ origin: origin.query, destination: destination.query, vehicle_type: vehicle, priority })
   }
 
   return <article className="panel route-panel" id="route-planning">
     <div className="panel-heading"><div><span className="section-kicker">ROUTE PLANNER</span><h1>Plan your route</h1></div></div>
     <form onSubmit={submit}>
-      <label className="field-label" htmlFor="origin">FROM</label><div className="place-input"><Icon name="pin" size={17}/><input id="origin" value={origin} onChange={(event) => setOrigin(event.target.value)} placeholder="City or location" required minLength="2"/></div>
-      <div className="field-label-row field-spaced"><label className="field-label" htmlFor="destination">TO</label><button type="button" className="swap-button" onClick={() => { setOrigin(destination); setDestination(origin) }} aria-label="Swap origin and destination" title="Swap origin and destination">⇅ Swap</button></div><div className="place-input"><Icon name="pin" size={17}/><input id="destination" value={destination} onChange={(event) => setDestination(event.target.value)} placeholder="City or location" required minLength="2"/></div>
-      <label className="field-label field-spaced" htmlFor="vehicle">VEHICLE TYPE</label><div className="select-wrap"><Icon name="truck" size={17}/><select id="vehicle" value={vehicle} onChange={(event) => setVehicle(event.target.value)}><option value="truck">Delivery truck</option><option value="van">Delivery van</option><option value="ambulance">Ambulance</option></select></div>
-      <label className="field-label field-spaced" htmlFor="priority">ROUTE PRIORITY</label><div className="select-wrap"><Icon name="layers" size={17}/><select id="priority" value={priority} onChange={(event) => setPriority(event.target.value)}><option value="cautious">Cautious</option><option value="balanced">Balanced</option><option value="fastest">Fastest</option><option value="shortest">Shortest</option></select></div>
-      <button className="primary-button" type="submit" disabled={loading}>{loading ? 'Finding routes…' : <><Icon name="search" size={17}/> Find candidate routes</>}</button>
+      <div className="stops">
+        <div className="stop-rail" aria-hidden="true"><span className="stop-origin"/><span className="stop-line"/><Icon name="pin" size={18}/></div>
+        <div className="stop-fields">
+          <PlaceInput id="origin" label="Starting point" placeholder="Choose starting point" value={origin} onChange={setOrigin}/>
+          <PlaceInput id="destination" label="Destination" placeholder="Choose destination" value={destination} onChange={setDestination}/>
+        </div>
+        <button type="button" className="swap-button" onClick={() => { setOrigin(destination); setDestination(origin) }} aria-label="Swap starting point and destination" title="Swap starting point and destination"><Icon name="swap" size={18}/></button>
+      </div>
+
+      <fieldset className="chip-group modes"><legend>Vehicle</legend>
+        {VEHICLES.map(([key, label, icon]) => <label key={key} className={`chip${vehicle === key ? ' on' : ''}`}>
+          <input type="radio" name="vehicle" value={key} checked={vehicle === key} onChange={() => setVehicle(key)}/><Icon name={icon} size={17}/>{label}
+        </label>)}
+      </fieldset>
+      <fieldset className="chip-group preferences"><legend>Route preference</legend>
+        {PRIORITIES.map(([key, label]) => <label key={key} className={`chip${priority === key ? ' on' : ''}`}>
+          <input type="radio" name="priority" value={key} checked={priority === key} onChange={() => setPriority(key)}/>{label}
+        </label>)}
+        <small className="chip-note">{PRIORITY_NOTES[priority]}</small>
+      </fieldset>
+
+      <button className="primary-button" type="submit" disabled={loading}>{loading ? 'Finding routes…' : <><Icon name="route" size={17}/> Find routes</>}</button>
       {error && <div className={isSnapshot ? 'inline-demo-note' : 'inline-error'} role="status">{error}</div>}
     </form>
     <div className="route-disclaimer"><span>i</span><p>Route estimates do not confirm current road conditions or vehicle restrictions.</p></div>

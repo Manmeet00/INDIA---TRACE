@@ -199,7 +199,7 @@ def test_hung_api_request_times_out_in_the_browser(dashboard):
     expect(page.locator(".primary-button")).to_have_text("Finding routes…")
     page.clock.run_for(61_000)
     expect(page.locator(".inline-error")).to_have_text("Could not plan this route. The API did not answer within 60 seconds. Refresh to see whether it finished.")
-    expect(page.locator(".primary-button")).to_contain_text("Find candidate routes")
+    expect(page.locator(".primary-button")).to_contain_text("Find routes")
 
 
 # --- API and database failures ------------------------------------------------------------
@@ -433,3 +433,35 @@ def test_planning_a_route_scopes_the_cards_and_runs_a_live_check_for_it(dashboar
     expect(page.locator(".summary-card.green")).to_contain_text("Reports for this route")
     expect(page.locator(".action-banner")).to_contain_text("NH-6")    # the advice was recalculated with it
     assert all("query=NH-6+Guwahati+Shillong" in url and "recency_minutes=4320" in url for url in searched)
+
+
+
+def test_route_form_suggests_places_and_uses_your_location(dashboard, providers):
+    providers["photon.komoot.io"] = {"features": [
+        {"properties": {"name": "Jowai Bypass", "county": "West Jaintia Hills", "state": "Meghalaya", "countrycode": "IN"}},
+        {"properties": {"name": "Jowa", "state": "Vaud", "countrycode": "CH"}},  # outside India: never suggested
+    ]}
+    page = dashboard
+    # The test origin is plain http, where browsers refuse geolocation, so the device position is supplied directly.
+    page.add_init_script("""Object.defineProperty(navigator, 'geolocation', { value: {
+        getCurrentPosition: (ok) => ok({ coords: { latitude: 26.18, longitude: 91.75 } }) } })""")
+    page.open()
+    page.fill("#destination", "Jow")
+    options = page.locator("#destination ~ .place-suggestions li")
+    expect(options).to_have_count(2)
+    expect(options.nth(0)).to_contain_text("JowaiWest Jaintia Hills, Meghalaya")  # the region's own town first
+    expect(options.nth(1)).to_contain_text("Jowai Bypass")
+    expect(page.locator("#destination")).to_have_attribute("aria-expanded", "true")
+    page.keyboard.press("ArrowDown")
+    page.keyboard.press("Enter")
+    expect(page.locator("#destination")).to_have_value("Jowai, Meghalaya")
+
+    page.fill("#origin", "")
+    page.locator("#origin ~ .place-suggestions li.location").click()
+    expect(page.locator("#origin")).to_have_value("Your location")
+    page.fill("#destination", "Shillong, Meghalaya")
+    page.keyboard.press("Escape")
+    page.locator(".chip", has_text="Fastest").click()
+    page.click(".primary-button")
+    expect(page.locator(".route-card")).to_have_count(2)
+    expect(page.locator(".map-heading h2")).to_have_text("Your location to Shillong")

@@ -98,7 +98,7 @@ def providers(monkeypatch):
     Map a host to a function of the request returning JSON data, an Answer, or an exception to raise.
     Requests to a host with no answer fail the test.
     """
-    answers = {"nominatim.openstreetmap.org": nominatim, "router.project-osrm.org": osrm}
+    answers = {"nominatim.openstreetmap.org": nominatim, "router.project-osrm.org": osrm, "photon.komoot.io": {"features": []}}
     calls = []
 
     def urlopen(request, timeout, context):

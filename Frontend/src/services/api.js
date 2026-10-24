@@ -72,6 +72,9 @@ export async function followRun(id, onProgress, intervalMs = 1500) {
 /** Reads one report's page again now; resolves to the updated report. */
 export const recheckIncident = (id) => request(`/api/incidents/${id}/recheck`, 'Could not re-check this source.', { method: 'POST', timeoutMs: TIMEOUT_MS.plan })
 
+/** Type-ahead suggestions for the route form: [{ label, detail, value, source }]. */
+export const suggestPlaces = (text) => request(`/api/places/suggest?q=${encodeURIComponent(text)}`, 'Could not load place suggestions.')
+
 export const getRegion = () => request('/api/region', 'Could not load the region.')
 
 /** { provider: 'mappls' | 'osm', mappls_key }: the base map to draw. */

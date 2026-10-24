@@ -120,3 +120,30 @@ def test_a_restart_waits_for_the_next_due_collection(client):
             duplicates, failed_searches, fetched, fetch_failed, duration_ms, status) VALUES
             ('run_recent', 'scheduled', ?, ?, '[]', 0, 0, 0, 0, 0, 0, 0, 'complete')""", (ago(minutes=10), ago(minutes=10)))
     assert 1190 <= _seconds_until_due(30) <= 1200  # 20 minutes left
+
+
+
+def test_suggestions_put_region_towns_first_and_keep_only_places_in_india(client, providers):
+    providers["photon.komoot.io"] = {"features": [
+        {"properties": {"name": "Tezpur University", "city": "Tezpur", "state": "Assam", "countrycode": "IN"}},
+        {"properties": {"name": "Tezpur", "state": "Assam", "countrycode": "IN"}},                 # same as the region town
+        {"properties": {"name": "Tezpur Street", "state": "Somewhere", "countrycode": "US"}},
+        "not a feature", {"properties": {"name": 5, "countrycode": "IN"}},
+    ]}
+    body = client.get("/api/places/suggest?q=Tezpu").json()
+    assert [(item["label"], item["value"], item["source"]) for item in body] == [
+        ("Tezpur", "Tezpur, Assam", "region"), ("Tezpur University", "Tezpur University, Assam", "search")]
+    assert client.get("/api/places/suggest?q=T").status_code == 422
+
+
+def test_suggestions_still_offer_region_towns_when_photon_is_down(client, providers):
+    providers["photon.komoot.io"] = TimeoutError("timed out")
+    assert [item["label"] for item in client.get("/api/places/suggest?q=Shil").json()] == ["Shillong"]
+
+
+def test_a_device_position_plans_from_your_location_and_must_be_in_india(client, providers):
+    body = client.post("/api/routes/plan", json={"origin": "26.18000, 91.75000", "destination": "Shillong"}).json()
+    assert body["origin"] == {"name": "Your location", "latitude": 26.18, "longitude": 91.75, "query": "Your location"}
+    assert not any("nominatim" in host and "26.18" in request.full_url for host, request in providers["calls"])  # never looked up
+    outside = client.post("/api/routes/plan", json={"origin": "51.5, -0.12", "destination": "Shillong"})
+    assert outside.status_code == 422 and outside.json()["detail"] == "That position is outside India."

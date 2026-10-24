@@ -96,17 +96,43 @@
 
 /* ── Route planner form ──────────────────────────────────── */
 .route-panel { padding: 18px 16px 16px; }
-.field-label { display: block; margin: 0 0 6px; color: var(--muted); font: 700 var(--fs-xs)/1.2 var(--font-display); letter-spacing: .9px; text-transform: uppercase; }
-.field-spaced { margin-top: 14px; }
-.field-label-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
-.field-label-row .field-label { margin: 0; }
-.swap-button { padding: 3px 9px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: var(--card); font-size: var(--fs-xs); font-weight: 700; }
+/* Directions, maps-app style: stops joined by a line, swap on the right, chips for mode and preference. */
+.stops { position: relative; display: grid; grid-template-columns: 22px minmax(0, 1fr) 36px; align-items: center; gap: 0 8px; }
+.stop-rail { display: flex; flex-direction: column; align-items: center; align-self: stretch; padding: 15px 0 10px; color: var(--danger); }
+.stop-origin { width: 12px; height: 12px; flex: none; border: 3px solid var(--route); border-radius: 50%; background: var(--card); }
+.stop-line { flex: 1; width: 0; margin: 4px 0; border-left: 2px dotted var(--faint); }
+.stop-fields { display: grid; gap: 8px; min-width: 0; }
+.swap-button { display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 1px solid var(--line); border-radius: 50%; color: var(--muted); background: var(--card); }
 .swap-button:hover { border-color: var(--route); color: var(--route); }
-.place-input, .select-wrap { display: flex; align-items: center; gap: 9px; height: 42px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; color: var(--faint); background: var(--card); transition: border-color .15s ease, box-shadow .15s ease; }
-.place-input:focus-within, .select-wrap:focus-within { border-color: var(--focus); box-shadow: 0 0 0 3px rgba(31, 111, 209, .18); }
-.place-input input, .select-wrap select { width: 100%; min-width: 0; border: 0; outline: 0; color: var(--text); background: transparent; font-size: var(--fs-base); }
-.place-input input::placeholder { color: var(--faint); }
-.select-wrap select { appearance: none; cursor: pointer; }
+.place-field { position: relative; min-width: 0; }
+.place-field input { width: 100%; height: 42px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; color: var(--text); background: var(--paper); font-size: var(--fs-base); transition: border-color .15s ease, box-shadow .15s ease, background .15s ease; }
+.place-field input:focus { border-color: var(--focus); outline: 0; background: var(--card); box-shadow: 0 0 0 3px rgba(31, 111, 209, .18); }
+.place-field input::placeholder { color: var(--faint); }
+.place-suggestions { position: absolute; z-index: 600; top: calc(100% + 4px); left: 0; right: 0; max-height: 280px; overflow-y: auto; margin: 0; padding: 4px 0; border: 1px solid var(--line); border-radius: 8px; background: var(--card); box-shadow: 0 8px 24px rgba(14, 26, 43, .16); list-style: none; }
+.place-suggestions li { position: relative; display: grid; gap: 1px; padding: 8px 12px 8px 36px; cursor: pointer; }
+.place-suggestions li.active, .place-suggestions li:hover { background-color: #eef4fc; }
+.place-suggestions li b { color: var(--text); font-size: var(--fs-base); font-weight: 600; }
+.place-suggestions li small { color: var(--faint); font-size: var(--fs-xs); }
+.place-suggestions li::before { content: ""; position: absolute; left: 14px; width: 9px; height: 9px; margin-top: 5px; border-radius: 50% 50% 50% 0; background: var(--faint); transform: rotate(-45deg); }
+.place-suggestions li.location::before { border: 2px solid var(--route); border-radius: 50%; background: transparent; transform: none; }
+.place-suggestions li.location b { color: var(--route); }
+.place-suggestions li.region::before { background: var(--green); }
+.place-note { display: block; margin-top: 4px; color: var(--warn); font-size: var(--fs-xs); }
+.chip-group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 16px 0 0; padding: 0; border: 0; }
+.chip-group legend { width: 100%; margin-bottom: 6px; padding: 0; color: var(--muted); font: 700 var(--fs-xs)/1.2 var(--font-display); letter-spacing: .9px; text-transform: uppercase; }
+.chip { position: relative; display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--text); background: var(--card); font-size: var(--fs-sm); font-weight: 600; cursor: pointer; transition: background .15s ease, border-color .15s ease; }
+.chip:hover { border-color: var(--route); }
+.chip.on { border-color: var(--route); color: var(--route); background: #e6f0fb; }
+.chip input { position: absolute; opacity: 0; pointer-events: none; }
+.chip:focus-within { outline: 3px solid var(--focus); outline-offset: 2px; }
+.chip-note { width: 100%; color: var(--faint); font-size: var(--fs-xs); }
+/* Travel modes as equal tiles, icon above the label; preferences as an even two-by-two grid. */
+.chip-group.modes, .chip-group.preferences { display: grid; gap: 6px; }
+.chip-group.modes { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.chip-group.preferences { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.chip-group.modes legend, .chip-group.preferences legend, .chip-group.preferences .chip-note { grid-column: 1 / -1; }
+.chip-group.modes .chip { flex-direction: column; justify-content: center; gap: 3px; min-height: 54px; padding: 6px 4px; border-radius: 10px; font-size: var(--fs-xs); }
+.chip-group.preferences .chip { justify-content: center; padding: 0 8px; }
 .primary-button { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 44px; margin-top: 18px; border: 0; border-radius: 8px; background: var(--green); color: #fff; font: 700 var(--fs-base) var(--font-display); letter-spacing: .2px; transition: background .15s ease; }
 .primary-button:hover:not(:disabled) { background: var(--green-dark); }
 .primary-button:disabled, .text-button:disabled, .icon-button:disabled, .review-controls button:disabled { cursor: not-allowed; opacity: .55; }

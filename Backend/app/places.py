@@ -17,7 +17,7 @@ from fastapi import HTTPException
 
 from .monitoring import log_call
 from .regions import active_region
-from .road_intelligence import _request_json
+from .road_intelligence import _cached_json, _request_json
 
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 RETRY_AFTER = timedelta(days=30)  # a place Nominatim could not find is tried again after this
@@ -71,3 +71,44 @@ def geocode_places(connection: sqlite3.Connection, names: list[str]) -> dict[str
         connection.commit()
         found, missing = (found + 1, missing) if latitude is not None else (found, missing + 1)
     return {"looked_up": found + missing + failed, "found": found, "not_found": missing, "failed": failed}
+
+
+PHOTON_URL = "https://photon.komoot.io/api/"
+SUGGEST_CACHE_S = 7 * 86400
+SUGGEST_LIMIT = 6
+
+
+def _valid_photon(data: Any) -> bool:
+    return isinstance(data, dict) and isinstance(data.get("features"), list)
+
+
+def suggest_places(query: str) -> list[dict[str, Any]]:
+    """Place suggestions while someone types a start or destination, like a maps search box.
+
+    The region's own towns come first; then Photon (OpenStreetMap search built for type-ahead, unlike
+    Nominatim, whose policy forbids autocomplete) for places in India. Photon answers are cached for a week;
+    if Photon is down the region's towns are still suggested.
+    """
+    text = query.strip()
+    region = active_region()
+    lowered = text.lower()
+    local = [place for place in region.places if place.kind == "town" and place.state
+             and any(name.lower().startswith(lowered) for name in (place.name, *place.aliases))]
+    suggestions = [{"label": place.name, "detail": ", ".join(part for part in (place.district, place.state) if part),
+                    "value": f"{place.name}, {place.state}", "source": "region"} for place in local]
+    if len(text) >= 3:
+        params = urlencode({"q": text, "limit": 10, "lang": "en", "lat": 26.1, "lon": 91.8})
+        try:
+            data, _ = _cached_json(f"{PHOTON_URL}?{params}", SUGGEST_CACHE_S, _valid_photon)
+        except HTTPException:
+            data = {"features": []}
+        for feature in data["features"]:
+            props = feature.get("properties") or {} if isinstance(feature, dict) else {}
+            name = props.get("name")
+            if props.get("countrycode") != "IN" or not isinstance(name, str):
+                continue
+            detail = ", ".join(part for part in (props.get("county") or props.get("city"), props.get("state")) if isinstance(part, str) and part)
+            value = ", ".join(part for part in (name, props.get("state")) if isinstance(part, str) and part)
+            if all(item["value"].lower() != value.lower() for item in suggestions):
+                suggestions.append({"label": name, "detail": detail, "value": value, "source": "search"})
+    return suggestions[:SUGGEST_LIMIT]
