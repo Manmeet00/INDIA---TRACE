@@ -108,7 +108,9 @@ def annotate(incidents: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Add mentions, report_signal, event_type(s), duplicate/related/conflict/corroborating ids and evidence_status."""
     tokens = {}
     for item in incidents:
-        text = f"{item['title']} {item['summary']}"
+        # The fetched page description is the article's own summary; full page text is not used because
+        # navigation and related-story links would add unrelated roads and places.
+        text = f"{item['title']} {item['summary']} {item.get('page_description') or ''}"
         highways = sorted({match.upper() for match in HIGHWAY.findall(text)}, key=lambda value: (len(value), value))
         item["mentions"] = {"highways": [f"NH-{number}" for number in highways], "places": list(dict.fromkeys(PLACE.findall(text)))}
         item["report_signal"] = _signal(text)

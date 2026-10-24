@@ -147,6 +147,16 @@ class IncidentOut(BaseModel):
     freshness: str
     reviewed_at: datetime | None = None
     review_note: str | None = None
+    publisher: str | None = None
+    search_query: str | None = None
+    search_kind: str | None = None
+    last_seen_at: datetime | None = None
+    published_source: str | None = None
+    page_description: str | None = None
+    page_excerpt: str | None = None
+    page_author: str | None = None
+    fetched_at: datetime | None = None
+    fetch_error: str | None = None
     # Text heuristics for the reviewer; see app/evidence.py.
     mentions: dict[str, list[str]] = Field(default_factory=dict)
     report_signal: str | None = None
@@ -158,6 +168,36 @@ class IncidentOut(BaseModel):
     corroborating_ids: list[str] = Field(default_factory=list)
     evidence_status: str = "unverified"
     review_history: list[ReviewEntry] = Field(default_factory=list)
+
+
+class CollectionRequest(BaseModel):
+    """Optional targeted search (PPT: 'user-initiated search: district, road or event type')."""
+    road: str | None = Field(default=None, max_length=40, pattern=r"^[A-Za-z0-9 .\-]+$")
+    place: str | None = Field(default=None, max_length=60, pattern=r"^[A-Za-z .\-']+$")
+    event_type: str | None = Field(default=None, pattern=r"^(landslide|flood|closure|bridge|accident|construction|weather)$")
+    window_days: int | None = Field(default=None, ge=1, le=3650)
+
+    @field_validator("road", "place", mode="before")
+    @classmethod
+    def blank_is_none(cls, value):
+        return (value.strip() or None) if isinstance(value, str) else value
+
+
+class CollectionRun(BaseModel):
+    id: str
+    trigger: str
+    started_at: datetime
+    finished_at: datetime
+    searches: list[dict[str, str]]
+    recency_minutes: int | None
+    results: int
+    stored: int
+    duplicates: int
+    failed_searches: int
+    fetched: int
+    fetch_failed: int
+    duration_ms: int
+    status: str
 
 
 class CollectionResult(BaseModel):

@@ -21,6 +21,9 @@ class Settings:
         ]
         self.tinyfish_api_key = os.getenv("TINYFISH_API_KEY", "")
         self.geocoder_user_agent = os.getenv("GEOCODER_USER_AGENT", "INDIA-TRACE/0.1 (hackathon demo)")
+        # 0 turns scheduled collection off; otherwise the pilot searches run every N minutes.
+        self.collection_interval_minutes = int(os.getenv("COLLECTION_INTERVAL_MINUTES", "0") or 0)
+        self.collection_window_days = int(os.getenv("COLLECTION_WINDOW_DAYS", "30") or 0)
 
 
 @lru_cache

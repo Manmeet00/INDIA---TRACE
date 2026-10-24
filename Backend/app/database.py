@@ -73,6 +73,30 @@ CREATE TABLE IF NOT EXISTS incident_reviews (
     reviewed_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_incident_reviews_incident ON incident_reviews(incident_id, reviewed_at DESC);
+CREATE TABLE IF NOT EXISTS collection_runs (
+    id TEXT PRIMARY KEY,
+    trigger TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    finished_at TEXT NOT NULL,
+    searches TEXT NOT NULL,
+    recency_minutes INTEGER,
+    results INTEGER NOT NULL,
+    stored INTEGER NOT NULL,
+    duplicates INTEGER NOT NULL,
+    failed_searches INTEGER NOT NULL,
+    fetched INTEGER NOT NULL,
+    fetch_failed INTEGER NOT NULL,
+    duration_ms INTEGER NOT NULL,
+    status TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS incident_flags (
+    id TEXT PRIMARY KEY,
+    incident_id TEXT NOT NULL REFERENCES incidents(id) ON DELETE CASCADE,
+    reason TEXT NOT NULL,
+    note TEXT,
+    created_at TEXT NOT NULL,
+    resolved_at TEXT
+);
 CREATE TABLE IF NOT EXISTS provider_cache (
     url TEXT PRIMARY KEY,
     response TEXT NOT NULL,
@@ -109,7 +133,8 @@ def initialize_database() -> None:
     with get_connection() as connection:
         connection.executescript(SCHEMA)
         columns = {row["name"] for row in connection.execute("PRAGMA table_info(incidents)")}
-        if "reviewed_at" not in columns:
-            connection.execute("ALTER TABLE incidents ADD COLUMN reviewed_at TEXT")
-        if "review_note" not in columns:
-            connection.execute("ALTER TABLE incidents ADD COLUMN review_note TEXT")
+        # Columns added after the first release; existing databases gain them on startup.
+        for column in ("reviewed_at", "review_note", "publisher", "search_query", "search_kind", "last_seen_at",
+                       "published_source", "page_description", "page_excerpt", "page_author", "fetched_at", "fetch_error"):
+            if column not in columns:
+                connection.execute(f"ALTER TABLE incidents ADD COLUMN {column} TEXT")

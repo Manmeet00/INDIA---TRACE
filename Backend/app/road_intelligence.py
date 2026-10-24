@@ -6,7 +6,6 @@ left unknown unless a structured coordinate is available from a trusted source.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from hashlib import sha256
 import json
 import math
 import re
@@ -14,22 +13,27 @@ import sqlite3
 import ssl
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import urlencode
 from urllib.request import Request, urlopen
-from uuid import uuid4
 import certifi
 
 from fastapi import HTTPException
 
 from .config import get_settings
 from .database import get_connection
-from .evidence import annotate, normalize_source_url
+from .evidence import annotate
 
 
-def _request_json(url: str, headers: dict[str, str] | None = None) -> Any:
-    request = Request(url, headers={"User-Agent": get_settings().geocoder_user_agent, **(headers or {})})
+def _request_json(url: str, headers: dict[str, str] | None = None, body: Any = None, timeout: float = 15) -> Any:
+    """GET, or POST a JSON body; provider failures become 502 errors."""
+    headers = {"User-Agent": get_settings().geocoder_user_agent, **(headers or {})}
+    data = None
+    if body is not None:
+        data = json.dumps(body).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    request = Request(url, data=data, headers=headers, method="POST" if data else "GET")
     try:
-        with urlopen(request, timeout=15, context=ssl.create_default_context(cafile=certifi.where())) as response:
+        with urlopen(request, timeout=timeout, context=ssl.create_default_context(cafile=certifi.where())) as response:
             return json.loads(response.read().decode("utf-8"))
     except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
         raise HTTPException(status_code=502, detail=f"An external routing or search service is unavailable: {exc}") from exc
@@ -193,6 +197,9 @@ def incident_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "location_text": row["location_text"], "verification": row["verification"],
         "freshness": _freshness(published, approximate), "reviewed_at": row["reviewed_at"],
         "review_note": row["review_note"],
+        # Provenance: which TinyFish search found the report, and what TinyFish Fetch read from its page.
+        **{key: row[key] for key in ("publisher", "search_query", "search_kind", "last_seen_at", "published_source",
+                                     "page_description", "page_excerpt", "page_author", "fetched_at", "fetch_error")},
     }
 
 
@@ -208,86 +215,6 @@ def load_incidents(connection: sqlite3.Connection, limit: int = 500) -> list[dic
     for incident in incidents:
         incident["review_history"] = history.get(incident["id"], [])
     return annotate(incidents)
-
-
-# Pilot corridor: NH-6 / NH-306, Guwahati – Shillong – Silchar – Aizawl. See docs/PILOT.md.
-PILOT_QUERIES = [
-    "NH-6 Guwahati Shillong road closure landslide update",
-    "NH-6 Shillong Silchar Sonapur Ratacherra landslide traffic",
-    "NH-306 Silchar Aizawl road blocked landslide",
-    "Meghalaya Mizoram Barak Valley highway closure latest",
-]
-
-
-def collect_candidates(connection: sqlite3.Connection) -> dict[str, Any]:
-    key = get_settings().tinyfish_api_key
-    if not key:
-        return {"status": "not_configured", "collected": 0, "duplicates": 0,
-                "message": "TinyFish is not configured. Add TINYFISH_API_KEY to Backend/.env to collect public web evidence.", "incidents": []}
-    queries = PILOT_QUERIES
-    collected = 0
-    duplicates = 0
-    failed_queries = 0
-    now = datetime.now(timezone.utc).isoformat()
-    for query in queries:
-        try:
-            response = _request_json(f"https://api.search.tinyfish.ai?{urlencode({'query': query})}", {"X-API-Key": key})
-        except HTTPException:
-            failed_queries += 1
-            continue
-        if not isinstance(response, dict) or not isinstance(response.get("results"), list):
-            failed_queries += 1
-            continue
-        for item in response["results"]:
-            if not isinstance(item, dict):
-                continue
-            raw_url = item.get("url")
-            if not isinstance(raw_url, str) or not raw_url.strip():
-                continue
-            source_url = raw_url.strip()
-            if "://" not in source_url:
-                source_url = f"https://{source_url.lstrip('/')}"
-            parsed_url = urlsplit(source_url)
-            if parsed_url.scheme not in {"http", "https"} or not parsed_url.hostname or parsed_url.username or parsed_url.password:
-                continue
-            source_url = normalize_source_url(source_url)
-            raw_title = item.get("title")
-            raw_snippet = item.get("snippet")
-            title = (raw_title.strip() if isinstance(raw_title, str) else "")[:300] or "Untitled public source"
-            snippet = (raw_snippet.strip() if isinstance(raw_snippet, str) else "")[:3000]
-            if not snippet:
-                continue
-            published_at = item.get("published_at") or item.get("date")
-            if published_at and not isinstance(published_at, str):
-                published_at = None
-            elif isinstance(published_at, str):
-                published_at = published_at.strip() or None
-            raw_source_name = item.get("site_name")
-            source_name = (raw_source_name.strip() if isinstance(raw_source_name, str) else "")[:200] or "Public web source"
-            digest = sha256((title + snippet + source_url).encode()).hexdigest()
-            try:
-                connection.execute(
-                    """INSERT INTO incidents
-                    (id,title,summary,source_name,source_url,published_at,collected_at,location_text,verification,content_hash)
-                    VALUES (?,?,?,?,?,?,?,?,?,?)""",
-                    (f"in_{uuid4().hex}", title, snippet, source_name, source_url,
-                     published_at, now, None, "unverified", digest),
-                )
-                collected += 1
-            except sqlite3.IntegrityError:
-                if connection.execute("SELECT 1 FROM incidents WHERE source_url = ?", (source_url,)).fetchone():
-                    duplicates += 1
-                else:
-                    raise
-    if failed_queries == len(queries):
-        raise HTTPException(status_code=502, detail="TinyFish could not return search results. Try again later.")
-    status = "partial" if failed_queries else "complete"
-    message = "Search results are unverified evidence candidates. Geographic location is unknown until independently confirmed."
-    if failed_queries:
-        message = f"{failed_queries} of {len(queries)} TinyFish searches failed. Partial results are shown. " + message
-    return {"status": status, "collected": collected, "duplicates": duplicates,
-            "message": message,
-            "incidents": load_incidents(connection, 100)}
 
 
 MATCH_TOLERANCE_M = 3000

@@ -1,24 +1,48 @@
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timezone
+import logging
 from uuid import uuid4
 import sqlite3
 
 from fastapi import FastAPI, HTTPException, Query, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 
+from .collection import collect_candidates, collection_runs, targeted_searches
 from .config import get_settings
 from .database import get_connection, initialize_database
 from .repository import add_event, create_trace, event_from_row, trace_from_row, update_trace
-from .road_intelligence import collect_candidates, load_incidents, plan_route
-from .schemas import CollectionResult, DashboardSummary, EventCreate, EventOut, IncidentOut, IncidentReview, RoutePlanRequest, TraceCreate, TraceDetail, TracePage, TraceStatus, TraceUpdate
+from .road_intelligence import load_incidents, plan_route
+from .schemas import (CollectionRequest, CollectionResult, CollectionRun, DashboardSummary, EventCreate, EventOut, IncidentOut,
+                      IncidentReview, RoutePlanRequest, TraceCreate, TraceDetail, TracePage, TraceStatus, TraceUpdate)
 
 settings = get_settings()
+logger = logging.getLogger("indiatrace")
+
+
+def _scheduled_collection() -> None:
+    with get_connection() as connection:
+        collect_candidates(connection, trigger="scheduled", recency_minutes=settings.collection_window_days * 1440 or None)
+
+
+async def _collect_periodically(interval_minutes: int) -> None:
+    while True:
+        try:
+            await asyncio.to_thread(_scheduled_collection)
+        except Exception:  # A failed run is logged in collection_runs; keep the schedule alive.
+            logger.exception("Scheduled collection failed")
+        await asyncio.sleep(interval_minutes * 60)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     initialize_database()
+    task = asyncio.create_task(_collect_periodically(settings.collection_interval_minutes)) if settings.collection_interval_minutes > 0 else None
     yield
+    if task:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
 
 
 app = FastAPI(title=settings.app_name, version="1.0.0", lifespan=lifespan)
@@ -99,9 +123,20 @@ def review_incident(incident_id: str, payload: IncidentReview):
 
 
 @app.post("/api/collection/run", response_model=CollectionResult)
-def run_collection():
+def run_collection(payload: CollectionRequest | None = None):
+    """Pilot searches by default; a road, place or event type runs a targeted search instead."""
+    payload = payload or CollectionRequest()
+    targeted = payload.road or payload.place or payload.event_type
+    searches = targeted_searches(payload.road, payload.place, payload.event_type) if targeted else None
     with get_connection() as connection:
-        return collect_candidates(connection)
+        return collect_candidates(connection, searches, "targeted" if targeted else "manual",
+                                  payload.window_days * 1440 if payload.window_days else None)
+
+
+@app.get("/api/collection/runs", response_model=list[CollectionRun])
+def list_collection_runs(limit: int = Query(default=10, ge=1, le=100)):
+    with get_connection() as connection:
+        return collection_runs(connection, limit)
 
 
 @app.get(f"{settings.api_prefix}/summary", response_model=DashboardSummary)
