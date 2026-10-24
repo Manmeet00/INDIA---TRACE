@@ -230,7 +230,11 @@
 .fullscreen-button { position: absolute; z-index: 450; right: 10px; bottom: 210px; display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 2px; color: #666; background: #fff; box-shadow: rgba(0, 0, 0, .3) 0 1px 4px -1px; }
 .fullscreen-button:hover, .locate-button:hover:not(:disabled) { color: var(--route); }
 .map-wrap.fullscreen { position: fixed; z-index: 2000; inset: 0; width: 100%; height: 100%; }
-.map-credit { position: absolute; z-index: 400; right: 60px; bottom: 8px; max-width: calc(100% - 120px); padding: 1px 6px; overflow: hidden; color: #444; background: rgba(255, 255, 255, .75); font: 400 10px/1.4 Roboto, Arial, sans-serif; white-space: nowrap; text-overflow: ellipsis; }
+/* Full screen hides the credits under the map; the tile licences still need them, so they sit behind an "i". */
+.map-credit { position: absolute; z-index: 400; right: 60px; bottom: 8px; display: flex; flex-direction: row-reverse; align-items: center; gap: 6px; max-width: calc(100% - 120px); }
+.map-credit summary { display: grid; place-items: center; width: 20px; height: 20px; flex: none; border-radius: 50%; color: #444; background: rgba(255, 255, 255, .85); font: italic 700 12px/1 Georgia, serif; list-style: none; cursor: pointer; box-shadow: rgba(0, 0, 0, .3) 0 1px 3px; }
+.map-credit summary::-webkit-details-marker { display: none; }
+.map-credit small { padding: 1px 6px; overflow: hidden; color: #444; background: rgba(255, 255, 255, .85); font: 400 10px/1.4 Roboto, Arial, sans-serif; white-space: nowrap; text-overflow: ellipsis; }
 .locate-button:disabled { color: var(--faint); cursor: not-allowed; }
 .map-legend .legend-here { width: 10px; height: 10px; border: 2px solid #fff; border-radius: 50%; background: #1a73e8; box-shadow: 0 0 0 1px #1a73e8; }
 .here-dot { display: block; box-sizing: border-box; width: 18px; height: 18px; border: 3px solid #fff; border-radius: 50%; box-shadow: 0 0 0 6px rgba(26, 115, 232, .18), 0 1px 3px rgba(14, 26, 43, .35); }

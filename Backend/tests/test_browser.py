@@ -551,7 +551,9 @@ def test_full_screen_button_fills_the_screen_with_the_map(dashboard):
     box = page.locator(".map-wrap").bounding_box()
     assert box["height"] == page.evaluate("window.innerHeight")
     expect(page.locator(".map-wrap .map-legend")).to_be_visible()  # legend and credits come along
-    expect(page.locator(".map-credit")).to_contain_text("© OpenStreetMap")
+    expect(page.locator(".map-credit small")).to_be_hidden()  # credits fold behind an "i"
+    page.locator(".map-credit summary").click()
+    expect(page.locator(".map-credit small")).to_contain_text("© OpenStreetMap")
     button.click()
     expect(button).to_have_attribute("aria-pressed", "false")
     expect(page.locator(".map-credit")).to_have_count(0)
