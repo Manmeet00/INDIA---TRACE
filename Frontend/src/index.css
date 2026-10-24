@@ -1,25 +1,73 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap');
+/* Overpass descends from Highway Gothic road-sign lettering; Atkinson Hyperlegible was drawn for legibility. */
+@import url('https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Overpass:wght@500;600;700;800&family=Overpass+Mono:wght@500;600&display=swap');
 
 :root {
-  font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  color: #14233b;
-  background: #f3f6fa;
+  /* Surfaces */
+  --ink: #0e1a2b;
+  --ink-2: #16263b;
+  --ink-line: #25384f;
+  --paper: #f3f5f7;
+  --card: #ffffff;
+  --line: #dce3ea;
+  --line-soft: #e9eef3;
+  /* Text (all pass WCAG AA on white) */
+  --text: #1b2a3d;
+  --muted: #55657a;
+  --faint: #627186;
+  --on-ink: #e8eef5;
+  --on-ink-muted: #a9b8c9;
+  /* Actions and map */
+  --green: #0b7a4b;
+  --green-dark: #08623c;
+  --route: #1f6fd1;
+  --focus: #1f6fd1;
+  /* Highway milestone: yellow cap over a white stone */
+  --milestone: #f2b705;
+  --milestone-ink: #1b1a14;
+  --stone: #fbfaf6;
+  /* Evidence states */
+  --danger: #b4302a;
+  --danger-bg: #fdecea;
+  --warn: #8a5300;
+  --warn-bg: #fff3d6;
+  --ok: #1d6f46;
+  --ok-bg: #e3f4ea;
+  --teal: #176c65;
+  --teal-bg: #def3f0;
+  --slate: #4f5d6e;
+  --slate-bg: #eceff3;
+
+  --font-display: 'Overpass', 'Helvetica Neue', Arial, sans-serif;
+  --font-body: 'Atkinson Hyperlegible', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-data: 'Overpass Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --fs-xs: 11px;
+  --fs-sm: 12.5px;
+  --fs-base: 14px;
+  --fs-md: 16px;
+  --fs-lg: 19px;
+  --radius: 10px;
+  --radius-sm: 6px;
+  --shadow: 0 1px 2px rgba(14, 26, 43, .06), 0 2px 8px rgba(14, 26, 43, .04);
+
+  font-family: var(--font-body);
+  font-size: var(--fs-base);
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--paper);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  font-optical-sizing: auto;
-  font-weight: 400;
 }
 
 * { box-sizing: border-box; }
 html { min-width: 320px; scroll-behavior: smooth; }
 body { min-width: 320px; min-height: 100vh; margin: 0; }
-button, input, select { font: inherit; }
+button, input, select { font: inherit; color: inherit; }
 button { cursor: pointer; }
 a { color: inherit; text-decoration: none; }
 button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible {
-  outline: 3px solid #83b5a0;
+  outline: 3px solid var(--focus);
   outline-offset: 2px;
 }
-::selection { color: #10243c; background: #c6e2d4; }
+::selection { color: var(--ink); background: #ffe58a; }

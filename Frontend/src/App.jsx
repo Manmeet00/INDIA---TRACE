@@ -111,6 +111,15 @@ async function readJson(response, fallback) {
   throw new Error(message || `${fallback} (HTTP ${response.status})`)
 }
 
+// Indian national-highway milestone: a yellow cap carrying the road number over a white stone.
+// Every highway reference in the app uses it, so roads read the same way they do on the ground.
+function Milestone({ road, detail, note, gap = false }) {
+  return <span className={`milestone${gap ? ' gap' : ''}${detail ? '' : ' cap-only'}`}>
+    <span className="milestone-cap">{road.replace('-', ' ')}</span>
+    {detail && <span className="milestone-stone">{detail}{note && <em>{note}</em>}</span>}
+  </span>
+}
+
 // Duplicate, conflict and mention hints come from text heuristics in the API, never from verification.
 function ReportHints({ incident, incidents, onSelect }) {
   const byId = new Map(incidents.map((item) => [item.id, item]))
@@ -124,30 +133,37 @@ function ReportHints({ incident, incidents, onSelect }) {
     ...duplicates.map((id) => ['duplicate', 'Possible duplicate · not counted as confirmation', id]),
     ...(incident.related_ids || []).filter((id) => !listed.includes(id)).map((id) => ['related', 'Same highway', id]),
   ].filter(([, , id]) => byId.has(id)).slice(0, 5)
-  const mentions = [...(incident.mentions?.highways || []), ...(incident.mentions?.places || [])]
-  if (!links.length && !mentions.length) return null
+  const highways = incident.mentions?.highways || []
+  const places = incident.mentions?.places || []
+  if (!links.length && !highways.length && !places.length) return null
   return <div className="report-hints">
-    {mentions.length > 0 && <div className="mention-row"><small>Mentions</small>{mentions.map((mention) => <span className="mention-chip" key={mention}>{mention}</span>)}</div>}
+    {(highways.length > 0 || places.length > 0) && <div className="mention-row"><small>Mentions</small>{highways.map((road) => <Milestone key={road} road={road}/>)}{places.map((place) => <span className="mention-chip" key={place}>{place}</span>)}</div>}
     {links.map(([kind, label, id]) => <button type="button" key={`${kind}-${id}`} className={`report-link ${kind}`} onClick={() => onSelect(id)}><b>{label}</b><span>{byId.get(id).title}</span></button>)}
     <small className="hint-note">Automatic text hints. Check the sources before acting on them.</small>
   </div>
 }
 
 // Which reports may affect the selected route and why (report 6.6), plus per-highway coverage gaps.
+const IMPACT_PREVIEW = 5
+
 function RouteImpact({ route, note, onSelect }) {
+  const [expanded, setExpanded] = useState(false)
   if (!route?.impact_reports && !route?.coverage) return null
+  const reports = route.impact_reports || []
+  const shown = expanded ? reports : reports.slice(0, IMPACT_PREVIEW)
   return <div className="route-impact">
     <div className="impact-heading"><b>Reports that may affect Route {route.priority_rank}</b>{note && <small>{note}</small>}</div>
     {route.coverage && <div className="coverage">
-      <div className="coverage-chips">{route.coverage.highways.map((row) => <span key={row.highway} className={`coverage-chip ${row.fresh ? 'covered' : 'gap'}`}>{row.highway} · {row.km} km · {row.reports} report{row.reports === 1 ? '' : 's'}{row.fresh ? ` · ${row.fresh} recent` : ' · none recent'}</span>)}</div>
+      <div className="coverage-chips">{route.coverage.highways.map((row) => <Milestone key={row.highway} road={row.highway} gap={!row.fresh} detail={`${row.km} km · ${row.reports} report${row.reports === 1 ? '' : 's'}`} note={row.fresh ? `${row.fresh} recent` : 'none recent'}/>)}</div>
       <p>{route.coverage.note}</p>
     </div>}
-    {route.impact_reports?.length
-      ? route.impact_reports.map((report) => <button type="button" className="impact-row" key={report.id} onClick={() => onSelect(report.id)}>
+    {reports.length
+      ? shown.map((report) => <button type="button" className="impact-row" key={report.id} onClick={() => onSelect(report.id)}>
         <span className="impact-score" title="Relevance score out of 100">{report.score}</span>
         <span className="impact-copy"><b>{report.title}</b><small>{report.source_name} · {STATUS_LABELS[report.evidence_status] || report.evidence_status}</small><span className="impact-factors">{report.factors.slice(0, 2).join(' · ')}</span></span>
       </button>)
       : <p className="impact-empty">No collected report is located near this route or names one of its highways.</p>}
+    {reports.length > IMPACT_PREVIEW && <button type="button" className="impact-more" onClick={() => setExpanded((value) => !value)}>{expanded ? 'Show top 5' : `Show all ${reports.length} reports`}</button>}
   </div>
 }
 
@@ -384,7 +400,7 @@ function App() {
 
   return <div className="app-shell">
     <aside className="sidebar">
-      <a className="brand" href="#overview" aria-label="INDIA-TRACE home"><span className="brand-mark"><span /><span /><span /></span><span className="brand-copy"><b>INDIA-TRACE</b><small>Safer routes. Better decisions.</small></span></a>
+      <a className="brand" href="#overview" aria-label="INDIA-TRACE home"><span className="brand-mark"><span /><span /><span /></span><span className="brand-copy"><b>INDIA-TRACE</b><small>Essential deliveries · Northeast India</small></span></a>
       <nav className="side-nav" aria-label="Main navigation">
         <a className="nav-item active" href="#overview"><Icon name="home"/> <span>Overview</span></a>
         <a className="nav-item" href="#route-planning"><Icon name="route"/> <span>Plan route</span></a>
@@ -406,14 +422,14 @@ function App() {
           <article className="summary-card red"><span className="summary-icon"><Icon name="alert" size={20}/></span><div><b>{typeCount('closure')}</b><span>Closure reports</span><small>{typeSummary('closure')}</small></div></article>
           <article className="summary-card amber"><span className="summary-icon"><Icon name="mountain" size={20}/></span><div><b>{typeCount('landslide')}</b><span>Landslide reports</span><small>{typeSummary('landslide')}</small></div></article>
           <article className="summary-card blue"><span className="summary-icon"><Icon name="water" size={20}/></span><div><b>{typeCount('flood')}</b><span>Flood / waterlogging</span><small>{typeSummary('flood')}</small></div></article>
-          <article className="summary-card violet"><span className="summary-icon"><Icon name="pin" size={20}/></span><div><b>{unknownLocationCount}</b><span>Location unresolved</span><small>Cannot be placed on the map</small></div></article>
-          <article className="summary-card green"><span className="summary-icon"><Icon name="check" size={20}/></span><div><b>{incidents.length}</b><span>Reports processed</span><small>{sourceCount} sources · {relevantIncidents.filter((item) => item.freshness === 'fresh').length} within freshness window</small></div></article>
+          <article className="summary-card violet"><span className="summary-icon"><Icon name="pin" size={20}/></span><div><b>{unknownLocationCount}</b><span>Location unresolved</span><small>Not on the map yet</small></div></article>
+          <article className="summary-card green"><span className="summary-icon"><Icon name="check" size={20}/></span><div><b>{incidents.length}</b><span>Reports processed</span><small>{sourceCount} sources · {relevantIncidents.filter((item) => item.freshness === 'fresh').length} recent</small></div></article>
         </section>
 
         <section className="workspace-grid">
           <div className="left-column">
             <article className="panel route-panel" id="route-planning">
-              <div className="panel-heading"><div><span className="section-kicker">ROUTE PLANNER</span><h1>Plan your route</h1></div><span className="step-indicator">01 <i>/ 03</i></span></div>
+              <div className="panel-heading"><div><span className="section-kicker">ROUTE PLANNER</span><h1>Plan your route</h1></div></div>
               <form onSubmit={planRoute}>
                 <label className="field-label" htmlFor="origin">FROM</label><div className="place-input"><Icon name="pin" size={17}/><input id="origin" value={origin} onChange={(event) => setOrigin(event.target.value)} placeholder="City or location" required minLength="2"/></div>
                 <div className="field-label-row field-spaced"><label className="field-label" htmlFor="destination">TO</label><button type="button" className="swap-button" onClick={() => { setOrigin(destination); setDestination(origin) }} aria-label="Swap origin and destination" title="Swap origin and destination">⇅ Swap</button></div><div className="place-input"><Icon name="pin" size={17}/><input id="destination" value={destination} onChange={(event) => setDestination(event.target.value)} placeholder="City or location" required minLength="2"/></div>
@@ -432,9 +448,9 @@ function App() {
             <article className="panel map-panel"><div className="map-heading"><div><span className="section-kicker">NORTHEAST INDIA · NETWORK VIEW</span><h2>{plan ? `${plan.origin.name.split(',')[0]} to ${plan.destination.name.split(',')[0]}` : 'Regional road intelligence'}</h2></div><span className={`map-status ${plan?.offline_demo ? 'demo' : ''}`}><i/>{plan?.offline_demo ? 'Historical snapshot' : plan ? `Routing fetched ${formatTime(plan.routing_fetched_at)}` : 'Map ready'}</span></div><div className="map-wrap"><DashboardMap plan={plan} incidents={incidents} selectedRoute={selectedRoute} selectedIncident={activeIncident} onSelectIncident={setSelectedIncidentId} hiddenTypes={hiddenTypes}/>{!plan && <div className="map-empty"><span className="map-empty-icon"><Icon name="route" size={22}/></span><b>Your route will appear here</b><span>Enter locations to compare candidate driving routes.</span></div>}<div className="map-legend"><span><i className="legend-route"/> Selected route</span><span><i className="legend-candidate"/> Other candidates</span><span><i className="legend-incident"/> Geolocated evidence</span></div></div><div className="map-foot"><span><Icon name="pin" size={14}/>{plan ? `${plan.origin.name.split(',')[0]} → ${plan.destination.name.split(',')[0]}` : 'Assam · Meghalaya · Northeast India'}</span><span>Map tiles © OpenStreetMap contributors</span></div></article>
 
             <section className="route-results"><div className="results-heading"><div><span className="section-kicker">ROUTE COMPARISON</span><h2>{plan ? `${plan.routes.length} candidate route${plan.routes.length === 1 ? '' : 's'}` : 'Compare your options'}</h2></div>{plan && <span className="results-provider">{plan.offline_demo ? 'Saved demo' : 'OSRM estimates'}</span>}</div>
-              {plan?.routes?.length ? <div className="route-card-list">{plan.routes.map((route, index) => <button className={`route-card ${selectedRoute === route.id ? 'selected' : ''}`} key={route.id} onClick={() => setSelectedRoute(route.id)} aria-pressed={selectedRoute === route.id}><span className="route-radio"/><span className="route-main"><b>Route {index + 1} · {index === 0 ? 'Top estimate' : 'Alternative'}</b><small>{exposureSummary(route.exposure)} · vehicle fit unknown</small><span className="route-facts"><span><Icon name="clock" size={14}/>{formatDuration(route.duration_s)}</span><span><Icon name="route" size={14}/>{formatDistance(route.distance_m)}</span><span><Icon name="layers" size={14}/>{route.highways && Object.keys(route.highways).length ? `via ${Object.keys(route.highways).join(' · ')}` : plan.offline_demo ? 'Historical' : 'OSRM'}</span></span></span><span className={`risk-pill ${adviceFor(route.recommendation || plan.recommendation).tone}`}>{adviceFor(route.recommendation || plan.recommendation).pill}</span></button>)}</div> : <div className="route-empty"><div className="route-empty-icon"><Icon name="route" size={19}/></div><div><b>No route comparison yet</b><span>Plan a route to fetch provider distance and time estimates.</span></div></div>}
-              {plan && <div className={`action-banner ${advice.tone}`} role="status"><span className="action-symbol">!</span><div><b>{advice.label}{chosenRoute ? ` · Route ${chosenRoute.priority_rank}` : ''}</b>{adviceReasons.map((reason) => <span key={reason}>{reason}</span>)}<span className="official-note">Follow official advisories from the district administration, the state disaster management authority and the road agency (NHIDCL / PWD).</span></div><small>DISPATCH GUIDANCE</small></div>}
-              {plan && <RouteImpact route={chosenRoute} note={plan.impact_note} onSelect={(id) => { setSearch(''); setSelectedIncidentId(id) }}/>}
+              {plan?.routes?.length ? <div className="route-card-list">{plan.routes.map((route, index) => <button className={`route-card ${selectedRoute === route.id ? 'selected' : ''}`} key={route.id} onClick={() => setSelectedRoute(route.id)} aria-pressed={selectedRoute === route.id}><span className="route-radio"/><span className="route-main"><b>Route {index + 1} · {index === 0 ? 'Top estimate' : 'Alternative'}</b><small>{exposureSummary(route.exposure)} · vehicle fit unknown</small><span className="route-facts"><span><Icon name="clock" size={14}/>{formatDuration(route.duration_s)}</span><span><Icon name="route" size={14}/>{formatDistance(route.distance_m)}</span>{!route.highways || !Object.keys(route.highways).length ? <span><Icon name="layers" size={14}/>{plan.offline_demo ? 'Historical' : 'OSRM'}</span> : null}</span>{route.highways && Object.keys(route.highways).length > 0 && <span className="route-roads">{Object.entries(route.highways).map(([road, metres]) => <Milestone key={road} road={road} detail={`${Math.round(metres / 1000)} km`}/>)}</span>}</span><span className={`risk-pill ${adviceFor(route.recommendation || plan.recommendation).tone}`}>{adviceFor(route.recommendation || plan.recommendation).pill}</span></button>)}</div> : <div className="route-empty"><div className="route-empty-icon"><Icon name="route" size={19}/></div><div><b>No route comparison yet</b><span>Plan a route to fetch provider distance and time estimates.</span></div></div>}
+              {plan && <div className={`action-banner ${advice.tone}`} role="status"><small className="banner-eyebrow">Dispatch guidance{chosenRoute ? ` · Route ${chosenRoute.priority_rank}` : ''}</small><b className="verdict">{advice.label}</b><ul className="reasons">{adviceReasons.map((reason) => <li key={reason}>{reason}</li>)}</ul><p className="official-note">Follow official advisories from the district administration, the state disaster management authority and the road agency (NHIDCL / PWD).</p></div>}
+              {plan && <RouteImpact key={chosenRoute?.id} route={chosenRoute} note={plan.impact_note} onSelect={(id) => { setSearch(''); setSelectedIncidentId(id) }}/>}
             </section>
           </div>
 
