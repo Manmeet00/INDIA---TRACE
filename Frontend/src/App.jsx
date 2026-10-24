@@ -164,8 +164,6 @@ function App() {
   const flagIncident = (incident, flag) => save(() => api.flagIncident(incident.id, flag), 'Flag sent for review. It does not change the report’s status.')
 
   const selectIncident = (id) => { setSearch(''); setSelectedIncidentId(id) }
-  // A town pin lists the reports that name the town, newest first.
-  const selectTown = (town) => { setSearch(''); setFilter('town', town.place); setSelectedIncidentId(town.items[0].id) }
   const toggleLayer = (key, shown) => setHiddenTypes((types) => shown ? types.filter((type) => type !== key) : [...types, key])
 
   const activeIncident = visibleIncidents.find((item) => item.id === selectedIncidentId) || visibleIncidents[0] || null
@@ -203,7 +201,7 @@ function App() {
           </div>
 
           <div className="center-column" id="map-section">
-            <RouteMap plan={plan} mapConfig={mapConfig} incidents={incidents} selectedRoute={selectedRoute} selectedIncident={activeIncident} onSelectIncident={selectIncident} onSelectTown={selectTown} hiddenTypes={hiddenTypes}/>
+            <RouteMap plan={plan} mapConfig={mapConfig} incidents={incidents} selectedRoute={selectedRoute} selectedIncident={activeIncident} onSelectIncident={selectIncident} hiddenTypes={hiddenTypes}/>
             <RouteComparison plan={plan} selectedRoute={selectedRoute} onSelectRoute={setSelectedRoute} onSelectIncident={selectIncident}/>
           </div>
 

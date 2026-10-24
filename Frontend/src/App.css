@@ -171,10 +171,6 @@
 .leaflet-tile { filter: saturate(.8) contrast(.97); }
 .leaflet-container { font-family: var(--font-body); }
 .mappls-canvas { position: relative; font-family: var(--font-body); }
-.town-pin { display: grid; place-items: center; width: 28px; height: 28px; box-sizing: border-box; border: 2px dashed #b06f00; border-radius: 50%; color: #6b4300; background: rgba(255, 243, 214, .9); font: 700 12px/1 var(--font-data); cursor: pointer; }
-.town-pin.confirmed { border-color: var(--danger); color: var(--danger); background: rgba(253, 236, 234, .92); }
-.town-pin.stale { border-color: #7d8a9a; color: var(--slate); background: rgba(236, 239, 243, .92); }
-.map-legend .legend-town { width: 10px; height: 10px; border: 2px dashed #b06f00; border-radius: 50%; }
 .mappls-dot { display: block; box-sizing: border-box; border: 2px solid #fff; border-radius: 50%; box-shadow: 0 1px 3px rgba(14, 26, 43, .35); cursor: pointer; }
 .map-fallback { margin: 0; padding: 7px 16px; color: var(--warn); background: var(--warn-bg); font-size: var(--fs-xs); font-weight: 700; }
 .map-legend { position: absolute; z-index: 400; bottom: 12px; left: 12px; display: flex; flex-wrap: wrap; gap: 12px; padding: 8px 11px; border-radius: var(--radius-sm); background: rgba(255, 255, 255, .95); box-shadow: var(--shadow); }
@@ -328,8 +324,6 @@
 .collect-controls select { flex: 1; }
 .last-run { margin: 8px 0 0; color: var(--muted); font: 500 var(--fs-xs)/1.5 var(--font-data); }
 .last-run.partial, .last-run.failed { color: var(--danger); }
-.town-filter { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; padding: 6px 6px 6px 12px; border: 1px dashed #b06f00; border-radius: 999px; background: var(--warn-bg); color: #6b4300; font-size: var(--fs-sm); }
-.town-filter button { padding: 3px 10px; border: 0; border-radius: 999px; color: var(--route); background: var(--card); font-size: var(--fs-xs); font-weight: 700; }
 .list-filters { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 12px 0 8px; }
 .evidence-list { max-height: 360px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #c3cdd8 transparent; }
 .evidence-row { display: flex; width: 100%; align-items: center; gap: 10px; padding: 10px 6px; border: 0; border-top: 1px solid var(--line-soft); text-align: left; background: var(--card); }

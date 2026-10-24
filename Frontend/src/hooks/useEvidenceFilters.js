@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react'
 
-// town: reports placed at one town (from a map pin), by their approximate location.
-const ALL = { type: 'all', status: 'all', region: 'all', road: 'all', time: 'all', category: 'all', lifecycle: 'all', source: 'all', town: 'all' }
+const ALL = { type: 'all', status: 'all', region: 'all', road: 'all', time: 'all', category: 'all', lifecycle: 'all', source: 'all' }
 
 // Text search plus the evidence list's filters. The publish-time cutoff is fixed when the filter changes,
 // so the list does not shift while it is open.
@@ -24,7 +23,6 @@ export function useEvidenceFilters(incidents, search) {
       && (filters.category === 'all' || item.source_category === filters.category)
       && (filters.lifecycle === 'all' || item.lifecycle === filters.lifecycle)
       && (filters.source === 'all' || item.source_name === filters.source)
-      && (filters.town === 'all' || item.approximate_location?.place === filters.town)
       && (publishedAfter === null || (item.published_estimate && new Date(item.published_estimate).valueOf() >= publishedAfter)))
   }, [incidents, search, filters, publishedAfter])
 
