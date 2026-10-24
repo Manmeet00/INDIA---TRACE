@@ -92,6 +92,7 @@ export async function loadWorkspace() {
   return {
     status: !failure ? 'online' : failure.status ? 'degraded' : 'offline',
     problem: failure?.message || '',
+    health: health.status === 'fulfilled' ? health.value : null,
     incidents: incidents.status === 'fulfilled' ? incidents.value : null,
   }
 }

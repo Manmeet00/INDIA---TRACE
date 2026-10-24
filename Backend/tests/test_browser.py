@@ -93,7 +93,8 @@ def plan(page, origin, destination):
 def test_empty_workspace_and_empty_collection_never_suggest_a_clear_road(dashboard, tinyfish_network):
     page = dashboard
     page.open()
-    expect(page.locator(".connection-label")).to_have_text("API connected")
+    expect(page.locator(".connection-label")).to_contain_text("Live · updated")
+    expect(page.locator(".offline-card")).to_contain_text("Automatic collection is off")
     expect(page.locator(".evidence-empty")).to_contain_text("No reports does not mean a road is clear.")
 
     page.click("text=Run collection")
@@ -121,8 +122,10 @@ def test_collect_review_locate_and_replan(dashboard, tinyfish_network):
     page.click("text=Run collection")
     expect(page.locator(".collection-message")).to_contain_text("2 new reports")
     expect(page.locator(".evidence-row")).to_have_count(2)  # web and news both return them; malformed ones are dropped
-    expect(page.locator(".summary-card.violet b")).to_have_text("2")  # both lack coordinates
-    expect(page.locator(".map-options")).not_to_contain_text("1 on map")
+    # "closed near Shillong" is placed at Shillong (approximate); the Sonapur report is not, as Sonapur is in two states.
+    expect(page.locator(".summary-card.violet b")).to_have_text("1")
+    expect(page.locator(".town-pin")).to_have_text("1")
+    expect(page.locator(".evidence-row", has_text="Sonapur")).to_contain_text("Sonapur")
 
     page.locator(".evidence-row", has_text="closed for repairs").click()
     expect(page.locator(".selected-incident .verification-badge")).to_have_text("Stale")
@@ -142,8 +145,8 @@ def test_collect_review_locate_and_replan(dashboard, tinyfish_network):
     page.click("text=Save review")
     expect(page.locator(".collection-message")).to_have_text("Evidence review saved.")
     expect(page.locator(".selected-incident .verification-badge")).to_have_text("Confirmed by reviewer")
-    expect(page.locator(".summary-card.violet b")).to_have_text("1")
-    expect(page.locator(".map-options")).to_contain_text("1 on map")
+    expect(page.locator(".summary-card.violet b")).to_have_text("0")
+    expect(page.locator(".map-options .toggle-row", has_text="Landslides")).to_contain_text("1 on map")
 
     # Plan again. The form's default "cautious" priority puts the route that avoids the confirmed report first;
     # it still says verify, because the old report names NH-6 without a location.
@@ -230,7 +233,7 @@ def test_database_failure_is_shown_and_recovers(dashboard, monkeypatch, tmp_path
     monkeypatch.setenv("DATABASE_PATH", str(good))
     get_settings.cache_clear()
     page.click("[aria-label='Refresh evidence and API status']")
-    expect(page.locator(".connection-label")).to_have_text("API connected")
+    expect(page.locator(".connection-label")).to_contain_text("Live · updated")
     expect(page.locator(".collection-message")).to_have_text("Evidence and service status are up to date.")
 
 
@@ -383,3 +386,23 @@ def test_sidebar_can_be_hidden_and_the_choice_is_remembered(dashboard):
     expect(page.locator(".sidebar-toggle")).to_have_attribute("aria-expanded", "false")
     page.locator(".sidebar-toggle").click()
     expect(page.locator("#sidebar")).to_be_visible()
+
+
+
+def test_town_pin_lists_the_reports_that_name_the_town_and_live_refresh_announces_new_reports(dashboard, client, add_incident):
+    add_incident("first", summary="Landslide near Shillong blocks traffic", published_at="2 hours ago")
+    assert client.post("/api/places/locate").json()["found"] == 1  # Shillong, from the Nominatim fake
+    page = dashboard
+    page.clock.install()
+    page.open()
+    pin = page.locator(".town-pin")
+    expect(pin).to_have_text("1")
+    pin.click()
+    expect(page.locator(".global-search input")).to_have_value("Shillong")
+    expect(page.locator(".selected-incident h3")).to_have_text("Report first")
+    expect(page.locator(".selected-incident .incident-meta")).to_contain_text("Approximate · Shillong named in report")
+
+    add_incident("second", summary="Second slide near Shillong", published_at="1 hour ago")
+    page.clock.run_for(61_000)  # the dashboard reloads every minute
+    expect(page.locator(".town-pin")).to_have_text("2")
+    expect(page.locator(".collection-message")).to_contain_text("1 new report arrived at")

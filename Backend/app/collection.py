@@ -25,6 +25,7 @@ from fastapi import HTTPException
 from .config import get_settings
 from .evidence import normalize_source_url, source_category
 from .monitoring import log_call
+from .places import geocode_places, pending_places
 from .regions import active_region
 from .road_intelligence import _request_json, load_incidents
 
@@ -256,6 +257,7 @@ def collect_candidates(connection: sqlite3.Connection, searches: list[dict[str, 
         _update_run(connection, run_id, searches_done=done, results=results, stored=len(new_ids), duplicates=duplicates,
                     filtered=filtered, failed_searches=failed_searches, phase="searching" if done < len(searches) else "reading pages")
     fetched, fetch_failed = _fetch_pages(connection, new_ids, key, run_id)
+    located = locate_places(connection, run_id)
     status = "failed" if failed_searches == len(searches) else "partial" if failed_searches else "complete"
     if status == "failed":
         message = "TinyFish could not return search results. Try again later."
@@ -265,6 +267,8 @@ def collect_candidates(connection: sqlite3.Connection, searches: list[dict[str, 
     else:
         message = (f"{len(new_ids)} new reports from {len(searches)} searches; {fetched} pages read with TinyFish Fetch. "
                    "Search results are unverified evidence candidates; location is unknown until a reviewer confirms it.")
+    if located["found"]:
+        message += f" {located['found']} newly named towns placed on the map (approximate)."
     if filtered:
         message += f" {filtered} results from sources outside the allowed categories ({', '.join(allowed)}) were skipped."
     if failed_searches and status != "failed":
@@ -274,6 +278,16 @@ def collect_candidates(connection: sqlite3.Connection, searches: list[dict[str, 
         raise HTTPException(status_code=502, detail=message)  # the failed run stays in the log
     return {"status": status, "collected": len(new_ids), "duplicates": duplicates, "message": message, "run_id": run_id,
             "incidents": load_incidents(connection, 100)}
+
+
+def locate_places(connection: sqlite3.Connection, run_id: str | None = None) -> dict[str, Any]:
+    """Look up the real coordinates of towns named in reports that have not been placed yet."""
+    names = pending_places(connection, load_incidents(connection))
+    if not names:
+        return {"looked_up": 0, "found": 0, "not_found": 0, "failed": 0}
+    if run_id:
+        _update_run(connection, run_id, phase="locating places")
+    return geocode_places(connection, names)
 
 
 def due_for_recheck(incidents: list[dict[str, Any]]) -> list[str]:

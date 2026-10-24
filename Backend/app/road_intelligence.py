@@ -132,7 +132,10 @@ def _geocode(place: str) -> dict[str, Any]:
 
 
 def plan_route(payload) -> dict[str, Any]:
-    origin, destination = _geocode(payload.origin), _geocode(payload.destination)
+    # Each place keeps the name the person typed: Nominatim's best match can be a road or station in that town.
+    origin_query, destination_query = payload.origin.strip(), payload.destination.strip()
+    origin = {**_geocode(origin_query), "query": origin_query}
+    destination = {**_geocode(destination_query), "query": destination_query}
     coordinates = f"{origin['longitude']},{origin['latitude']};{destination['longitude']},{destination['latitude']}"
     routes, routing_fetched_at = _cached_json(
         f"https://router.project-osrm.org/route/v1/driving/{coordinates}?{urlencode({'overview':'full','geometries':'geojson','alternatives':'3','steps':'true'})}",
@@ -142,8 +145,7 @@ def plan_route(payload) -> dict[str, Any]:
     if routes.get("code") != "Ok" or not routes.get("routes"):
         raise HTTPException(status_code=422, detail="The routing service could not find a drivable route between these places.")
     with get_connection() as connection:
-        incident_rows = connection.execute("SELECT * FROM incidents").fetchall()
-    incident_items = annotate([incident_from_row(row) for row in incident_rows])
+        incident_items = load_incidents(connection)
     candidates = []
     for index, route in enumerate(routes["routes"]):
         highways = _route_highways(route)
@@ -163,7 +165,7 @@ def plan_route(payload) -> dict[str, Any]:
         candidates.sort(key=lambda r: r["distance_m"])
     elif payload.priority == "cautious":
         candidates.sort(key=lambda r: (r["exposure"]["nearby"]["confirmed"], _unconfirmed_nearby(r["exposure"]),
-                                       len(r["exposure"]["highway_mentions"]), r["duration_s"]))
+                                       len(r["exposure"]["place_match_ids"]), len(r["exposure"]["highway_mentions"]), r["duration_s"]))
     for index, route in enumerate(candidates):
         route["priority_rank"] = index + 1
     newest_collection = max((item["collected_at"] for item in incident_items), default=None)
@@ -261,7 +263,12 @@ def load_incidents(connection: sqlite3.Connection, limit: int = 500) -> list[dic
         incident["open_flags"] = [{key: flag[key] for key in ("reason", "note", "created_at")}
                                   for flag in flags.get(incident["id"], []) if flag["resolved_at"] is None]
         incident["timeline"] = timeline(incident, checks.get(incident["id"], []), flags.get(incident["id"], []))
-    return annotate(incidents)
+    return annotate(incidents, _place_points(connection))
+
+
+def _place_points(connection: sqlite3.Connection) -> dict[str, tuple[float, float]]:
+    rows = connection.execute("SELECT name, latitude, longitude FROM place_locations WHERE latitude IS NOT NULL").fetchall()
+    return {row["name"]: (row["latitude"], row["longitude"]) for row in rows}
 
 
 CHECK_TEXT = {
@@ -314,6 +321,8 @@ def timeline(incident: dict[str, Any], checks: list[sqlite3.Row], flags: list[sq
 
 
 MATCH_TOLERANCE_M = 3000
+# A report placed at a town (approximate) matches a route passing within this distance of the town.
+PLACE_TOLERANCE_M = 5000
 EVIDENCE_MAX_AGE_S = 24 * 3600
 # Reports a reviewer has dismissed as irrelevant or marked resolved by an authoritative update.
 INACTIVE_STATES = {"dismissed", "resolved"}
@@ -324,15 +333,28 @@ def route_exposure(route_geometry: dict[str, Any], incidents: list[dict[str, Any
                    tolerance_m: float = MATCH_TOLERANCE_M) -> dict[str, Any]:
     """Count reviewer-located reports near a route by verification state.
 
-    Reports without coordinates are never matched by distance. Those that name a national
-    highway the route uses are listed under highway_mentions as low-confidence relevance;
-    the rest only count as unlocated. Dismissed reports are ignored.
+    Reports without reviewer coordinates are never counted as nearby. Those placed at a town they name
+    (approximate) are listed under place_matches when the town is within 5 km of the route; those that name
+    a national highway the route uses are listed under highway_mentions; both are lower-confidence relevance.
+    The rest only count as unlocated. Dismissed and resolved reports are ignored.
     """
     relevant = [item for item in incidents if item["verification"] not in INACTIVE_STATES]
     located = [item for item in relevant if item.get("latitude") is not None and item.get("longitude") is not None]
     located_ids = {item["id"] for item in located}
     unlocated = [item for item in relevant if item["id"] not in located_ids]
-    highway_mentions = {highway: [item["id"] for item in unlocated if highway in item.get("mentions", {}).get("highways", [])]
+    line = route_geometry.get("coordinates", [])
+    distance_to_route = _route_distance(line)
+    place_matches: dict[str, list[str]] = {}
+    place_distances: dict[str, int] = {}
+    for item in unlocated:
+        point = item.get("approximate_location")
+        distance = distance_to_route(point["latitude"], point["longitude"], PLACE_TOLERANCE_M) if point else None
+        if distance is not None:
+            place_matches.setdefault(point["place"], []).append(item["id"])
+            place_distances[item["id"]] = round(distance)
+    placed = {incident_id for ids in place_matches.values() for incident_id in ids}
+    highway_mentions = {highway: [item["id"] for item in unlocated if item["id"] not in placed
+                                  and highway in item.get("mentions", {}).get("highways", [])]
                         for highway in highways or {}}
     highway_mentions = {highway: ids for highway, ids in highway_mentions.items() if ids}
     mention_ids = list(dict.fromkeys(incident_id for ids in highway_mentions.values() for incident_id in ids))
@@ -348,22 +370,15 @@ def route_exposure(route_geometry: dict[str, Any], incidents: list[dict[str, Any
         "highway_mentions": highway_mentions,
         "highway_mention_ids": mention_ids,
         "highway_mentions_stale": sum(item["freshness"] == "stale" for item in unlocated if item["id"] in mention_ids),
+        "place_tolerance_m": PLACE_TOLERANCE_M,
+        "place_matches": place_matches,
+        "place_match_ids": list(placed),
+        "place_distances": place_distances,
+        "place_matches_stale": sum(item["freshness"] == "stale" for item in unlocated if item["id"] in placed),
     }
-    line = route_geometry.get("coordinates", [])
-    if len(line) < 2 or not located:
-        return exposure
-    # Equirectangular projection around the route's mean latitude; accurate enough at a few km.
-    mean_lat = math.radians(sum(point[1] for point in line) / len(line))
-    sx, sy = 111320 * math.cos(mean_lat), 111320
-    xy = [(point[0] * sx, point[1] * sy) for point in line]
-    min_x, max_x = min(x for x, _ in xy) - tolerance_m, max(x for x, _ in xy) + tolerance_m
-    min_y, max_y = min(y for _, y in xy) - tolerance_m, max(y for _, y in xy) + tolerance_m
     for incident in located:
-        px, py = incident["longitude"] * sx, incident["latitude"] * sy
-        if not (min_x <= px <= max_x and min_y <= py <= max_y):
-            continue
-        distance = _distance_to_line(px, py, xy)
-        if distance > tolerance_m:
+        distance = distance_to_route(incident["latitude"], incident["longitude"], tolerance_m)
+        if distance is None:
             continue
         exposure["nearby_distances"][incident["id"]] = round(distance)
         state = incident["verification"]
@@ -382,6 +397,7 @@ SEVERITY_POINTS = {"closure": 10, "landslide": 10, "bridge": 10, "flood": 8, "ac
 def impact_reports(exposure: dict[str, Any], incidents_by_id: dict[str, dict[str, Any]], limit: int = 10) -> list[dict[str, Any]]:
     """Reports that may affect a route, each with a relevance score and the reasons behind it (report 6.6)."""
     matches = [(incident_id, "precise") for incident_id in exposure["nearby_ids"]]
+    matches += [(incident_id, "place") for incident_id in exposure.get("place_match_ids", [])]
     matches += [(incident_id, "road") for incident_id in exposure["highway_mention_ids"]]
     scored = []
     for incident_id, match in matches:
@@ -390,6 +406,11 @@ def impact_reports(exposure: dict[str, Any], incidents_by_id: dict[str, dict[str
             distance = exposure["nearby_distances"][incident_id]
             location = 30 + round(20 * (1 - distance / exposure["tolerance_m"]))
             where = f"{distance / 1000:.1f} km from the route (reviewer-confirmed location)"
+        elif match == "place":
+            distance = exposure["place_distances"][incident_id]
+            location = 18 + round(8 * (1 - distance / exposure["place_tolerance_m"]))
+            where = (f"Names {item['approximate_location']['place']}, {distance / 1000:.1f} km from the route "
+                     "(approximate: the town, not the exact spot)")
         else:
             distance, location = None, 12
             roads = ", ".join(road for road, ids in exposure["highway_mentions"].items() if incident_id in ids)
@@ -436,6 +457,28 @@ def route_coverage(highways: dict[str, int], incidents: list[dict[str, Any]]) ->
     return {"highways": rows, "note": note}
 
 
+def _route_distance(line: list[list[float]]):
+    """A function giving a point's distance to the route in metres, or None beyond a tolerance.
+
+    Equirectangular projection around the route's mean latitude; accurate enough at a few km.
+    """
+    if len(line) < 2:
+        return lambda latitude, longitude, tolerance: None
+    mean_lat = math.radians(sum(point[1] for point in line) / len(line))
+    sx, sy = 111320 * math.cos(mean_lat), 111320
+    xy = [(point[0] * sx, point[1] * sy) for point in line]
+    min_x, max_x = min(x for x, _ in xy), max(x for x, _ in xy)
+    min_y, max_y = min(y for _, y in xy), max(y for _, y in xy)
+
+    def distance(latitude: float, longitude: float, tolerance: float) -> float | None:
+        px, py = longitude * sx, latitude * sy
+        if not (min_x - tolerance <= px <= max_x + tolerance and min_y - tolerance <= py <= max_y + tolerance):
+            return None
+        meters = _distance_to_line(px, py, xy)
+        return meters if meters <= tolerance else None
+    return distance
+
+
 def _distance_to_line(px: float, py: float, xy: list[tuple[float, float]]) -> float:
     nearest = float("inf")
     for (ax, ay), (bx, by) in zip(xy, xy[1:]):
@@ -476,15 +519,21 @@ def recommend(route: dict[str, Any], routes: list[dict[str, Any]], newest_collec
     unconfirmed = _unconfirmed_nearby(exposure)
     if unconfirmed:
         reasons.append(f"{_plural(unconfirmed, 'report')} within {km} of this route {'is' if unconfirmed == 1 else 'are'} not confirmed by a reviewer.")
+    placed = len(exposure.get("place_match_ids", []))
+    if placed:
+        stale = exposure["place_matches_stale"]
+        reasons.append(f"{_plural(placed, 'report')} {'names' if placed == 1 else 'name'} a town on this route "
+                       f"({', '.join(exposure['place_matches'])}){f', {stale} past their freshness window' if stale else ''}. "
+                       "They are placed at the town, not the exact spot on the road.")
     mentioned = len(exposure["highway_mention_ids"])
     if mentioned:
         stale = exposure["highway_mentions_stale"]
         reasons.append(f"{_plural(mentioned, 'report')} without a confirmed location {'mentions' if mentioned == 1 else 'mention'} "
                        f"{', '.join(exposure['highway_mentions'])}, which this route uses"
                        f"{f' ({stale} past their freshness window)' if stale else ''}. Where on the road is not known.")
-    other_unlocated = exposure["unlocated_reports"] - mentioned
+    other_unlocated = exposure["unlocated_reports"] - mentioned - placed
     if other_unlocated:
-        reasons.append(f"{_plural(other_unlocated, 'other report' if mentioned else 'report')} {'has' if other_unlocated == 1 else 'have'} no reviewer-confirmed location, so exposure to them is unknown.")
+        reasons.append(f"{_plural(other_unlocated, 'other report' if mentioned or placed else 'report')} {'has' if other_unlocated == 1 else 'have'} no reviewer-confirmed location, so exposure to them is unknown.")
     if newest_collection is None:
         reasons.append("No reports have been collected. No reports does not mean the road is clear.")
     elif _age_seconds(newest_collection) > EVIDENCE_MAX_AGE_S:

@@ -180,6 +180,8 @@ class IncidentOut(BaseModel):
     freshness_window_h: int = 24
     regions: list[str] = Field(default_factory=list)
     location_confidence: str = "none"
+    # The town a report names, at its real coordinates; approximate, never the exact spot (app/places.py).
+    approximate_location: dict[str, str | float] | None = None
     event_types: list[str] = Field(default_factory=list)
     duplicate_ids: list[str] = Field(default_factory=list)
     related_ids: list[str] = Field(default_factory=list)

@@ -119,7 +119,8 @@ Fill these in after the team reviews a sample by hand. Until then they are **not
 - **Source categories** come from the domain: government domains are official, and a list of social and news sites covers the rest. A news site missing from the list counts as *other* unless TinyFish news search found it.
 - **Re-check timing** (half the freshness window, or a day for reports without a time) is a default, not a measured value. Re-checks read the page again; they do not search for newer reports.
 - **Regions.** Only Northeast India is configured. Districts are listed only for corridor places we are sure of, and road aliases only where OSRM's highway refs back them. The interface is in English.
-- **Location.** Coordinates come only from a reviewer. Highway mentions show that a report may be relevant, but not where on the road it is.
+- **Approximate locations** are the coordinates of the town a report names, chosen by a text rule (the only town named, or one after "at", "near", "in", "from", "between"). A dateline town ("SHILLONG:") can be picked when the incident is elsewhere, so these pins say which town a report is about, never the exact spot, and never make a route "consider an alternative".
+- **Location.** Exact coordinates come only from a reviewer. Highway mentions show that a report may be relevant, but not where on the road it is.
 - **Text heuristics.** Event types, duplicates, conflicts and corroboration are keyword and similarity rules, shown as hints. They can miss or misjudge reports, and they never change a reviewer's decision.
 - **Routing.** The public OSRM car profile: no live traffic and no truck restrictions, so vehicle suitability is always "unknown". The public server can be slow or rate-limited; cached routes are labelled with their fetch time.
 - **Storage.** SQLite, not PostgreSQL + PostGIS. Distances use a planar approximation that is accurate at a few kilometres. PostGIS is the scale-up path in the report.

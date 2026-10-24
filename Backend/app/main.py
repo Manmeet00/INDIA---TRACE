@@ -1,6 +1,6 @@
 import asyncio
 from contextlib import asynccontextmanager, suppress
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import logging
 import time
 from uuid import uuid4
@@ -11,8 +11,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from . import jobs
-from .collection import (NOT_CONFIGURED, collect_candidates, collection_run, collection_runs, default_searches, recheck_reports,
-                         targeted_searches)
+from .collection import (NOT_CONFIGURED, collect_candidates, collection_run, collection_runs, default_searches, locate_places,
+                         recheck_reports, targeted_searches)
 from .config import get_settings
 from .database import get_connection, initialize_database
 from .monitoring import log_route_plan, metrics
@@ -25,6 +25,8 @@ from .schemas import (CollectionRequest, CollectionResult, CollectionRun, Dashbo
 
 settings = get_settings()
 logger = logging.getLogger("indiatrace")
+# When the scheduled collection runs next (None when the schedule is off), shown by /api/health.
+schedule: dict[str, str | None] = {"next_collection_at": None}
 
 
 def _scheduled_collection() -> None:
@@ -46,6 +48,7 @@ async def _collect_periodically(interval_minutes: int) -> None:
             await asyncio.to_thread(_scheduled_collection)
         except Exception:  # A failed run is logged in collection_runs; keep the schedule alive.
             logger.exception("Scheduled collection failed")
+        schedule["next_collection_at"] = (datetime.now(timezone.utc) + timedelta(minutes=interval_minutes)).isoformat()
         await asyncio.sleep(interval_minutes * 60)
 
 
@@ -56,7 +59,10 @@ async def lifespan(_: FastAPI):
     except sqlite3.Error:
         # Start anyway so /api/health can report the problem; data endpoints answer 503 until it is fixed.
         logger.exception("Could not initialise the database at %s", settings.database_path)
-    task = asyncio.create_task(_collect_periodically(settings.collection_interval_minutes)) if settings.collection_interval_minutes > 0 else None
+    task = None
+    if settings.collection_interval_minutes > 0:
+        schedule["next_collection_at"] = datetime.now(timezone.utc).isoformat()  # the first run starts now
+        task = asyncio.create_task(_collect_periodically(settings.collection_interval_minutes))
     yield
     if task:
         task.cancel()
@@ -98,7 +104,9 @@ def health():
     # Reading a table, not just SELECT 1, also catches a database that was never initialised.
     with get_connection() as connection:
         connection.execute("SELECT 1 FROM incidents LIMIT 1")
-    return {"status": "ok", "service": settings.app_name}
+    interval = get_settings().collection_interval_minutes
+    return {"status": "ok", "service": settings.app_name, "collection_interval_minutes": interval,
+            "next_collection_at": schedule["next_collection_at"] if interval > 0 else None}
 
 
 @app.post("/api/routes/plan")
@@ -268,6 +276,14 @@ def region_overview():
         "coverage": coverage_by_state(region, incidents),
         "coverage_note": "A state with no recent reports is a coverage gap, not evidence that its roads are clear.",
     }
+
+
+@app.post("/api/places/locate")
+def locate_named_places():
+    """Looks up the real coordinates of towns named in stored reports (OpenStreetMap Nominatim, one request
+    a second). Collection does this for new reports; this fills in reports collected before."""
+    with jobs.exclusive(), get_connection() as connection:
+        return locate_places(connection)
 
 
 @app.get("/api/map-config")

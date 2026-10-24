@@ -35,7 +35,7 @@ export function freshnessLabel(item) {
   return item.freshness === 'fresh' ? `Within ${window} window` : item.freshness === 'stale' ? `Older than ${window} window` : 'Source time unknown'
 }
 
-export const LOCATION_LABELS = { precise: 'Reviewer-confirmed coordinates', road_mentioned: 'Road named · exact spot unknown', place_mentioned: 'Place named · exact spot unknown', none: 'No location in source' }
+export const LOCATION_LABELS = { precise: 'Reviewer-confirmed coordinates', approximate: 'Approximate · town named in report', road_mentioned: 'Road named · exact spot unknown', place_mentioned: 'Place named · exact spot unknown', none: 'No location in source' }
 export const FLAG_REASONS = { outdated: 'Outdated', wrong_location: 'Wrong location', duplicate: 'Duplicate', not_relevant: 'Not relevant', other: 'Other' }
 export const TIME_WINDOWS = [['1', 'Last 24 hours'], ['7', 'Last 7 days'], ['30', 'Last 30 days'], ['365', 'Last year']]
 export const INACTIVE_STATES = ['dismissed', 'resolved']
@@ -71,14 +71,24 @@ export function exposureSummary(exposure) {
   const km = `${exposure.tolerance_m / 1000} km`
   const nearby = Object.values(exposure.nearby).reduce((total, count) => total + count, 0)
   const parts = [nearby ? `${nearby} report${nearby === 1 ? '' : 's'} within ${km}${exposure.nearby.confirmed ? ` (${exposure.nearby.confirmed} confirmed)` : ''}` : `No located reports within ${km}`]
+  const placed = exposure.place_match_ids?.length || 0
+  if (placed) parts.push(`${placed} name${placed === 1 ? 's' : ''} a town on the route (${Object.keys(exposure.place_matches).join(', ')}, approximate)`)
   const mentioned = exposure.highway_mention_ids?.length || 0
   if (mentioned) parts.push(`${mentioned} name${mentioned === 1 ? 's' : ''} ${Object.keys(exposure.highway_mentions).join(', ')} (location unconfirmed)`)
-  if (exposure.unlocated_reports - mentioned > 0) parts.push(`${exposure.unlocated_reports - mentioned} unlocated`)
+  if (exposure.unlocated_reports - mentioned - placed > 0) parts.push(`${exposure.unlocated_reports - mentioned - placed} unlocated`)
   return parts.join(' · ')
 }
 
+// The name the person typed; saved snapshots without it fall back to the geocoder's first name part.
 export function placeName(place) {
-  return place.name.split(',')[0]
+  return (place.query || place.name).split(',')[0]
+}
+
+// Where a report sits on the map: reviewer coordinates (exact) or the town it names (approximate).
+export function locationText(incident) {
+  if (incident.location_text) return `${incident.location_text} · reviewer-confirmed`
+  if (incident.approximate_location) return `Approximate · ${incident.approximate_location.place} named in report`
+  return LOCATION_LABELS[incident.location_confidence] || 'Location unknown'
 }
 
 // Report 7 and 9: where a source comes from. Official means a government domain (gov.in, nic.in).

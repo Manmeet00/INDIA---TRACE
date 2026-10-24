@@ -10,6 +10,14 @@ from app.config import get_settings
 from app.database import get_connection
 
 
+@pytest.fixture(autouse=True)
+def no_network(monkeypatch):
+    """No test reaches a real service: requests fail unless a test fakes them (see the providers fixture)."""
+    def refuse(request, timeout, context):
+        raise AssertionError(f"Test tried to reach the network: {request.full_url}")
+    monkeypatch.setattr(road_intelligence, "urlopen", refuse)
+
+
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     """API client on an empty temporary database, with TinyFish switched off."""
@@ -112,6 +120,7 @@ def tinyfish_network(client, providers, monkeypatch):
     Fetch reads every page it is given."""
     monkeypatch.setenv("TINYFISH_API_KEY", "test-key")
     get_settings.cache_clear()
+    monkeypatch.setattr("app.places.time.sleep", lambda _: None)
     providers[SEARCH] = {"results": []}
     providers[FETCH] = lambda request: {"results": [{"url": url, "description": "Page"} for url in json.loads(request.data)["urls"]]}
     return providers

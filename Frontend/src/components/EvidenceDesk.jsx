@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import Icon from './Icon.jsx'
 import Milestone from './Milestone.jsx'
-import { EVENT_LABELS, FLAG_REASONS, LIFECYCLE_LABELS, LOCATION_LABELS, SOURCE_LABELS, formatPublished, formatTime, freshnessLabel, statusLabel } from '../lib/format.js'
+import { EVENT_LABELS, FLAG_REASONS, LIFECYCLE_LABELS, SOURCE_LABELS, formatPublished, formatTime, freshnessLabel, locationText, statusLabel } from '../lib/format.js'
 
 // Duplicate, conflict and mention hints come from text heuristics in the API, never from verification.
 function ReportHints({ incident, incidents, onSelect }) {
@@ -117,7 +117,7 @@ export default function EvidenceDesk({ incident, incidents, visibleCount, messag
     {incident ? <div className="selected-incident">
       <div className="incident-top"><span className="hint-badge">{EVENT_LABELS[incident.event_type] || 'Other'}</span><span className={`verification-badge ${incident.evidence_status}`}>{statusLabel(incident)}</span><span className={`freshness-badge ${incident.freshness}`}>{freshnessLabel(incident)}</span><span className={`source-badge ${incident.source_category}`}>{SOURCE_LABELS[incident.source_category] || 'Other web page'}</span>{incident.lifecycle === 'needs_recheck' && <span className="hint-badge recheck">{LIFECYCLE_LABELS.needs_recheck}</span>}{incident.open_flags?.length > 0 && <span className="hint-badge conflict">Flagged</span>}{incident.conflict_ids?.length > 0 && <span className="hint-badge conflict">Possible conflict</span>}{incident.duplicate_ids?.length > 0 && <span className="hint-badge">Possible duplicate</span>}</div>
       <h3>{incident.title}</h3>
-      <div className="incident-meta"><span><Icon name="pin" size={15}/>{incident.location_text ? `${incident.location_text} · reviewer-confirmed` : LOCATION_LABELS[incident.location_confidence] || 'Location unknown'}</span><span><Icon name="layers" size={15}/>{incident.regions?.length ? incident.regions.join(', ') : 'Region not named in source'}</span><span><Icon name="clock" size={15}/>{formatPublished(incident)}</span></div>
+      <div className="incident-meta"><span><Icon name="pin" size={15}/>{locationText(incident)}</span><span><Icon name="layers" size={15}/>{incident.regions?.length ? incident.regions.join(', ') : 'Region not named in source'}</span><span><Icon name="clock" size={15}/>{formatPublished(incident)}</span></div>
       <p className="incident-summary">{incident.summary || 'No source summary provided.'}</p>
       <ReportHints incident={incident} incidents={incidents} onSelect={onSelect}/>
       <div className="source-link"><span className="source-avatar">{incident.source_name.slice(0, 1).toUpperCase()}</span><span><b>{incident.source_name}</b><small>Collected {formatTime(incident.collected_at)}</small></span><a href={incident.source_url} target="_blank" rel="noreferrer" aria-label={`Open source: ${incident.source_name}`}><Icon name="arrow" size={16}/></a></div>

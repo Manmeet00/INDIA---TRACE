@@ -23,8 +23,14 @@ const API_STATUS = {
 }
 
 function App() {
-  const { incidents, apiStatus, problem, lastRun, region, metrics, mapConfig, refresh: refreshWorkspace } = useWorkspace()
+  const { incidents, apiStatus, problem, lastRun, region, metrics, mapConfig, schedule, updatedAt, arrivals, refresh: refreshWorkspace } = useWorkspace()
   const [statusLabel, statusNote] = API_STATUS[apiStatus]
+  // Live: the dashboard reloads every minute; the API collects on its own schedule when one is set.
+  const clock = (value) => new Intl.DateTimeFormat('en-IN', { timeStyle: 'short' }).format(new Date(value))
+  const liveLabel = apiStatus === 'online' && updatedAt ? `Live · updated ${clock(updatedAt)}` : statusLabel
+  const scheduleNote = !schedule?.collection_interval_minutes ? 'Automatic collection is off'
+    : `Collects every ${schedule.collection_interval_minutes} min${schedule.next_collection_at ? ` · next ${clock(schedule.next_collection_at)}` : ''}`
+  const arrivalNote = arrivals ? `${arrivals.count} new report${arrivals.count === 1 ? '' : 's'} arrived at ${clock(arrivals.at)}.` : ''
   const sidebar = useSidebar()
   const [search, setSearch] = useState('')
   const { filters, setFilter, visibleIncidents } = useEvidenceFilters(incidents, search)
@@ -121,6 +127,8 @@ function App() {
   const flagIncident = (incident, flag) => save(() => api.flagIncident(incident.id, flag), 'Flag sent for review. It does not change the report’s status.')
 
   const selectIncident = (id) => { setSearch(''); setSelectedIncidentId(id) }
+  // A town pin lists the reports that name the town, newest first.
+  const selectTown = (town) => { setSearch(town.place); setSelectedIncidentId(town.items[0].id) }
   const toggleLayer = (key, shown) => setHiddenTypes((types) => shown ? types.filter((type) => type !== key) : [...types, key])
 
   const activeIncident = visibleIncidents.find((item) => item.id === selectedIncidentId) || visibleIncidents[0] || null
@@ -130,7 +138,7 @@ function App() {
     return `${matching.filter((item) => item.verification === 'confirmed').length} confirmed · ${matching.filter((item) => item.freshness === 'fresh').length} recent`
   }
   const typeCount = (type) => relevantIncidents.filter((item) => item.event_types?.includes(type)).length
-  const unknownLocationCount = relevantIncidents.filter((item) => item.latitude == null || item.longitude == null).length
+  const unknownLocationCount = relevantIncidents.filter((item) => item.latitude == null && !item.approximate_location).length
   const sourceCount = new Set(incidents.map((item) => item.source_name)).size
   const chosenRoute = plan?.routes?.find((item) => item.id === selectedRoute)
 
@@ -145,14 +153,14 @@ function App() {
         <a className="nav-item" href="#monitoring"><Icon name="clock"/> <span>Monitoring</span></a>
       </nav>
       <div className="sidebar-bottom">
-        <div className="offline-card"><span className={`status-dot ${apiStatus}`} /><span><b>{statusLabel}</b><small>{statusNote}</small></span></div>
+        <div className="offline-card"><span className={`status-dot ${apiStatus}`} /><span><b>{statusLabel}</b><small>{apiStatus === 'online' ? scheduleNote : statusNote}</small></span></div>
         <div className="sidebar-note"><span className="sidebar-landscape" aria-hidden="true">⌁</span><p>Road intelligence for essential deliveries across Northeast India.</p></div>
         <div className="team-card"><div className="team-avatar">TT</div><div><b>Team Tech Titans</b><small>INDIA-TRACE workspace</small></div></div>
       </div>
     </aside>
 
     <main className="main-area" id="overview">
-      <header className="topbar"><button type="button" className="sidebar-toggle" onClick={sidebar.toggle} aria-controls="sidebar" aria-expanded={!sidebar.hidden} aria-label={sidebar.hidden ? 'Show sidebar' : 'Hide sidebar'} title={sidebar.hidden ? 'Show sidebar' : 'Hide sidebar'}><Icon name="sidebar" size={20}/></button><div className="topbar-brand"><span className="brand-mark small"><span /><span /><span /></span><span><b>INDIA-TRACE</b><small>Road risk dashboard</small></span></div><label className="global-search"><Icon name="search" size={19}/><input aria-label="Search evidence" placeholder="Search locations, roads, sources or reports…" value={search} onChange={(event) => setSearch(event.target.value)}/></label><div className="top-actions"><span className={`connection-label ${apiStatus}`}><i/>{statusLabel}</span><div className="profile-avatar">TT</div><span className="profile-name">Tech Titans</span></div></header>
+      <header className="topbar"><button type="button" className="sidebar-toggle" onClick={sidebar.toggle} aria-controls="sidebar" aria-expanded={!sidebar.hidden} aria-label={sidebar.hidden ? 'Show sidebar' : 'Hide sidebar'} title={sidebar.hidden ? 'Show sidebar' : 'Hide sidebar'}><Icon name="sidebar" size={20}/></button><div className="topbar-brand"><span className="brand-mark small"><span /><span /><span /></span><span><b>INDIA-TRACE</b><small>Road risk dashboard</small></span></div><label className="global-search"><Icon name="search" size={19}/><input aria-label="Search evidence" placeholder="Search locations, roads, sources or reports…" value={search} onChange={(event) => setSearch(event.target.value)}/></label><div className="top-actions"><span className={`connection-label ${apiStatus}`} title={scheduleNote}><i/>{liveLabel}</span><div className="profile-avatar">TT</div><span className="profile-name">Tech Titans</span></div></header>
 
       <div className="page-content">
         <section className="summary-grid" aria-label="Workspace summary">
@@ -171,12 +179,12 @@ function App() {
           </div>
 
           <div className="center-column" id="map-section">
-            <RouteMap plan={plan} mapConfig={mapConfig} incidents={incidents} selectedRoute={selectedRoute} selectedIncident={activeIncident} onSelectIncident={selectIncident} hiddenTypes={hiddenTypes}/>
+            <RouteMap plan={plan} mapConfig={mapConfig} incidents={incidents} selectedRoute={selectedRoute} selectedIncident={activeIncident} onSelectIncident={selectIncident} onSelectTown={selectTown} hiddenTypes={hiddenTypes}/>
             <RouteComparison plan={plan} selectedRoute={selectedRoute} onSelectRoute={setSelectedRoute} onSelectIncident={selectIncident}/>
           </div>
 
           <aside className="right-column" id="evidence">
-            <EvidenceDesk incident={activeIncident} incidents={incidents} visibleCount={visibleIncidents.length} message={message || problem} refreshing={refreshing} onRefresh={refresh} onSelect={selectIncident} onReview={reviewIncident} onFlag={flagIncident} canRecheck={apiStatus === 'online' && !collectionLoading} onRecheck={recheckIncident}/>
+            <EvidenceDesk incident={activeIncident} incidents={incidents} visibleCount={visibleIncidents.length} message={message || problem || arrivalNote} refreshing={refreshing} onRefresh={refresh} onSelect={selectIncident} onReview={reviewIncident} onFlag={flagIncident} canRecheck={apiStatus === 'online' && !collectionLoading} onRecheck={recheckIncident}/>
             <EvidenceList incidents={incidents} visibleIncidents={visibleIncidents} activeId={activeIncident?.id} onSelect={setSelectedIncidentId} filters={filters} onFilterChange={setFilter} canCollect={apiStatus === 'online'} collecting={collectionLoading} progress={runProgress} onCollect={collect} onRecheckDue={recheckDue} lastRun={lastRun}/>
             <div className="source-footnote"><Icon name="check" size={15}/><span>Evidence is unverified until independently reviewed. Dispatch advice remains cautious.</span></div>
           </aside>

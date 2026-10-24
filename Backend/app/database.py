@@ -125,6 +125,15 @@ CREATE TABLE IF NOT EXISTS route_plans (
     status INTEGER NOT NULL,
     routes INTEGER
 );
+-- Real coordinates of places named in reports, from OpenStreetMap Nominatim. A report placed this way is
+-- "approximate": the town is known, the exact spot on the road is not.
+CREATE TABLE IF NOT EXISTS place_locations (
+    name TEXT PRIMARY KEY,
+    latitude REAL,
+    longitude REAL,
+    display_name TEXT,
+    geocoded_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS provider_cache (
     url TEXT PRIMARY KEY,
     response TEXT NOT NULL,

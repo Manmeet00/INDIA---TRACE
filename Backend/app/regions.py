@@ -21,6 +21,13 @@ class Place:
     state: str | None = None
     district: str | None = None
     aliases: tuple[str, ...] = ()  # alternate spellings and older names, matched to `name`
+    # "town" is a point that can be placed on the map (approximately); "area" (a district or valley) cannot.
+    kind: str = "town"
+
+    @property
+    def locatable(self) -> bool:
+        """A town in a known state; a name used in more than one state (Sonapur) is never placed."""
+        return self.kind == "town" and self.state is not None
 
 
 @dataclass(frozen=True)
@@ -48,8 +55,8 @@ class Region:
         object.__setattr__(self, "place_index", index)
 
 
-def _places(state: str | None, *names: str) -> tuple[Place, ...]:
-    return tuple(Place(name, state) for name in names)
+def _places(state: str | None, *names: str, kind: str = "town") -> tuple[Place, ...]:
+    return tuple(Place(name, state, kind=kind) for name in names)
 
 
 NORTHEAST = Region(
@@ -77,9 +84,10 @@ NORTHEAST = Region(
         Place("Sonapur"),  # in both Assam and Meghalaya
         # Elsewhere in the region: state only.
         *_places("Assam", "Tezpur", "Jorhat", "Dibrugarh", "Tinsukia", "Nagaon", "Bongaigaon", "Dhubri", "Goalpara",
-                 "Karimganj", "Lumding", "Diphu", "Dhemaji", "Lakhimpur", "Jeypore", "Barak Valley", "Saraighat",
-                 "Khanapara", "Cachar", "Kamrup"),
-        *_places("Meghalaya", "Tura", "Ri Bhoi", "East Jaintia Hills", "East Khasi Hills"),
+                 "Karimganj", "Lumding", "Diphu", "Dhemaji", "Lakhimpur", "Jeypore", "Saraighat", "Khanapara"),
+        *_places("Assam", "Barak Valley", "Cachar", "Kamrup", kind="area"),
+        *_places("Meghalaya", "Tura"),
+        *_places("Meghalaya", "Ri Bhoi", "East Jaintia Hills", "East Khasi Hills", kind="area"),
         *_places("Mizoram", "Lunglei", "Champhai", "Lawngtlai", "Siaha"),
         *_places("Manipur", "Imphal", "Ukhrul", "Churachandpur", "Jiribam", "Senapati", "Mao"),
         *_places("Nagaland", "Kohima", "Dimapur", "Mokokchung", "Wokha", "Zunheboto", "Khisama"),

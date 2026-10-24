@@ -145,9 +145,12 @@ def freshness(published: datetime | None, approximate: bool, window_s: float = 2
 
 
 def location_confidence(item: dict[str, Any]) -> str:
-    """precise: reviewer-entered coordinates; road/place: only named in text; none: no location at all."""
+    """precise: reviewer-entered coordinates; approximate: placed at the one town the report names;
+    road/place: only named in text; none: no location at all."""
     if item.get("latitude") is not None and item.get("longitude") is not None:
         return "precise"
+    if item.get("approximate_location"):
+        return "approximate"
     if item["mentions"]["highways"]:
         return "road_mentioned"
     return "place_mentioned" if item["mentions"]["places"] else "none"
@@ -182,6 +185,21 @@ def _dated_closely(first: dict[str, Any], second: dict[str, Any]) -> bool:
 
 
 SAME_PLACE_M = 1000
+PREPOSITION = r"\b(?:at|near|in|from|between)\s+(?:the\s+)?"
+
+
+def report_place(text: str, places: list[Any]) -> Any | None:
+    """The town a report is about: the only locatable town it names, or the first one it puts after
+    "at", "near", "in", "from" or "between". Several towns without that cue are ambiguous: None."""
+    towns = [place for place in places if place.locatable]
+    if len(towns) == 1:
+        return towns[0]
+    for place in towns:
+        names = "|".join(re.escape(name) for name in (place.name, *place.aliases))
+        if re.search(PREPOSITION + r"(?:" + names + r")\b", text):
+            return place
+    return None
+
 
 
 def _same_place_and_time(first: dict[str, Any], second: dict[str, Any]) -> bool:
@@ -195,9 +213,10 @@ def _same_place_and_time(first: dict[str, Any], second: dict[str, Any]) -> bool:
             and _dated_closely(first, second))
 
 
-def annotate(incidents: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def annotate(incidents: list[dict[str, Any]], place_points: dict[str, tuple[float, float]] | None = None) -> list[dict[str, Any]]:
     """Add mentions, regions, districts, scripts, source category, event type, freshness (per-type window),
-    location confidence, duplicate/related/conflict/corroborating ids, evidence_status and lifecycle to each report."""
+    approximate location (from place_points, the looked-up coordinates of named towns), location confidence,
+    duplicate/related/conflict/corroborating ids, evidence_status and lifecycle to each report."""
     region = active_region()
     place_pattern, state_pattern, road_aliases = _region_patterns(region.id)
     windows = region.freshness_window_h
@@ -224,6 +243,9 @@ def annotate(incidents: list[dict[str, Any]]) -> list[dict[str, Any]]:
         item["districts"] = list(dict.fromkeys(place.district for place in places if place.district))
         item["scripts"] = scripts_in(f"{item['title']} {item['summary']}")
         item["source_category"] = source_category(item.get("source_url"), item.get("search_kind"))
+        town = report_place(text, places)
+        point = (place_points or {}).get(town.name) if town else None
+        item["approximate_location"] = {"place": town.name, "latitude": point[0], "longitude": point[1]} if point else None
         item["location_confidence"] = location_confidence(item)
         tokens[item["id"]] = _tokens(text)
 

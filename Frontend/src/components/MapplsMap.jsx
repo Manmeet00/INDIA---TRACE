@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { escapeHtml, loadMappls } from '../lib/mappls.js'
 import { INACTIVE_STATES, mapCategory, statusLabel } from '../lib/format.js'
-import { BORDER_COLOR, MASK_COLOR } from '../lib/mapStyle.js'
+import { BORDER_COLOR, MASK_COLOR, townGroups, townPinHtml, townTooltip } from '../lib/mapStyle.js'
 
 // Same colours as the OpenStreetMap view, so routes and evidence read the same on either map.
 const COLORS = { route: '#0878e8', candidate: '#64748b', origin: '#079352', destination: '#e44a58', confirmed: '#df3946', stale: '#9ba8b8', other: '#e99b28' }
@@ -27,13 +27,17 @@ function indiaMask(boundary) {
     geometry: { type: 'Polygon', coordinates: [[[-180, -89], [180, -89], [180, 89], [-180, 89], [-180, -89]], ...boundary] } }] }
 }
 
-export default function MapplsMap({ apiKey, plan, incidents, selectedRoute, selectedIncident, onSelectIncident, hiddenTypes, boundary, onUnavailable }) {
+export default function MapplsMap({ apiKey, plan, incidents, selectedRoute, selectedIncident, onSelectIncident, onSelectTown, hiddenTypes, boundary, onUnavailable }) {
   // The SDK documents creating a map from its container's id.
   const [containerId] = useState(() => `mappls-map-${++mapCount}`)
   const select = useRef(onSelectIncident)
+  const selectTown = useRef(onSelectTown)
   const [map, setMap] = useState(null)
 
-  useEffect(() => { select.current = onSelectIncident }, [onSelectIncident])
+  useEffect(() => {
+    select.current = onSelectIncident
+    selectTown.current = onSelectTown
+  }, [onSelectIncident, onSelectTown])
 
   useEffect(() => {
     let cancelled = false
@@ -43,7 +47,8 @@ export default function MapplsMap({ apiKey, plan, incidents, selectedRoute, sele
       if (cancelled) return
       instance = new mappls.Map(containerId, {
         ...DEFAULT_VIEW, zoomControl: true, zoomControlOptions: { position: mappls.ControlPosition?.RIGHT_BOTTOM },
-        fullscreenControl: false, traffic: false, clickableIcons: false, backgroundColor: '#e2ece7',
+        // traffic: Mappls' live traffic control, so a dispatcher can switch real-time traffic on.
+        fullscreenControl: false, traffic: true, clickableIcons: false, backgroundColor: '#e2ece7',
         token_callback: () => { if (!cancelled) onUnavailable('Mappls rejected the map key.') },
       })
       instance.addListener('load', () => {
@@ -94,7 +99,14 @@ export default function MapplsMap({ apiKey, plan, incidents, selectedRoute, sele
     const layers = []
     if (plan?.origin) layers.push(marker(mappls, map, { lat: plan.origin.latitude, lng: plan.origin.longitude, color: COLORS.origin, size: 16, popup: `Origin · ${plan.origin.name}` }))
     if (plan?.destination) layers.push(marker(mappls, map, { lat: plan.destination.latitude, lng: plan.destination.longitude, color: COLORS.destination, size: 16, popup: `Destination · ${plan.destination.name}` }))
-    incidents.filter((item) => !INACTIVE_STATES.includes(item.verification) && !hiddenTypes.includes(mapCategory(item)) && item.latitude != null && item.longitude != null)
+    const shown = (item) => !INACTIVE_STATES.includes(item.verification) && !hiddenTypes.includes(mapCategory(item))
+    townGroups(incidents, shown).forEach((town) => {
+      const pin = new mappls.Marker({ map, position: { lat: town.latitude, lng: town.longitude }, html: townPinHtml(town), width: 28, height: 28,
+        offset: [0, 14], popupHtml: escapeHtml(townTooltip(town)) })
+      pin.addListener('click', () => selectTown.current(town))
+      layers.push(pin)
+    })
+    incidents.filter((item) => shown(item) && item.latitude != null && item.longitude != null)
       .forEach((item) => {
         const color = item.evidence_status === 'confirmed' ? COLORS.confirmed : item.evidence_status === 'stale' ? COLORS.stale : COLORS.other
         const point = marker(mappls, map, { lat: item.latitude, lng: item.longitude, color, size: selectedIncident?.id === item.id ? 18 : 14, popup: `${item.title} · ${statusLabel(item)}` })

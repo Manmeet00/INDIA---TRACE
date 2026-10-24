@@ -34,6 +34,9 @@ def tinyfish(client, monkeypatch):
             "errors": [{"url": u, "error": "blocked"} for u in body["urls"] if "example.org" in u],
         }
     monkeypatch.setattr(collection, "_request_json", fake)
+    # Place lookups for the towns these reports name: Nominatim finds none, so nothing is placed.
+    monkeypatch.setattr("app.places._request_json", lambda url, *args, **kwargs: calls.append(url) or [])
+    monkeypatch.setattr("app.places.time.sleep", lambda _: None)
     return calls
 
 
