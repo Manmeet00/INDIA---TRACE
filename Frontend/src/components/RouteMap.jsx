@@ -14,6 +14,7 @@ import { BORDER_COLOR, HERE_COLOR, HERE_ZOOM, INDIA_BOUNDS, MASK_COLOR, inIndia,
 import { placeNamesInView } from '../lib/placeNames.js'
 import { drawRoadTile } from '../lib/hybridRoads.js'
 import { prepareRoute, progress } from '../lib/navigation.js'
+import { INCIDENT_STYLES, incidentIconHtml, incidentStyle } from '../lib/incidentIcons.js'
 import { getAirQuality, loadIndiaBoundary } from '../services/api.js'
 
 const WORLD = [[-89, -180], [-89, 180], [89, 180], [89, -180]]
@@ -204,6 +205,44 @@ function DetailLayers({ overlays, here, plan }) {
 
 // Only reports with reviewer-confirmed coordinates are drawn; text mentions never become map points.
 // navigating: only the followed route is drawn and the map follows the device instead of fitting the route.
+// Road reports as Google Maps-style symbols by type. Reviewer-entered coordinates are exact. A report that names a
+// town is drawn at that town with a dashed ring, because the spot on the road is unknown: one symbol per town and
+// type (no counts), several types at one town side by side. Stale reports are faded.
+const ICON_SIZE = 30
+function IncidentMarkers({ incidents, selectedIncident, onSelectIncident }) {
+  const typeOf = (item) => (INCIDENT_STYLES[item.event_type] ? item.event_type : 'other')
+  const exact = incidents.filter((item) => item.latitude != null && item.longitude != null)
+  const groups = new Map()
+  for (const item of incidents) {
+    const town = item.latitude == null && item.approximate_location
+    if (!town || town.latitude == null) continue
+    const key = `${town.place}|${typeOf(item)}`
+    if (!groups.has(key)) groups.set(key, { key, type: typeOf(item), town, items: [] })
+    groups.get(key).items.push(item)
+  }
+  const atTown = new Map()
+  for (const group of groups.values()) atTown.set(group.town.place, [...(atTown.get(group.town.place) || []), group])
+  const newest = (items) => [...items].sort((a, b) => (a.evidence_status === 'stale') - (b.evidence_status === 'stale')
+    || String(b.collected_at || '').localeCompare(String(a.collected_at || '')))[0]
+  return <>
+    {exact.map((item) => <Marker key={item.id} position={[item.latitude, item.longitude]} zIndexOffset={selectedIncident?.id === item.id ? 600 : 400}
+      eventHandlers={{ click: () => onSelectIncident(item.id) }}
+      icon={L.divIcon({ className: '', html: incidentIconHtml(typeOf(item), { stale: item.evidence_status === 'stale', selected: selectedIncident?.id === item.id }), iconSize: [ICON_SIZE, ICON_SIZE], iconAnchor: [ICON_SIZE / 2, ICON_SIZE / 2] })}>
+      <Tooltip>{incidentStyle(typeOf(item)).label} · {item.title} · {statusLabel(item)}</Tooltip></Marker>)}
+    {[...atTown.values()].flatMap((list) => list.map((group, index) => {
+      const shift = (index - (list.length - 1) / 2) * (ICON_SIZE + 6)
+      const selected = group.items.some((item) => item.id === selectedIncident?.id)
+      const lead = newest(group.items)
+      const count = group.items.length
+      return <Marker key={group.key} position={[group.town.latitude, group.town.longitude]} zIndexOffset={selected ? 500 : 300}
+        eventHandlers={{ click: () => onSelectIncident(selected ? selectedIncident.id : lead.id) }}
+        icon={L.divIcon({ className: '', html: incidentIconHtml(group.type, { approximate: true, stale: group.items.every((item) => item.evidence_status === 'stale'), selected }),
+          iconSize: [ICON_SIZE, ICON_SIZE], iconAnchor: [ICON_SIZE / 2 - shift, ICON_SIZE / 2] })}>
+        <Tooltip>{incidentStyle(group.type).label}: {count} report{count === 1 ? '' : 's'} placed at {group.town.place} · exact spot unknown<br/>{lead.title}</Tooltip></Marker>
+    }))}
+  </>
+}
+
 // navigation: { now, following, overview, onUserMove } while a route is followed (see NavigationLayer).
 function DashboardMap({ plan, incidents, selectedRoute, selectedIncident, onSelectIncident, hiddenTypes, boundary, here, focusKey, base, overlays, navigation }) {
   const navigating = Boolean(navigation)
@@ -228,7 +267,7 @@ function DashboardMap({ plan, incidents, selectedRoute, selectedIncident, onSele
       <Tooltip>{plaza.name} toll plaza · {plaza.km_from_start} km from the start · price not available</Tooltip></Marker>)}
     {plan?.origin && !navigating && <CircleMarker center={[plan.origin.latitude, plan.origin.longitude]} radius={8} pathOptions={{ color: '#fff', weight: 3, fillColor: '#079352', fillOpacity: 1 }}><Tooltip>Origin · {plan.origin.name}</Tooltip></CircleMarker>}
     {plan?.destination && <CircleMarker center={[plan.destination.latitude, plan.destination.longitude]} radius={8} pathOptions={{ color: '#fff', weight: 3, fillColor: '#e44a58', fillOpacity: 1 }}><Tooltip>Destination · {plan.destination.name}</Tooltip></CircleMarker>}
-    {incidents.filter((item) => shown(item) && item.latitude != null && item.longitude != null).map((item) => <CircleMarker key={item.id} center={[item.latitude, item.longitude]} radius={selectedIncident?.id === item.id ? 9 : 7} eventHandlers={{ click: () => onSelectIncident(item.id) }} pathOptions={{ color: '#fff', weight: 2, fillColor: item.evidence_status === 'confirmed' ? '#df3946' : item.evidence_status === 'stale' ? '#9ba8b8' : '#e99b28', fillOpacity: 0.95 }}><Tooltip>{item.title} · {statusLabel(item)}</Tooltip></CircleMarker>)}
+    <IncidentMarkers incidents={incidents.filter(shown)} selectedIncident={selectedIncident} onSelectIncident={onSelectIncident}/>
   </MapContainer>
 }
 
@@ -315,17 +354,17 @@ export default function RouteMap({ plan, mapConfig, here, hereProblem, onRetryHe
       {mapConfig && <LayersPanel base={layers.base} overlays={layers.overlays} onBase={layers.setBase} onToggle={layers.toggleOverlay} mappls={useMappls}/>}
       <button type="button" className="locate-button" onClick={() => (here ? setFocusKey((key) => key + 1) : onRetryHere())} disabled={Boolean(here) && !inIndia(here)} aria-label="Show my location" title={inIndia(here) ? 'Show my location' : here ? hereText : `${hereText} Press to try again.`}><Icon name="locate" size={20}/></button>
       <button type="button" className="fullscreen-button" onClick={fullscreen.toggle} aria-pressed={fullscreen.on} aria-label={fullscreen.on ? 'Exit full screen' : 'Show the map full screen'} title={fullscreen.on ? 'Exit full screen (Esc)' : 'Full screen'}><Icon name={fullscreen.on ? 'fullscreen-exit' : 'fullscreen'} size={20}/></button>
-      {fullscreen.on && <details className="map-credit"><summary aria-label="Map credits" title="Map credits">i</summary><small>{credit}</small></details>}{!navigation && <div className="map-legend"><span><i className="legend-route"/> Selected route</span><span><i className="legend-candidate"/> Other candidates</span><span><i className="legend-incident"/> Geolocated evidence</span><span><i className="legend-toll"/> Toll plaza</span><span><i className="legend-here"/> You</span></div>}</div>
+      {fullscreen.on && <details className="map-credit"><summary aria-label="Map credits" title="Map credits">i</summary><small>{credit}</small></details>}{!navigation && <div className="map-legend"><span><i className="legend-route"/> Selected route</span><span><i className="legend-candidate"/> Other candidates</span><span><i className="legend-symbol" dangerouslySetInnerHTML={{ __html: incidentIconHtml('accident') }}/> Road reports</span><span><i className="legend-toll"/> Toll plaza</span><span><i className="legend-here"/> You</span></div>}</div>
     <div className="map-foot"><span><Icon name="pin" size={14}/>{plan ? `${placeName(plan.origin)} → ${placeName(plan.destination)}` : hereText}</span><span>{credit}</span></div>
   </article>
 }
 
 // Layer toggles for the map, with how many reports in each category can actually be placed.
 export function MapLayers({ plan, incidents, hiddenTypes, onToggle }) {
-  const locatedCount = (category) => incidents.filter((item) => item.latitude != null && mapCategory(item) === category).length
+  const locatedCount = (category) => incidents.filter((item) => (item.latitude != null || item.approximate_location) && mapCategory(item) === category).length
   return <article className="panel map-options"><div className="panel-heading compact"><div><span className="section-kicker">MAP CONTENT</span><h2>Show on map</h2></div></div>
     <label className="toggle-row"><span className="legend-swatch route-swatch"/>Routes<span className="toggle-note">{plan ? plan.routes.length : 0}</span></label>
-    {MAP_CATEGORIES.map(([key, label]) => <label className="toggle-row" key={key}><span className="legend-swatch evidence-swatch"/>{label}<span className="toggle-note">{locatedCount(key)} on map</span><input type="checkbox" checked={!hiddenTypes.includes(key)} onChange={(event) => onToggle(key, event.target.checked)}/><span className="switch" aria-hidden="true"/></label>)}
-    <p className="map-hint">Only reports with reviewer-confirmed coordinates are drawn. Reports that name a town are matched to routes by that town, without a map marker.</p>
+    {MAP_CATEGORIES.map(([key, label]) => <label className="toggle-row" key={key}><span className="legend-symbol" dangerouslySetInnerHTML={{ __html: incidentIconHtml(key) }}/>{label}<span className="toggle-note">{locatedCount(key)} on map</span><input type="checkbox" checked={!hiddenTypes.includes(key)} onChange={(event) => onToggle(key, event.target.checked)}/><span className="switch" aria-hidden="true"/></label>)}
+    <p className="map-hint">Reports with reviewer-confirmed coordinates are drawn where they are. A report that names a town is drawn at that town with a dashed ring: the spot on the road is unknown. Faded symbols are stale.</p>
   </article>
 }

@@ -158,7 +158,6 @@
 .toggle-row:last-of-type { border-bottom: 0; }
 .legend-swatch { width: 14px; height: 4px; flex: none; border-radius: 3px; }
 .route-swatch { background: var(--route); }
-.evidence-swatch { width: 10px; height: 10px; border-radius: 50%; background: #e99b28; }
 .toggle-note { margin-left: auto; color: var(--faint); font: 500 var(--fs-xs) var(--font-data); white-space: nowrap; }
 .toggle-row input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 .switch { position: relative; width: 32px; height: 18px; flex: none; margin-left: auto; border-radius: 10px; background: #b9c4d0; transition: background .15s; }
@@ -299,7 +298,16 @@
 .map-legend i { display: block; width: 12px; height: 3px; border-radius: 2px; }
 .legend-route { background: var(--route); }
 .legend-candidate { background: repeating-linear-gradient(90deg, #64748b 0 3px, transparent 3px 5px); }
-.map-legend .legend-incident { width: 9px; height: 9px; border-radius: 50%; background: #e99b28; }
+.map-legend .legend-symbol { width: auto; height: auto; background: none; }
+/* Road report symbols (lib/incidentIcons.js), like Google Maps' incident markers. */
+.incident-icon { display: grid; place-items: center; width: 30px; height: 30px; box-sizing: border-box; border: 2px solid #fff; border-radius: 50%; background: var(--tone); box-shadow: 0 1px 4px rgba(0, 0, 0, .45); cursor: pointer; transition: transform .15s ease; }
+.incident-icon.approx { outline: 2px dashed rgba(255, 255, 255, .95); outline-offset: 2px; }
+.incident-icon.stale { filter: grayscale(.8); opacity: .65; }
+.incident-icon.selected { box-shadow: 0 0 0 3px var(--tone), 0 2px 8px rgba(0, 0, 0, .5); transform: scale(1.18); }
+.incident-icon:hover { transform: scale(1.12); }
+.legend-symbol .incident-icon, .map-legend .legend-symbol .incident-icon { width: 18px; height: 18px; border-width: 1.5px; box-shadow: none; cursor: default; }
+.legend-symbol .incident-icon svg { width: 12px; height: 12px; }
+.legend-symbol { display: inline-grid; flex: none; }
 .map-foot { display: flex; justify-content: space-between; gap: 10px; padding: 9px 16px; color: var(--faint); font-size: var(--fs-xs); }
 .map-foot { flex-wrap: wrap; }
 .map-foot > span:first-child { display: flex; flex: 1 1 200px; align-items: center; gap: 5px; color: var(--muted); }

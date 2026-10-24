@@ -8,6 +8,7 @@ TinyFish) use the network fakes from conftest; map tiles and web fonts are block
 Needs Node/npm and Chrome (or `E2E_BROWSER_CHANNEL=chromium` after `playwright install chromium`).
 Skipped when either is missing. Run only these with `pytest -m e2e`, or skip them with `-m "not e2e"`.
 """
+import re
 import os
 from pathlib import Path
 import shutil
@@ -402,20 +403,27 @@ def test_sidebar_can_be_hidden_and_the_choice_is_remembered(dashboard):
 
 
 
-def test_town_placed_reports_have_no_map_marker_and_live_refresh_announces_new_reports(dashboard, client, add_incident):
+def test_town_placed_reports_show_one_approximate_symbol_and_live_refresh_announces_new_reports(dashboard, client, add_incident):
     add_incident("first", summary="Landslide near Shillong blocks traffic", published_at="2 hours ago")
     assert client.post("/api/places/locate").json()["found"] == 1  # Shillong, from the Nominatim fake
     page = dashboard
     page.clock.install()
     page.open()
     expect(page.locator(".selected-incident .incident-meta")).to_contain_text("Approximate · Shillong named in report")
-    expect(page.locator(".leaflet-marker-icon")).to_have_count(0)  # town-placed reports are not drawn on the map
-    expect(page.locator(".map-options")).not_to_contain_text("1 on map")
+    symbol = page.locator(".leaflet-marker-pane .incident-icon")
+    expect(symbol).to_have_count(1)  # a Google-style symbol at the town, marked approximate
+    expect(symbol).to_have_class(re.compile(r"\bapprox\b"))
+    expect(page.locator(".map-options .toggle-row", has_text="Landslides")).to_contain_text("1 on map")
+    symbol.hover()
+    expect(page.locator(".leaflet-tooltip")).to_contain_text("Landslide: 1 report placed at Shillong · exact spot unknown")
 
-    add_incident("second", summary="Second slide near Shillong", published_at="1 hour ago")
+    add_incident("second", summary="Second landslide near Shillong", published_at="1 hour ago")
     page.clock.run_for(61_000)  # the dashboard reloads every minute
     expect(page.locator(".evidence-row")).to_have_count(2)
     expect(page.locator(".collection-message")).to_contain_text("1 new report arrived at")
+    client.post("/api/places/locate")
+    page.clock.run_for(61_000)
+    expect(page.locator(".leaflet-marker-pane .incident-icon")).to_have_count(1)  # same town, same type: one symbol, no count
 
 def test_planning_a_route_scopes_the_cards_and_runs_a_live_check_for_it(dashboard, tinyfish_network):
     searched = []

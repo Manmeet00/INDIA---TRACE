@@ -49,7 +49,7 @@ const RECOMMENDATIONS = {
 
 // Event types are keyword tags from the API. The map groups the less common ones under "other".
 export const EVENT_LABELS = { closure: 'Closure', landslide: 'Landslide', flood: 'Flood', bridge: 'Bridge', weather: 'Weather', accident: 'Accident', construction: 'Works', other: 'Other' }
-export const MAP_CATEGORIES = [['closure', 'Road closures'], ['landslide', 'Landslides'], ['flood', 'Floods'], ['bridge', 'Bridge damage'], ['other', 'Other reports']]
+export const MAP_CATEGORIES = [['accident', 'Accidents'], ['closure', 'Road closures'], ['construction', 'Roadworks'], ['landslide', 'Landslides'], ['flood', 'Floods'], ['bridge', 'Bridge damage'], ['other', 'Other reports']]
 
 // evidence_status comes from the API: stale outranks a reviewer's confirmation so old reports never read as current.
 export const STATUS_LABELS = { confirmed: 'Confirmed by reviewer', corroborated: 'Corroborated', unverified: 'Unverified', conflicting: 'Conflicting', stale: 'Stale', unknown: 'Unknown', resolved: 'Resolved', dismissed: 'Dismissed' }
