@@ -12,6 +12,7 @@ import SummaryCards from './components/SummaryCards.jsx'
 import { useWorkspace } from './hooks/useWorkspace.js'
 import { useEvidenceFilters } from './hooks/useEvidenceFilters.js'
 import { useSidebar } from './hooks/useSidebar.js'
+import { useHere } from './hooks/useHere.js'
 import { INACTIVE_STATES, formatDistance, formatDuration, formatTime, placeName } from './lib/format.js'
 import * as api from './services/api.js'
 
@@ -33,6 +34,7 @@ function App() {
     : `Collects every ${schedule.collection_interval_minutes} min${schedule.next_collection_at ? ` · next ${clock(schedule.next_collection_at)}` : ''}`
   const arrivalNote = arrivals ? `${arrivals.count} new report${arrivals.count === 1 ? '' : 's'} arrived at ${clock(arrivals.at)}.` : ''
   const sidebar = useSidebar()
+  const { here, problem: hereProblem } = useHere()
   const [search, setSearch] = useState('')
   const { filters, setFilter, visibleIncidents } = useEvidenceFilters(incidents, search)
   const [plan, setPlan] = useState(null)
@@ -201,7 +203,7 @@ function App() {
           </div>
 
           <div className="center-column" id="map-section">
-            <RouteMap plan={plan} mapConfig={mapConfig} incidents={incidents} selectedRoute={selectedRoute} selectedIncident={activeIncident} onSelectIncident={selectIncident} hiddenTypes={hiddenTypes}/>
+            <RouteMap plan={plan} mapConfig={mapConfig} here={here} hereProblem={hereProblem} incidents={incidents} selectedRoute={selectedRoute} selectedIncident={activeIncident} onSelectIncident={selectIncident} hiddenTypes={hiddenTypes}/>
             <RouteComparison plan={plan} selectedRoute={selectedRoute} onSelectRoute={setSelectedRoute} onSelectIncident={selectIncident}/>
           </div>
 

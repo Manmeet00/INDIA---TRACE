@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { escapeHtml, loadMappls } from '../lib/mappls.js'
 import { INACTIVE_STATES, mapCategory, statusLabel } from '../lib/format.js'
-import { BORDER_COLOR, MASK_COLOR } from '../lib/mapStyle.js'
+import { BORDER_COLOR, HERE_COLOR, HERE_ZOOM, MASK_COLOR, inIndia } from '../lib/mapStyle.js'
 
 // Same colours as the OpenStreetMap view, so routes and evidence read the same on either map.
 const COLORS = { route: '#0878e8', candidate: '#64748b', origin: '#079352', destination: '#e44a58', confirmed: '#df3946', stale: '#9ba8b8', other: '#e99b28' }
@@ -27,13 +27,16 @@ function indiaMask(boundary) {
     geometry: { type: 'Polygon', coordinates: [[[-180, -89], [180, -89], [180, 89], [-180, 89], [-180, -89]], ...boundary] } }] }
 }
 
-export default function MapplsMap({ apiKey, plan, incidents, selectedRoute, selectedIncident, onSelectIncident, hiddenTypes, boundary, onUnavailable }) {
+export default function MapplsMap({ apiKey, plan, incidents, selectedRoute, selectedIncident, onSelectIncident, hiddenTypes, boundary, here, focusKey, onUnavailable }) {
   // The SDK documents creating a map from its container's id.
   const [containerId] = useState(() => `mappls-map-${++mapCount}`)
   const select = useRef(onSelectIncident)
+  const latestHere = useRef(here)
+  const centered = useRef(false)
   const [map, setMap] = useState(null)
 
   useEffect(() => { select.current = onSelectIncident }, [onSelectIncident])
+  useEffect(() => { latestHere.current = here }, [here])
 
   useEffect(() => {
     let cancelled = false
@@ -82,11 +85,33 @@ export default function MapplsMap({ apiKey, plan, incidents, selectedRoute, sele
       })
     })
     if (!plan) {
-      map.setCenter(DEFAULT_VIEW.center)
-      map.setZoom(DEFAULT_VIEW.zoom)
+      const position = latestHere.current
+      map.setCenter(inIndia(position) ? { lat: position.latitude, lng: position.longitude } : DEFAULT_VIEW.center)
+      map.setZoom(inIndia(position) ? HERE_ZOOM : DEFAULT_VIEW.zoom)
     }
     return () => layers.forEach((layer) => mappls.remove({ map, layer }))
   }, [map, plan, selectedRoute])
+
+  // The blue dot; without a route the map centres on it once, and again whenever the person asks.
+  useEffect(() => {
+    if (!map || !inIndia(here)) return undefined
+    const mappls = window.mappls
+    const dot = new mappls.Marker({ map, position: { lat: here.latitude, lng: here.longitude }, html: `<span class="here-dot" style="background:${HERE_COLOR}"></span>`,
+      width: 18, height: 18, offset: [0, 9], popupHtml: 'Your location' })
+    if (!plan && !centered.current) {
+      centered.current = true
+      map.setCenter({ lat: here.latitude, lng: here.longitude })
+      map.setZoom(HERE_ZOOM)
+    }
+    return () => mappls.remove({ map, layer: dot })
+  }, [map, here, plan])
+
+  useEffect(() => {
+    const position = latestHere.current
+    if (!map || !focusKey || !inIndia(position)) return
+    map.setCenter({ lat: position.latitude, lng: position.longitude })
+    map.setZoom(HERE_ZOOM)
+  }, [map, focusKey])
 
   // Origin, destination and reports with reviewer-confirmed coordinates; text mentions never become map points.
   useEffect(() => {

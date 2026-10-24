@@ -83,6 +83,18 @@ def dashboard(client, providers, built_frontend, browser):
     assert errors == [], f"Script errors in the page: {errors}"
 
 
+# A device position for pages served from the plain-http test origin, where browsers refuse geolocation.
+# %s is the body run with ok/fail for both one-off requests and the continuous watch the map uses.
+GEOLOCATION = """Object.defineProperty(navigator, 'geolocation', { value: {
+    getCurrentPosition: (ok, fail) => { %s },
+    watchPosition: (ok, fail) => { %s; return 1 },
+    clearWatch: () => {} } })"""
+
+
+def geolocation(body):
+    return GEOLOCATION % (body, body)
+
+
 def plan(page, origin, destination):
     page.fill("#origin", origin)
     page.fill("#destination", destination)
@@ -435,8 +447,7 @@ def test_route_form_suggests_places_and_uses_your_location(dashboard, providers)
     ]}
     page = dashboard
     # The test origin is plain http, where browsers refuse geolocation, so the device position is supplied directly.
-    page.add_init_script("""Object.defineProperty(navigator, 'geolocation', { value: {
-        getCurrentPosition: (ok) => ok({ coords: { latitude: 26.18, longitude: 91.75 } }) } })""")
+    page.add_init_script(geolocation("ok({ coords: { latitude: 26.18, longitude: 91.75, accuracy: 50 } })"))
     page.open()
     page.fill("#destination", "Jow")
     options = page.locator("#destination ~ .place-suggestions li")
@@ -484,13 +495,11 @@ def test_evidence_desk_shows_the_sources_own_video_and_hides_a_picture_that_will
     expect(page.locator(".evidence-media")).to_have_count(0)  # the picture failed to load, so it is left out
 
 
-GEOLOCATION = """Object.defineProperty(navigator, 'geolocation', { value: {
-    getCurrentPosition: (ok, fail) => %s } })"""
 
 
 def test_start_is_your_location_and_destination_is_chosen(dashboard):
     page = dashboard
-    page.add_init_script(GEOLOCATION % "ok({ coords: { latitude: 26.18, longitude: 91.75 } })")
+    page.add_init_script(geolocation("ok({ coords: { latitude: 26.18, longitude: 91.75 } })"))
     page.open()
     expect(page.locator("#origin")).to_have_value("Your location")
     expect(page.locator("#origin")).to_have_class("is-location")
@@ -504,7 +513,7 @@ def test_start_is_your_location_and_destination_is_chosen(dashboard):
 
 def test_refused_location_leaves_the_start_for_the_person_to_type(dashboard):
     page = dashboard
-    page.add_init_script(GEOLOCATION % "fail({ code: 1, PERMISSION_DENIED: 1 })")
+    page.add_init_script(geolocation("fail({ code: 1, PERMISSION_DENIED: 1 })"))
     page.open()
     expect(page.locator(".place-note")).to_have_text("Location permission was refused. Type a starting point instead.")
     expect(page.locator("#origin")).to_have_value("")
@@ -513,8 +522,35 @@ def test_refused_location_leaves_the_start_for_the_person_to_type(dashboard):
 
 def test_a_start_typed_before_the_location_arrives_is_kept(dashboard):
     page = dashboard
-    page.add_init_script(GEOLOCATION % "setTimeout(() => ok({ coords: { latitude: 26.18, longitude: 91.75 } }), 1500)")
+    page.add_init_script(geolocation("setTimeout(() => ok({ coords: { latitude: 26.18, longitude: 91.75 } }), 1500)"))
     page.open()
     page.fill("#origin", "Silchar")
     page.wait_for_timeout(2000)
     expect(page.locator("#origin")).to_have_value("Silchar")
+
+
+
+def test_map_opens_on_your_location_and_the_button_returns_to_it(dashboard):
+    page = dashboard
+    page.add_init_script(geolocation("ok({ coords: { latitude: 26.14, longitude: 91.74, accuracy: 120 } })"))
+    page.open()
+    expect(page.locator(".map-foot")).to_contain_text("Your location · accurate to about 120 m")
+    expect(page.locator(".locate-button")).to_be_enabled()
+    expect(page.locator(".map-legend")).to_contain_text("You")
+    page.locator(".locate-button").click()  # recentres without errors
+
+
+def test_map_stays_on_the_region_when_location_is_refused(dashboard):
+    page = dashboard
+    page.add_init_script(geolocation("fail({ code: 1, PERMISSION_DENIED: 1 })"))
+    page.open()
+    expect(page.locator(".map-foot")).to_contain_text("Location permission was refused. Showing Northeast India.")
+    expect(page.locator(".locate-button")).to_be_disabled()
+
+
+def test_map_stays_on_the_region_when_you_are_outside_india(dashboard):
+    page = dashboard
+    page.add_init_script(geolocation("ok({ coords: { latitude: 51.5, longitude: -0.12, accuracy: 30 } })"))
+    page.open()
+    expect(page.locator(".map-foot")).to_contain_text("Your location is outside India. Showing Northeast India.")
+    expect(page.locator(".locate-button")).to_be_disabled()

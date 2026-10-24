@@ -1,14 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { CircleMarker, MapContainer, Pane, Polygon, Polyline, TileLayer, Tooltip, ZoomControl, useMap } from 'react-leaflet'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Circle, CircleMarker, MapContainer, Pane, Polygon, Polyline, TileLayer, Tooltip, ZoomControl, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import Icon from './Icon.jsx'
 import MapplsMap from './MapplsMap.jsx'
 import { INACTIVE_STATES, MAP_CATEGORIES, formatTime, mapCategory, placeName, statusLabel } from '../lib/format.js'
-import { BORDER_COLOR, MASK_COLOR } from '../lib/mapStyle.js'
+import { BORDER_COLOR, HERE_COLOR, HERE_ZOOM, INDIA_BOUNDS, MASK_COLOR, inIndia } from '../lib/mapStyle.js'
 import { loadIndiaBoundary } from '../services/api.js'
 
 const WORLD = [[-89, -180], [-89, 180], [89, 180], [89, -180]]
-const INDIA_BOUNDS = [[5.5, 67], [38, 98.5]]
 
 function MapBounds({ geometry }) {
   const map = useMap()
@@ -29,16 +28,41 @@ function IndiaMask({ boundary }) {
   </Pane>
 }
 
+// The blue dot with its accuracy ring. Without a route the map centres on it once, when the first fix arrives;
+// focusKey changes when the person asks to see their location again.
+function HereLayer({ here, hasPlan, focusKey }) {
+  const map = useMap()
+  const centered = useRef(false)
+  const latest = useRef(here)
+  useEffect(() => { latest.current = here }, [here])
+  useEffect(() => {
+    if (hasPlan || centered.current || !inIndia(here)) return
+    centered.current = true
+    map.setView([here.latitude, here.longitude], HERE_ZOOM, { animate: false })
+  }, [here, hasPlan, map])
+  useEffect(() => {
+    const position = latest.current
+    if (focusKey && inIndia(position)) map.setView([position.latitude, position.longitude], Math.max(map.getZoom(), HERE_ZOOM), { animate: false })
+  }, [focusKey, map])
+  if (!inIndia(here)) return null
+  return <>
+    <Circle center={[here.latitude, here.longitude]} radius={here.accuracy || 0} interactive={false} pathOptions={{ color: HERE_COLOR, weight: 1, opacity: 0.4, fillColor: HERE_COLOR, fillOpacity: 0.1 }}/>
+    <CircleMarker center={[here.latitude, here.longitude]} radius={7} pathOptions={{ color: '#fff', weight: 3, fillColor: HERE_COLOR, fillOpacity: 1 }}><Tooltip>Your location</Tooltip></CircleMarker>
+  </>
+}
+
 // Only reports with reviewer-confirmed coordinates are drawn; text mentions never become map points.
-function DashboardMap({ plan, incidents, selectedRoute, selectedIncident, onSelectIncident, hiddenTypes, boundary }) {
+function DashboardMap({ plan, incidents, selectedRoute, selectedIncident, onSelectIncident, hiddenTypes, boundary, here, focusKey }) {
   const route = plan?.routes?.find((item) => item.id === selectedRoute) || plan?.routes?.[0]
-  const center = plan?.origin ? [plan.origin.latitude, plan.origin.longitude] : [26.2, 92.4]
+  const startHere = !plan && inIndia(here)
+  const center = plan?.origin ? [plan.origin.latitude, plan.origin.longitude] : startHere ? [here.latitude, here.longitude] : [26.2, 92.4]
   const shown = (item) => !INACTIVE_STATES.includes(item.verification) && !hiddenTypes.includes(mapCategory(item))
-  return <MapContainer key={`${plan?.origin?.latitude || 'default'}-${plan?.destination?.latitude || 'default'}`} center={center} zoom={plan ? 7 : 6} minZoom={4} maxBounds={INDIA_BOUNDS} maxBoundsViscosity={1} zoomControl={false} className="map-canvas">
+  return <MapContainer key={`${plan?.origin?.latitude || 'default'}-${plan?.destination?.latitude || 'default'}`} center={center} zoom={plan ? 7 : startHere ? HERE_ZOOM : 6} minZoom={4} maxBounds={INDIA_BOUNDS} maxBoundsViscosity={1} zoomControl={false} className="map-canvas">
     {boundary && <IndiaMask boundary={boundary}/>}
     {route && <MapBounds geometry={route.geometry} />}
     <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
     <ZoomControl position="bottomright" />
+    <HereLayer here={here} hasPlan={Boolean(plan)} focusKey={focusKey}/>
     {plan?.routes && [...plan.routes].sort((a, b) => (a.id === route?.id) - (b.id === route?.id)).map((item) => <Polyline key={item.id} positions={item.geometry.coordinates.map(([lon, lat]) => [lat, lon])} pathOptions={{ color: item.id === route?.id ? '#0878e8' : '#64748b', opacity: item.id === route?.id ? 0.95 : 0.55, weight: item.id === route?.id ? 5 : 3, dashArray: item.id === route?.id ? undefined : '8 9' }} />)}
     {plan?.origin && <CircleMarker center={[plan.origin.latitude, plan.origin.longitude]} radius={8} pathOptions={{ color: '#fff', weight: 3, fillColor: '#079352', fillOpacity: 1 }}><Tooltip>Origin · {plan.origin.name}</Tooltip></CircleMarker>}
     {plan?.destination && <CircleMarker center={[plan.destination.latitude, plan.destination.longitude]} radius={8} pathOptions={{ color: '#fff', weight: 3, fillColor: '#e44a58', fillOpacity: 1 }}><Tooltip>Destination · {plan.destination.name}</Tooltip></CircleMarker>}
@@ -48,7 +72,10 @@ function DashboardMap({ plan, incidents, selectedRoute, selectedIncident, onSele
 
 // Mappls when the API has a Mappls key, OpenStreetMap otherwise. If Mappls cannot load (no internet, a rejected
 // key) the map falls back to OpenStreetMap and says so, so the dashboard never loses its map.
-export default function RouteMap({ plan, mapConfig, ...mapProps }) {
+export default function RouteMap({ plan, mapConfig, here, hereProblem, ...mapProps }) {
+  const [focusKey, setFocusKey] = useState(0)
+  const hereText = !here ? (hereProblem ? `${hereProblem} Showing Northeast India.` : 'Finding your location…')
+    : inIndia(here) ? `Your location · accurate to about ${Math.max(1, Math.round(here.accuracy || 0))} m` : 'Your location is outside India. Showing Northeast India.'
   const [mapplsProblem, setMapplsProblem] = useState('')
   const [boundary, setBoundary] = useState(null)
   useEffect(() => {
@@ -63,9 +90,10 @@ export default function RouteMap({ plan, mapConfig, ...mapProps }) {
   return <article className="panel map-panel"><div className="map-heading"><div><span className="section-kicker">NORTHEAST INDIA · NETWORK VIEW</span><h2>{plan ? `${placeName(plan.origin)} to ${placeName(plan.destination)}` : 'Regional road intelligence'}</h2></div><span className={`map-status ${plan?.offline_demo ? 'demo' : ''}`}><i/>{status}</span></div>
     {mapplsProblem && <p className="map-fallback" role="status">{mapplsProblem} Showing OpenStreetMap instead.</p>}
     <div className="map-wrap">{!mapConfig ? <div className="map-canvas"/> : useMappls
-      ? <MapplsMap apiKey={mapConfig.mappls_key} plan={plan} boundary={boundary} {...mapProps} onUnavailable={onUnavailable}/>
-      : <DashboardMap plan={plan} boundary={boundary} {...mapProps}/>}<div className="map-legend"><span><i className="legend-route"/> Selected route</span><span><i className="legend-candidate"/> Other candidates</span><span><i className="legend-incident"/> Geolocated evidence</span></div></div>
-    <div className="map-foot"><span><Icon name="pin" size={14}/>{plan ? `${placeName(plan.origin)} → ${placeName(plan.destination)}` : 'Assam · Meghalaya · Northeast India'}</span><span>{useMappls ? 'Map © Mappls (MapmyIndia)' : 'Map tiles © OpenStreetMap contributors'} · India boundary: Survey of India</span></div>
+      ? <MapplsMap apiKey={mapConfig.mappls_key} plan={plan} boundary={boundary} here={here} focusKey={focusKey} {...mapProps} onUnavailable={onUnavailable}/>
+      : <DashboardMap plan={plan} boundary={boundary} here={here} focusKey={focusKey} {...mapProps}/>}
+      <button type="button" className="locate-button" onClick={() => setFocusKey((key) => key + 1)} disabled={!inIndia(here)} aria-label="Show my location" title={inIndia(here) ? 'Show my location' : hereText}><Icon name="locate" size={20}/></button><div className="map-legend"><span><i className="legend-route"/> Selected route</span><span><i className="legend-candidate"/> Other candidates</span><span><i className="legend-incident"/> Geolocated evidence</span><span><i className="legend-here"/> You</span></div></div>
+    <div className="map-foot"><span><Icon name="pin" size={14}/>{plan ? `${placeName(plan.origin)} → ${placeName(plan.destination)}` : hereText}</span><span>{useMappls ? 'Map © Mappls (MapmyIndia)' : 'Map tiles © OpenStreetMap contributors'} · India boundary: Survey of India</span></div>
   </article>
 }
 
