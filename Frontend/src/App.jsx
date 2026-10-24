@@ -128,7 +128,7 @@ function App() {
 
   const selectIncident = (id) => { setSearch(''); setSelectedIncidentId(id) }
   // A town pin lists the reports that name the town, newest first.
-  const selectTown = (town) => { setSearch(town.place); setSelectedIncidentId(town.items[0].id) }
+  const selectTown = (town) => { setSearch(''); setFilter('town', town.place); setSelectedIncidentId(town.items[0].id) }
   const toggleLayer = (key, shown) => setHiddenTypes((types) => shown ? types.filter((type) => type !== key) : [...types, key])
 
   const activeIncident = visibleIncidents.find((item) => item.id === selectedIncidentId) || visibleIncidents[0] || null

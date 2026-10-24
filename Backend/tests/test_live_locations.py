@@ -110,3 +110,13 @@ def test_collection_places_the_towns_new_reports_name(client, tinyfish_network):
 
 
 SEARCH_HOST = "api.search.tinyfish.ai"
+
+
+def test_a_restart_waits_for_the_next_due_collection(client):
+    from app.main import _seconds_until_due
+    assert _seconds_until_due(30) == 0  # nothing collected yet: collect now
+    with get_connection() as connection:
+        connection.execute("""INSERT INTO collection_runs (id, trigger, started_at, finished_at, searches, results, stored,
+            duplicates, failed_searches, fetched, fetch_failed, duration_ms, status) VALUES
+            ('run_recent', 'scheduled', ?, ?, '[]', 0, 0, 0, 0, 0, 0, 0, 'complete')""", (ago(minutes=10), ago(minutes=10)))
+    assert 1190 <= _seconds_until_due(30) <= 1200  # 20 minutes left

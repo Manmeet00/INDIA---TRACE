@@ -398,11 +398,15 @@ def test_town_pin_lists_the_reports_that_name_the_town_and_live_refresh_announce
     pin = page.locator(".town-pin")
     expect(pin).to_have_text("1")
     pin.click()
-    expect(page.locator(".global-search input")).to_have_value("Shillong")
+    expect(page.locator(".town-filter")).to_contain_text("Placed at Shillong")
+    expect(page.locator(".evidence-row")).to_have_count(1)
     expect(page.locator(".selected-incident h3")).to_have_text("Report first")
     expect(page.locator(".selected-incident .incident-meta")).to_contain_text("Approximate · Shillong named in report")
 
     add_incident("second", summary="Second slide near Shillong", published_at="1 hour ago")
     page.clock.run_for(61_000)  # the dashboard reloads every minute
     expect(page.locator(".town-pin")).to_have_text("2")
+    expect(page.locator(".evidence-row")).to_have_count(2)  # the town filter shows exactly the pin's reports
+    page.locator(".town-filter button").click()
+    expect(page.locator(".town-filter")).to_have_count(0)
     expect(page.locator(".collection-message")).to_contain_text("1 new report arrived at")

@@ -22,7 +22,12 @@ def no_network(monkeypatch):
 def client(tmp_path, monkeypatch):
     """API client on an empty temporary database, with TinyFish switched off."""
     monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "test.sqlite3"))
+    # Tests never inherit the developer's Backend/.env: no keys, no schedule, the default region.
     monkeypatch.setenv("TINYFISH_API_KEY", "")
+    monkeypatch.setenv("MAPPLS_STATIC_KEY", "")
+    monkeypatch.setenv("COLLECTION_INTERVAL_MINUTES", "0")
+    monkeypatch.setenv("COLLECTION_WINDOW_DAYS", "30")
+    monkeypatch.setenv("REGION", "northeast")
     get_settings.cache_clear()
     from app.main import app
     with TestClient(app) as test_client:

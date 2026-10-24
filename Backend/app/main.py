@@ -34,7 +34,7 @@ def _scheduled_collection() -> None:
     try:
         with jobs.exclusive(), get_connection() as connection:
             try:
-                collect_candidates(connection, trigger="scheduled", recency_minutes=settings.collection_window_days * 1440 or None)
+                collect_candidates(connection, trigger="scheduled", recency_minutes=get_settings().collection_window_days * 1440 or None)
             finally:
                 recheck_reports(connection, trigger="scheduled_recheck")
     except HTTPException as exc:
@@ -42,7 +42,22 @@ def _scheduled_collection() -> None:
             raise
 
 
-async def _collect_periodically(interval_minutes: int) -> None:
+def _seconds_until_due(interval_minutes: int) -> float:
+    """Time left until a collection is due, counted from the last finished one, so restarts do not collect again."""
+    try:
+        with get_connection() as connection:
+            last = connection.execute("""SELECT MAX(finished_at) FROM collection_runs
+                WHERE trigger IN ('scheduled', 'manual', 'targeted') AND status != 'running'""").fetchone()[0]
+    except sqlite3.Error:
+        return 0
+    if not last:
+        return 0
+    due = datetime.fromisoformat(last) + timedelta(minutes=interval_minutes)
+    return max(0.0, (due - datetime.now(timezone.utc)).total_seconds())
+
+
+async def _collect_periodically(interval_minutes: int, first_delay_s: float) -> None:
+    await asyncio.sleep(first_delay_s)
     while True:
         try:
             await asyncio.to_thread(_scheduled_collection)
@@ -60,9 +75,11 @@ async def lifespan(_: FastAPI):
         # Start anyway so /api/health can report the problem; data endpoints answer 503 until it is fixed.
         logger.exception("Could not initialise the database at %s", settings.database_path)
     task = None
-    if settings.collection_interval_minutes > 0:
-        schedule["next_collection_at"] = datetime.now(timezone.utc).isoformat()  # the first run starts now
-        task = asyncio.create_task(_collect_periodically(settings.collection_interval_minutes))
+    interval = get_settings().collection_interval_minutes  # read at startup, not import, so tests and restarts see .env changes
+    if interval > 0:
+        delay = _seconds_until_due(interval)
+        schedule["next_collection_at"] = (datetime.now(timezone.utc) + timedelta(seconds=delay)).isoformat()
+        task = asyncio.create_task(_collect_periodically(interval, delay))
     yield
     if task:
         task.cancel()

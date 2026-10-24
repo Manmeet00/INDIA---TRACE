@@ -266,7 +266,7 @@ def collect_candidates(connection: sqlite3.Connection, searches: list[dict[str, 
                    "No reports does not mean the road is clear; check official advisories.")
     else:
         message = (f"{len(new_ids)} new reports from {len(searches)} searches; {fetched} pages read with TinyFish Fetch. "
-                   "Search results are unverified evidence candidates; location is unknown until a reviewer confirms it.")
+                   "Search results are unverified evidence candidates; the exact spot is unknown until a reviewer confirms it.")
     if located["found"]:
         message += f" {located['found']} newly named towns placed on the map (approximate)."
     if filtered:
