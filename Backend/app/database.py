@@ -134,6 +134,21 @@ CREATE TABLE IF NOT EXISTS place_locations (
     display_name TEXT,
     geocoded_at TEXT NOT NULL
 );
+-- Place names for the map's satellite view, from OpenStreetMap via Overpass, refreshed monthly per region.
+CREATE TABLE IF NOT EXISTS map_labels (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    region TEXT NOT NULL,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    latitude REAL NOT NULL,
+    longitude REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_map_labels_position ON map_labels(region, latitude, longitude);
+CREATE TABLE IF NOT EXISTS map_label_sets (
+    region TEXT PRIMARY KEY,
+    fetched_at TEXT NOT NULL,
+    labels INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS provider_cache (
     url TEXT PRIMARY KEY,
     response TEXT NOT NULL,

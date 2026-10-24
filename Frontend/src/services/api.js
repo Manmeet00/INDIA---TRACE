@@ -78,6 +78,10 @@ export const suggestPlaces = (text) => request(`/api/places/suggest?q=${encodeUR
 /** Current US AQI at a point in India: { us_aqi, band, pm2_5, pm10, time }. */
 export const getAirQuality = (latitude, longitude) => request(`/api/air-quality?lat=${latitude.toFixed(4)}&lon=${longitude.toFixed(4)}`, 'Air quality is unavailable.')
 
+/** Place names (OpenStreetMap) for a map view: { labels: [{ name, kind, latitude, longitude }], status }. */
+export const getMapLabels = ({ south, west, north, east }, zoom) =>
+  request(`/api/map-labels?south=${south.toFixed(3)}&west=${west.toFixed(3)}&north=${north.toFixed(3)}&east=${east.toFixed(3)}&zoom=${zoom}`, 'Place names are unavailable.')
+
 export const getRegion = () => request('/api/region', 'Could not load the region.')
 
 /** { provider: 'mappls' | 'osm', mappls_key }: the base map to draw. */

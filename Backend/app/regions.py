@@ -46,6 +46,8 @@ class Region:
     # How long a report stays fresh, by primary event type, in hours (report 6.5).
     freshness_window_h: dict[str, int]
     source_categories: tuple[str, ...] = SOURCE_CATEGORIES
+    # The area the region's map labels cover: south, west, north, east.
+    bbox: tuple[float, float, float, float] = (6.0, 68.0, 38.0, 98.0)
     # Writing systems expected in this region's sources; the original text is always kept untranslated.
     scripts: tuple[str, ...] = ("Latin",)
     place_index: dict[str, Place] = field(init=False, repr=False, compare=False)
@@ -116,6 +118,7 @@ NORTHEAST = Region(
     freshness_window_h={"accident": 12, "weather": 24, "other": 24, "flood": 48, "closure": 48, "landslide": 72,
                         "bridge": 14 * 24, "construction": 30 * 24},
     scripts=("Latin", "Bengali-Assamese", "Devanagari", "Meetei Mayek"),
+    bbox=(21.9, 88.0, 29.5, 97.5),
 )
 
 REGIONS = {region.id: region for region in (NORTHEAST,)}

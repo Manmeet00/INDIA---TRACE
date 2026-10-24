@@ -29,6 +29,8 @@ class Settings:
         self.collection_window_days = int(os.getenv("COLLECTION_WINDOW_DAYS", "30") or 0)
         # Which entry of app/regions.py sets places, roads, searches, source policy and freshness windows.
         self.region = os.getenv("REGION", "northeast").strip() or "northeast"
+        # Download the region's map place names (OpenStreetMap, via Overpass) when missing or a month old.
+        self.map_labels_refresh = os.getenv("MAP_LABELS_REFRESH", "1") != "0"
 
 
 @lru_cache

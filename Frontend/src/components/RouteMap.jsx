@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import L from 'leaflet'
-import { Circle, CircleMarker, MapContainer, Marker, Pane, Polygon, Polyline, TileLayer, Tooltip, WMSTileLayer, ZoomControl, useMap } from 'react-leaflet'
+import { Circle, CircleMarker, MapContainer, Marker, Pane, Polygon, Polyline, TileLayer, Tooltip, WMSTileLayer, ZoomControl, useMap, useMapEvents } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import Icon from './Icon.jsx'
 import LayersPanel from './LayersPanel.jsx'
@@ -8,8 +8,8 @@ import MapplsMap from './MapplsMap.jsx'
 import { useMapLayers } from '../hooks/useMapLayers.js'
 import { BASE_LAYERS, GIBS, OVERLAYS, aqiTone } from '../lib/mapLayers.js'
 import { INACTIVE_STATES, MAP_CATEGORIES, formatTime, mapCategory, placeName, statusLabel } from '../lib/format.js'
-import { BORDER_COLOR, HERE_COLOR, HERE_ZOOM, INDIA_BOUNDS, MASK_COLOR, inIndia } from '../lib/mapStyle.js'
-import { getAirQuality, loadIndiaBoundary } from '../services/api.js'
+import { BORDER_COLOR, HERE_COLOR, HERE_ZOOM, INDIA_BOUNDS, MASK_COLOR, inIndia, insideBoundary } from '../lib/mapStyle.js'
+import { getAirQuality, getMapLabels, loadIndiaBoundary } from '../services/api.js'
 
 const WORLD = [[-89, -180], [-89, 180], [89, 180], [89, -180]]
 
@@ -84,6 +84,39 @@ function AirQualityLayer({ here, plan }) {
   })
 }
 
+// Place names over satellite imagery, for the area on screen. Labels that would overlap a more important one
+// (cities before towns before villages) are left out, so the map stays readable.
+const LABEL_BOX = { width: 90, height: 18 }
+
+function PlaceLabels({ boundary }) {
+  const map = useMap()
+  const [labels, setLabels] = useState([])
+  const [view, setView] = useState(() => ({ bounds: map.getBounds(), zoom: map.getZoom() }))
+  useMapEvents({ moveend: () => setView({ bounds: map.getBounds(), zoom: map.getZoom() }) })
+  useEffect(() => {
+    let active = true
+    const timer = setTimeout(() => {
+      const box = { south: view.bounds.getSouth(), west: view.bounds.getWest(), north: view.bounds.getNorth(), east: view.bounds.getEast() }
+      getMapLabels(box, view.zoom).then((body) => { if (active) setLabels(body.labels) }).catch(() => { if (active) setLabels([]) })
+    }, 150)
+    return () => {
+      active = false
+      clearTimeout(timer)
+    }
+  }, [view])
+  const placed = []
+  // Only names inside India: the downloaded area is a rectangle that also covers neighbouring countries.
+  const shown = labels.filter((label) => {
+    if (!boundary || !insideBoundary(boundary, label.latitude, label.longitude)) return false
+    const point = map.latLngToContainerPoint([label.latitude, label.longitude])
+    if (placed.some((other) => Math.abs(other.x - point.x) < LABEL_BOX.width && Math.abs(other.y - point.y) < LABEL_BOX.height)) return false
+    placed.push(point)
+    return true
+  })
+  return shown.map((label) => <Marker key={`${label.name}-${label.latitude}-${label.longitude}`} position={[label.latitude, label.longitude]} interactive={false} keyboard={false}
+    icon={L.divIcon({ className: '', html: `<span class="map-label ${label.kind}">${label.name.replace(/[&<>"']/g, '')}</span>`, iconSize: [0, 0], iconAnchor: [0, 0] })}/>)
+}
+
 // The chosen detail layers over the base map: NASA imagery as WMS, the rest as tiles, air quality as labels.
 function DetailLayers({ overlays, here, plan }) {
   return overlays.map((key) => {
@@ -107,7 +140,9 @@ function DashboardMap({ plan, incidents, selectedRoute, selectedIncident, onSele
   return <MapContainer key={`${plan?.origin?.latitude || 'default'}-${plan?.destination?.latitude || 'default'}`} center={center} zoom={plan ? 7 : startHere ? HERE_ZOOM : 6} minZoom={4} maxBounds={INDIA_BOUNDS} maxBoundsViscosity={1} zoomControl={false} className="map-canvas">
     {boundary && <IndiaMask boundary={boundary}/>}
     {route && <MapBounds geometry={route.geometry} />}
-    <TileLayer key={base} url={BASE_LAYERS[base].url} maxZoom={BASE_LAYERS[base].maxZoom} attribution={BASE_LAYERS[base].credit}/>
+    <TileLayer key={base} url={BASE_LAYERS[base].url} maxZoom={BASE_LAYERS[base].maxZoom} attribution={BASE_LAYERS[base].short}/>
+    {BASE_LAYERS[base].roads && <TileLayer key={`${base}-roads`} url={BASE_LAYERS[base].roads} maxZoom={BASE_LAYERS[base].maxZoom} zIndex={4} opacity={0.9}/>}
+    {BASE_LAYERS[base].labels && <Pane name="place-labels" style={{ zIndex: 380, pointerEvents: 'none' }}><PlaceLabels boundary={boundary}/></Pane>}
     <DetailLayers overlays={overlays} here={here} plan={plan}/>
     <ZoomControl position="bottomright" />
     <HereLayer here={here} hasPlan={Boolean(plan)} focusKey={focusKey}/>

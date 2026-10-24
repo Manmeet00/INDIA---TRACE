@@ -201,6 +201,13 @@
 .layer-thumb.cycling { background: #2e7d32; }
 .layer-thumb.air { background: #689f38; }
 .layers-note { margin: 12px 0 0; color: var(--on-ink-muted); font-size: var(--fs-xs); line-height: 1.45; }
+/* Place names on satellite imagery: white text with a dark halo, sized by importance, centred on the place. */
+.map-label { position: absolute; transform: translate(-50%, -50%); color: #fff; font: 600 11px/1.2 var(--font-body); white-space: nowrap; pointer-events: none;
+  text-shadow: 0 0 2px #000, 0 0 3px #000, 0 1px 3px rgba(0, 0, 0, .9); }
+.map-label.city { font: 700 15px/1.2 var(--font-display); letter-spacing: .2px; }
+.map-label.town { font: 700 13px/1.2 var(--font-display); }
+.map-label.suburb { font-size: 12px; }
+.map-label.village, .map-label.quarter, .map-label.neighbourhood { font-size: 11px; font-weight: 500; color: #f1f4f8; }
 .aqi-pill { display: inline-block; padding: 3px 8px; border: 2px solid #fff; border-radius: 999px; color: #fff; font: 700 11px/1.2 var(--font-data); white-space: nowrap; box-shadow: 0 1px 4px rgba(14, 26, 43, .35); }
 .aqi-pill.good { background: #2e7d32; }
 .aqi-pill.moderate { color: #3b2f00; background: #f9c80e; }

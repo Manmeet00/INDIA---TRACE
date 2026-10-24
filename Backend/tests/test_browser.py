@@ -582,3 +582,22 @@ def test_map_layers_change_the_map_and_are_remembered(dashboard):
     page.click(".layers-button")
     expect(page.locator(".layer-tile", has_text="Satellite")).to_have_attribute("aria-checked", "true")
     expect(page.locator(".layer-tile", has_text="Wildfires")).to_have_attribute("aria-pressed", "true")
+
+
+def test_satellite_view_names_places_inside_india_only(dashboard, client, providers):
+    providers["overpass-api.de"] = {"elements": [
+        {"lat": 26.18, "lon": 91.75, "tags": {"place": "city", "name": "Guwahati"}},
+        {"lat": 25.57, "lon": 91.88, "tags": {"place": "city", "name": "Shillong"}},
+        {"lat": 24.90, "lon": 91.87, "tags": {"place": "city", "name": "Sylhet"}},  # Bangladesh: never named on the map
+    ]}
+    from app.labels import refresh_labels
+    with get_connection() as connection:
+        refresh_labels(connection)
+    page = dashboard
+    page.add_init_script("localStorage.setItem('india-trace.map-layers', JSON.stringify({ base: 'satellite', overlays: [] }))")
+    page.open()
+    expect(page.locator(".map-label.city")).to_have_count(2)
+    expect(page.locator(".map-label", has_text="Guwahati")).to_have_count(1)
+    expect(page.locator(".map-label", has_text="Sylhet")).to_have_count(0)
+    expect(page.locator(".leaflet-tile-pane img[src*='World_Transportation']").first).to_be_attached()  # roads over the imagery
+    expect(page.locator(".map-foot")).to_contain_text("Place names © OpenStreetMap contributors")
