@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Icon from './Icon.jsx'
 import PlaceInput from './PlaceInput.jsx'
 
@@ -15,12 +15,27 @@ const place = (text) => ({ text, query: text })
 
 // Directions in the style of a maps app: start and destination joined by a line, travel mode and preference as
 // chips. The form owns its inputs and hands a plan request to onPlan; App decides how to fetch it.
-export default function RoutePlanner({ loading, error, isSnapshot, onPlan }) {
+// searched: a destination chosen in the map's search bar ({ text, query, at }); it fills the destination and,
+// once the starting point is known, finds routes straight away.
+export default function RoutePlanner({ loading, error, isSnapshot, onPlan, searched }) {
   // The start is the device's position (found when the form opens); the destination is chosen by the person.
   const [origin, setOrigin] = useState(place(''))
   const [destination, setDestination] = useState(place(''))
   const [vehicle, setVehicle] = useState('truck')
   const [priority, setPriority] = useState('cautious')
+
+  const [shownSearch, setShownSearch] = useState(searched)
+  if (searched !== shownSearch) {
+    setShownSearch(searched)
+    if (searched) setDestination({ text: searched.text, query: searched.query })
+  }
+  const current = useRef(null)
+  useEffect(() => { current.current = { origin, vehicle, priority, onPlan } })
+  useEffect(() => {
+    if (!searched) return
+    const { origin: start, vehicle: vehicleType, priority: preference, onPlan: plan } = current.current
+    if (start.query.trim().length >= 2) plan({ origin: start.query, destination: searched.query, vehicle_type: vehicleType, priority: preference })
+  }, [searched])
 
   const submit = (event) => {
     event.preventDefault()

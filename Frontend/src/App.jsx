@@ -38,6 +38,7 @@ function App() {
   const [search, setSearch] = useState('')
   const { filters, setFilter, visibleIncidents } = useEvidenceFilters(incidents, search)
   const [plan, setPlan] = useState(null)
+  const [searched, setSearched] = useState(null) // a destination from the map's search bar
   const [selectedRoute, setSelectedRoute] = useState(null)
   const [selectedIncidentId, setSelectedIncidentId] = useState(null)
   const [hiddenTypes, setHiddenTypes] = useState([])
@@ -197,13 +198,13 @@ function App() {
 
         <section className="workspace-grid">
           <div className="left-column">
-            <RoutePlanner loading={routeLoading} error={routeError} isSnapshot={Boolean(plan?.offline_demo)} onPlan={planRoute}/>
+            <RoutePlanner loading={routeLoading} error={routeError} isSnapshot={Boolean(plan?.offline_demo)} onPlan={planRoute} searched={searched}/>
             <MapLayers plan={plan} incidents={relevantIncidents} hiddenTypes={hiddenTypes} onToggle={toggleLayer}/>
             <RegionCoverage region={region}/>
           </div>
 
           <div className="center-column" id="map-section">
-            <RouteMap plan={plan} mapConfig={mapConfig} here={here} hereProblem={hereProblem} onRetryHere={retryHere} incidents={incidents} selectedRoute={selectedRoute} selectedIncident={activeIncident} onSelectIncident={selectIncident} hiddenTypes={hiddenTypes}/>
+            <RouteMap plan={plan} mapConfig={mapConfig} here={here} hereProblem={hereProblem} onRetryHere={retryHere} onSearch={(place) => setSearched({ ...place, at: Date.now() })} incidents={incidents} selectedRoute={selectedRoute} selectedIncident={activeIncident} onSelectIncident={selectIncident} hiddenTypes={hiddenTypes}/>
             <RouteComparison plan={plan} selectedRoute={selectedRoute} onSelectRoute={setSelectedRoute} onSelectIncident={selectIncident}/>
           </div>
 

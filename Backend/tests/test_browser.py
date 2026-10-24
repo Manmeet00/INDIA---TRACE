@@ -512,6 +512,34 @@ def test_start_is_your_location_and_destination_is_chosen(dashboard):
     expect(page.locator(".map-heading h2")).to_have_text("Your location to Shillong")
 
 
+def test_map_search_bar_plans_a_route_to_the_place_chosen(dashboard, providers):
+    providers["photon.komoot.io"] = {"features": []}
+    page = dashboard
+    page.add_init_script(geolocation("ok({ coords: { latitude: 26.18, longitude: 91.75, accuracy: 50 } })"))
+    page.open()
+    expect(page.locator("#origin")).to_have_value("Your location")
+    search = page.locator(".map-search input")
+    expect(search).to_have_attribute("placeholder", "Search destination")
+    search.click()
+    expect(page.locator(".map-search .place-suggestions")).to_have_count(0)  # no "Your location" offered here
+    search.fill("Shillo")
+    page.locator(".map-search .place-suggestions li", has_text="Shillong").first.click()
+    expect(page.locator("#destination")).to_have_value("Shillong, Meghalaya")
+    expect(page.locator(".map-heading h2")).to_have_text("Your location to Shillong")
+    expect(page.locator(".route-card")).to_have_count(2)
+
+
+def test_map_search_bar_fills_the_destination_when_the_start_is_unknown(dashboard):
+    page = dashboard
+    page.add_init_script(geolocation("fail({ code: 1, PERMISSION_DENIED: 1 })"))
+    page.open()
+    page.locator(".map-search input").fill("Shillong")
+    page.keyboard.press("Escape")
+    page.keyboard.press("Enter")
+    expect(page.locator("#destination")).to_have_value("Shillong")
+    expect(page.locator(".map-heading h2")).to_have_text("Regional road intelligence")  # nothing planned without a start
+
+
 def test_refused_location_leaves_the_start_for_the_person_to_type(dashboard):
     page = dashboard
     page.add_init_script(geolocation("fail({ code: 1, PERMISSION_DENIED: 1 })"))

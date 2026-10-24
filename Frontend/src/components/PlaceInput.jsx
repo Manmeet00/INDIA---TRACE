@@ -7,8 +7,9 @@ const LOCATION = { label: YOUR_LOCATION, detail: 'Use this device’s position',
 
 // A place field with suggestions as you type, like a maps search box. `value` is { text, query }: text is what
 // the field shows ("Your location"), query is what the route planner is sent ("26.14123, 91.73456").
-// With autoLocate, an empty field fills itself with the device's position when it first appears.
-export default function PlaceInput({ id, label, value, onChange, placeholder, autoLocate = false }) {
+// With autoLocate, an empty field fills itself with the device's position when it first appears. onPick hears
+// a suggestion being chosen; offerLocation: false leaves "Your location" out of the suggestions.
+export default function PlaceInput({ id, label, value, onChange, placeholder, autoLocate = false, onPick, offerLocation = true }) {
   const listId = useId()
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(-1)
@@ -21,7 +22,7 @@ export default function PlaceInput({ id, label, value, onChange, placeholder, au
 
   const text = value.text
   const typed = text.trim().length >= 2 && text !== LOCATION.label
-  const options = typed ? suggestions : ('geolocation' in navigator ? [LOCATION] : [])
+  const options = typed ? suggestions : (offerLocation && 'geolocation' in navigator ? [LOCATION] : [])
 
   useEffect(() => {
     if (!open || !typed) return undefined
@@ -59,8 +60,13 @@ export default function PlaceInput({ id, label, value, onChange, placeholder, au
     setActive(-1)
     setNote('')
     setAutoState('done')
-    if (option.source === 'location') fillFromDevice()
-    else onChange({ text: option.value, query: option.value })
+    if (option.source === 'location') {
+      fillFromDevice()
+      return
+    }
+    const picked = { text: option.value, query: option.value }
+    onChange(picked)
+    onPick?.(picked)
   }
 
   const onKeyDown = (event) => {

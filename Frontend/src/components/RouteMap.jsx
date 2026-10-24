@@ -4,6 +4,7 @@ import { Circle, CircleMarker, MapContainer, Marker, Pane, Polygon, Polyline, Sc
 import 'leaflet/dist/leaflet.css'
 import Icon from './Icon.jsx'
 import LayersPanel from './LayersPanel.jsx'
+import MapSearch from './MapSearch.jsx'
 import MapplsMap from './MapplsMap.jsx'
 import { useMapLayers } from '../hooks/useMapLayers.js'
 import { BASE_LAYERS, GIBS, OVERLAYS, aqiTone } from '../lib/mapLayers.js'
@@ -212,7 +213,7 @@ function useFullscreen(element) {
 
 // Mappls when the API has a Mappls key, OpenStreetMap otherwise. If Mappls cannot load (no internet, a rejected
 // key) the map falls back to OpenStreetMap and says so, so the dashboard never loses its map.
-export default function RouteMap({ plan, mapConfig, here, hereProblem, onRetryHere, ...mapProps }) {
+export default function RouteMap({ plan, mapConfig, here, hereProblem, onRetryHere, onSearch, ...mapProps }) {
   const [focusKey, setFocusKey] = useState(0)
   const layers = useMapLayers()
   const wrap = useRef(null)
@@ -236,6 +237,7 @@ export default function RouteMap({ plan, mapConfig, here, hereProblem, onRetryHe
     <div className={`map-wrap${fullscreen.on ? ' fullscreen' : ''}`} ref={wrap}>{!mapConfig ? <div className="map-canvas"/> : useMappls
       ? <MapplsMap apiKey={mapConfig.mappls_key} plan={plan} boundary={boundary} here={here} focusKey={focusKey} {...mapProps} onUnavailable={onUnavailable}/>
       : <DashboardMap plan={plan} boundary={boundary} here={here} focusKey={focusKey} base={layers.base} overlays={layers.overlays} {...mapProps}/>}
+      <MapSearch onSearch={onSearch}/>
       {mapConfig && <LayersPanel base={layers.base} overlays={layers.overlays} onBase={layers.setBase} onToggle={layers.toggleOverlay} mappls={useMappls}/>}
       <button type="button" className="locate-button" onClick={() => (here ? setFocusKey((key) => key + 1) : onRetryHere())} disabled={Boolean(here) && !inIndia(here)} aria-label="Show my location" title={inIndia(here) ? 'Show my location' : here ? hereText : `${hereText} Press to try again.`}><Icon name="locate" size={20}/></button>
       <button type="button" className="fullscreen-button" onClick={fullscreen.toggle} aria-pressed={fullscreen.on} aria-label={fullscreen.on ? 'Exit full screen' : 'Show the map full screen'} title={fullscreen.on ? 'Exit full screen (Esc)' : 'Full screen'}><Icon name={fullscreen.on ? 'fullscreen-exit' : 'fullscreen'} size={20}/></button>
