@@ -139,6 +139,13 @@ class ReviewEntry(BaseModel):
     reviewed_at: datetime
 
 
+class TimelineEntry(BaseModel):
+    at: datetime
+    kind: str
+    text: str
+    approximate: bool = False
+
+
 class IncidentOut(BaseModel):
     id: str
     title: str
@@ -181,6 +188,14 @@ class IncidentOut(BaseModel):
     evidence_status: str = "unverified"
     review_history: list[ReviewEntry] = Field(default_factory=list)
     open_flags: list[FlagEntry] = Field(default_factory=list)
+    # Region, source and lifecycle (report 5, 6.5, 6.7, 7).
+    districts: list[str] = Field(default_factory=list)
+    scripts: list[str] = Field(default_factory=list)
+    source_category: str = "other"
+    lifecycle: str = "new"
+    last_checked_at: datetime | None = None
+    collection_run_id: str | None = None
+    timeline: list[TimelineEntry] = Field(default_factory=list)
 
 
 class CollectionRequest(BaseModel):
@@ -189,6 +204,16 @@ class CollectionRequest(BaseModel):
     place: str | None = Field(default=None, max_length=60, pattern=r"^[A-Za-z .\-']+$")
     event_type: str | None = Field(default=None, pattern=r"^(landslide|flood|closure|bridge|accident|construction|weather)$")
     window_days: int | None = Field(default=None, ge=1, le=3650)
+    # Narrows the region's allowed source categories for this run.
+    source_categories: list[str] | None = Field(default=None, min_length=1)
+
+    @field_validator("source_categories")
+    @classmethod
+    def known_categories(cls, value):
+        unknown = set(value or []) - {"official", "news", "social", "other"}
+        if unknown:
+            raise ValueError(f"unknown source categories: {', '.join(sorted(unknown))}")
+        return value
 
     @field_validator("road", "place", mode="before")
     @classmethod
@@ -211,6 +236,10 @@ class CollectionRun(BaseModel):
     fetch_failed: int
     duration_ms: int
     status: str
+    searches_done: int = 0
+    filtered: int = 0
+    phase: str | None = None
+    message: str | None = None
 
 
 class CollectionResult(BaseModel):
@@ -218,7 +247,29 @@ class CollectionResult(BaseModel):
     collected: int
     duplicates: int
     message: str
+    run_id: str | None = None
     incidents: list[IncidentOut]
+
+
+class JobStarted(BaseModel):
+    status: str
+    run_id: str | None = None
+    message: str
+
+
+class RecheckRequest(BaseModel):
+    """Which reports to re-check; without ids, the reports whose lifecycle says they are due."""
+    incident_ids: list[str] | None = Field(default=None, min_length=1, max_length=30)
+
+
+class RecheckResult(BaseModel):
+    status: str
+    checked: int
+    fetched: int
+    failed: int
+    changed: int
+    message: str
+    run_id: str | None = None
 
 
 class IncidentReview(BaseModel):

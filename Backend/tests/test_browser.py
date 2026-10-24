@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import threading
 from urllib.parse import urlsplit
 
 import pytest
@@ -231,3 +232,46 @@ def test_database_failure_is_shown_and_recovers(dashboard, monkeypatch, tmp_path
     page.click("[aria-label='Refresh evidence and API status']")
     expect(page.locator(".connection-label")).to_have_text("API connected")
     expect(page.locator(".collection-message")).to_have_text("Evidence and service status are up to date.")
+
+
+# --- Report features: background runs, source categories, timeline, re-checks, coverage, monitoring ---
+
+def test_background_run_source_choice_timeline_recheck_coverage_and_monitoring(dashboard, tinyfish_network):
+    release = threading.Event()
+
+    def search(request):
+        release.wait(10)
+        return {"results": [
+            {"url": "https://eastjaintiahills.gov.in/order-12", "title": "Order: NH-6 closed near Sonapur",
+             "snippet": "Traffic on NH-6 near Sonapur in Meghalaya is suspended after a landslide.", "date": "3 hours ago"},
+            {"url": "https://www.facebook.com/somepage/posts/1", "title": "NH-6 jam", "snippet": "Long queue on NH-6, says a post."},
+        ]}
+    tinyfish_network[SEARCH] = search
+    page = dashboard
+    page.open()
+
+    page.get_by_label("Social post").uncheck()
+    page.click("text=Run collection")
+    expect(page.locator(".list-heading .text-button")).to_contain_text("Searching 1 of 6")  # the run is followed live
+    release.set()
+    expect(page.locator(".collection-message")).to_contain_text("1 new reports from 6 searches")
+    expect(page.locator(".collection-message")).to_contain_text("outside the allowed categories (official, news, other) were skipped")
+    expect(page.locator(".evidence-row")).to_have_count(1)
+
+    desk = page.locator(".selected-incident")
+    expect(desk.locator(".source-badge")).to_have_text("Official source")
+    expect(desk.locator(".verification-badge")).to_have_text("Corroborated")
+    expect(desk.locator(".timeline")).to_contain_text("Collected by TinyFish web search")
+    expect(desk.locator(".timeline")).to_contain_text("Page read with TinyFish Fetch")
+
+    desk.locator("text=Re-check source").click()
+    expect(page.locator(".collection-message")).to_have_text("Re-checked: page read, no change since the last read")
+    expect(desk.locator(".timeline li").first).to_contain_text("no change since the last read")
+
+    coverage = page.locator(".region-panel")
+    expect(coverage.locator("li", has_text="Meghalaya")).to_contain_text("1 report · 1 recent")
+    expect(coverage.locator("li.gap", has_text="Mizoram")).to_contain_text("none recent")
+
+    monitoring = page.locator("#monitoring")
+    expect(monitoring.locator(".figure", has_text="TinyFish searches")).to_contain_text("6 / 12,000")
+    expect(monitoring.locator(".figure", has_text="Kept after review")).to_contain_text("not measured")

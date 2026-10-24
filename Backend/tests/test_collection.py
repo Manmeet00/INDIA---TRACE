@@ -91,7 +91,7 @@ def test_all_searches_failing_is_logged_and_reported(client, tinyfish, monkeypat
     monkeypatch.setattr(collection.time, "sleep", lambda seconds: None)
     assert client.post("/api/collection/run").status_code == 502
     run = client.get("/api/collection/runs").json()[0]
-    assert (run["status"], run["failed_searches"], run["stored"]) == ("failed", len(collection.PILOT_SEARCHES), 0)
+    assert (run["status"], run["failed_searches"], run["stored"]) == ("failed", len(collection.default_searches()), 0)
 
 
 def test_targeted_search_rejects_unknown_event_type(client):

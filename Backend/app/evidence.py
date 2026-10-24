@@ -6,23 +6,15 @@ the reviewer decides what they mean.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from functools import lru_cache
+import math
 import re
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from .regions import REGIONS, active_region, alias_pattern, scripts_in
+
 HIGHWAY = re.compile(r"\b(?:NH|National\s+Highway|Highway\s+No\.?)[\s\-–:(]*(?:NH[\s\-]*)?0*(\d{1,3}[A-Z]?)\b", re.IGNORECASE)
-# Northeast India towns, districts and road points that appear in disruption reports. Matched case-sensitively.
-PLACES = (
-    "Guwahati", "Shillong", "Silchar", "Imphal", "Aizawl", "Kohima", "Dimapur", "Agartala", "Itanagar", "Gangtok",
-    "Tezpur", "Jorhat", "Dibrugarh", "Tinsukia", "Nagaon", "Bongaigaon", "Dhubri", "Goalpara", "Nongpoh", "Jowai",
-    "Tura", "Sohra", "Cherrapunji", "Haflong", "Karimganj", "Hailakandi", "Lumding", "Diphu", "Dhemaji", "Lakhimpur",
-    "Pasighat", "Tawang", "Bomdila", "Ziro", "Aalo", "Naharlagun", "Seppa", "Lunglei", "Kolasib", "Champhai",
-    "Lawngtlai", "Siaha", "Mokokchung", "Wokha", "Zunheboto", "Ukhrul", "Churachandpur", "Jiribam", "Senapati",
-    "Mao", "Khisama", "Dharmanagar", "Kailashahar", "Khliehriat", "Byrnihat", "Jorabat", "Sonapur", "Lum Shnong",
-    "Ratacherra", "Bardang", "Jeypore", "Deomali", "Anjaw", "Upper Subansiri", "Lohit", "Siliguri", "Kalimpong",
-    "Barak Valley", "Saraighat", "Khanapara", "Cachar", "Kamrup", "Ri Bhoi", "East Jaintia Hills", "East Khasi Hills",
-)
-PLACE = re.compile(r"\b(" + "|".join(re.escape(place) for place in PLACES) + r")\b")
 CLOSURE = re.compile(r"\b(blocked|blockade|closed|closure|snapped|cut off|suspended|collapsed?|collapses|washed (?:away|off)|standstill|stranded)\b", re.IGNORECASE)
 REOPENING = re.compile(r"\b(restored|restores|reopened|re-opened|reopens|resumed|open for traffic|normalcy)\b", re.IGNORECASE)
 # Checked in this order; the first match is the report's primary event_type.
@@ -35,28 +27,20 @@ EVENT_TYPES = (
     ("closure", CLOSURE),
     ("weather", re.compile(r"\b(heavy rain\w*|rainfall|downpours?|cloudbursts?|cyclone|storms?)\b", re.IGNORECASE)),
 )
-# How long a report stays "fresh", by primary event type (report 6.5: fast-changing events
-# get short windows, longer-lasting damage and roadworks longer ones). Hours.
-FRESHNESS_WINDOW_H = {"accident": 12, "weather": 24, "other": 24, "flood": 48, "closure": 48, "landslide": 72,
-                      "bridge": 14 * 24, "construction": 30 * 24}
-STATES = ("Assam", "Meghalaya", "Mizoram", "Manipur", "Nagaland", "Tripura", "Arunachal Pradesh", "Sikkim", "West Bengal")
-STATE = re.compile(r"\b(Assam|Meghalaya|Mizoram|Manipur|Nagaland|Tripura|Arunachal(?: Pradesh)?|Sikkim|West Bengal)\b")
-# State for each listed place; places that exist in more than one state (e.g. Sonapur) are left out.
-PLACE_STATE = {
-    **dict.fromkeys(("Guwahati", "Silchar", "Tezpur", "Jorhat", "Dibrugarh", "Tinsukia", "Nagaon", "Bongaigaon", "Dhubri",
-                     "Goalpara", "Haflong", "Karimganj", "Hailakandi", "Lumding", "Diphu", "Dhemaji", "Lakhimpur",
-                     "Jorabat", "Ratacherra", "Jeypore", "Barak Valley", "Saraighat", "Khanapara", "Cachar", "Kamrup"), "Assam"),
-    **dict.fromkeys(("Shillong", "Nongpoh", "Jowai", "Tura", "Sohra", "Cherrapunji", "Khliehriat", "Byrnihat", "Lum Shnong",
-                     "Ri Bhoi", "East Jaintia Hills", "East Khasi Hills"), "Meghalaya"),
-    **dict.fromkeys(("Aizawl", "Lunglei", "Kolasib", "Champhai", "Lawngtlai", "Siaha"), "Mizoram"),
-    **dict.fromkeys(("Imphal", "Ukhrul", "Churachandpur", "Jiribam", "Senapati", "Mao"), "Manipur"),
-    **dict.fromkeys(("Kohima", "Dimapur", "Mokokchung", "Wokha", "Zunheboto", "Khisama"), "Nagaland"),
-    **dict.fromkeys(("Agartala", "Dharmanagar", "Kailashahar"), "Tripura"),
-    **dict.fromkeys(("Itanagar", "Pasighat", "Tawang", "Bomdila", "Ziro", "Aalo", "Naharlagun", "Seppa", "Deomali", "Anjaw",
-                     "Upper Subansiri", "Lohit"), "Arunachal Pradesh"),
-    **dict.fromkeys(("Gangtok", "Bardang"), "Sikkim"),
-    **dict.fromkeys(("Siliguri", "Kalimpong"), "West Bengal"),
-}
+
+
+@lru_cache
+def _region_patterns(region_id: str) -> tuple[re.Pattern, re.Pattern, list[tuple[re.Pattern, str]]]:
+    """Place, state and road-alias patterns for a region. Places match case-sensitively, longest name first."""
+    region = REGIONS[region_id]
+    names = sorted(region.place_index, key=len, reverse=True)
+    place = re.compile(r"\b(" + "|".join(re.escape(name) for name in names) + r")\b")
+    states = sorted({*region.states, *region.state_aliases}, key=len, reverse=True)
+    state = re.compile(r"\b(" + "|".join(re.escape(name) for name in states) + r")\b")
+    aliases = [(alias_pattern(name), road) for name, road in region.road_aliases.items()]
+    return place, state, aliases
+
+
 COARSE_RELATIVE = re.compile(r"(week|month|year)s?\s+ago$", re.IGNORECASE)
 STOPWORDS = {"the", "and", "for", "has", "have", "had", "was", "were", "are", "that", "this", "with", "from", "after",
              "due", "its", "into", "over", "near", "along", "amid", "been", "which", "their", "more", "than"}
@@ -82,6 +66,32 @@ def publisher(url: str | None) -> str | None:
     return host
 
 
+# Source categories (report 7: allowed source categories; 9: an authoritative source can corroborate).
+OFFICIAL_SUFFIXES = (".gov.in", ".nic.in")
+SOCIAL_HOSTS = {"facebook.com", "m.facebook.com", "instagram.com", "youtube.com", "youtu.be", "x.com", "twitter.com",
+                "reddit.com", "threads.net", "t.me"}
+# News sites seen in pilot collections; any result from TinyFish news search also counts as news.
+NEWS_HOSTS = {"timesofindia.indiatimes.com", "indiatodayne.in", "barakbulletin.com", "morungexpress.com", "sentinelassam.com",
+              "assamtribune.com", "hindustantimes.com", "ndtv.com", "eastmojo.com", "nenow.in", "thehindu.com",
+              "indianexpress.com", "theshillongtimes.com", "highlandpost.com", "nagalandpost.com", "imphalfreepress.com"}
+
+
+def _host(url: str | None) -> str:
+    return (urlsplit(url or "").hostname or "").removeprefix("www.")
+
+
+def source_category(url: str | None, search_kind: str | None = None) -> str:
+    """official (government domains), news, social or other; decided from the URL and how it was found."""
+    host = _host(url)
+    if host.endswith(OFFICIAL_SUFFIXES) or host in {"gov.in", "nic.in"}:
+        return "official"
+    if host in SOCIAL_HOSTS:
+        return "social"
+    if search_kind == "news" or host in NEWS_HOSTS:
+        return "news"
+    return "other"
+
+
 def evidence_status(item: dict[str, Any]) -> str:
     """One label in the project's evidence vocabulary. Stale outranks confirmed so old reports never read as current."""
     verification = item.get("verification", "unverified")
@@ -93,9 +103,33 @@ def evidence_status(item: dict[str, Any]) -> str:
         return "stale"
     if verification == "confirmed":
         return "confirmed"
-    if item["corroborating_ids"]:
+    if item["corroborating_ids"] or item.get("source_category") == "official":
         return "corroborated"
     return "unknown" if verification == "unknown" else "unverified"
+
+
+LIFECYCLE_DEFAULT_RECHECK_S = 24 * 3600
+
+
+def lifecycle(item: dict[str, Any], now: datetime | None = None) -> str:
+    """Where a report is in its life (report 6.5): new, needs_recheck, stale, resolved or dismissed.
+
+    A fresh report needs a re-check once half its freshness window has passed since it was published
+    or last checked; a report without a source time needs one a day after its last check.
+    Nothing here marks a report resolved: only a reviewer, with an authoritative update, does that.
+    """
+    if item.get("verification") in ("dismissed", "resolved"):
+        return item["verification"]
+    if item["freshness"] == "stale":
+        return "stale"
+    now = now or datetime.now(timezone.utc)
+    checked = item.get("last_checked_at")
+    checked_age = (now - checked).total_seconds() if checked else math.inf
+    if item["freshness"] == "unknown":
+        return "needs_recheck" if checked_age > LIFECYCLE_DEFAULT_RECHECK_S else "new"
+    half_window = item["freshness_window_h"] * 3600 / 2
+    published_age = (now - item["published_estimate"]).total_seconds()
+    return "needs_recheck" if min(published_age, checked_age) > half_window else "new"
 
 
 def freshness(published: datetime | None, approximate: bool, window_s: float = 24 * 3600) -> str:
@@ -147,25 +181,49 @@ def _dated_closely(first: dict[str, Any], second: dict[str, Any]) -> bool:
     return abs((times[0] - times[1]).total_seconds()) <= CONFLICT_WINDOW_S
 
 
+SAME_PLACE_M = 1000
+
+
+def _same_place_and_time(first: dict[str, Any], second: dict[str, Any]) -> bool:
+    """Reviewer-located reports of the same event type within 1 km, published close together (report 6.4)."""
+    if None in (first.get("latitude"), first.get("longitude"), second.get("latitude"), second.get("longitude")):
+        return False
+    lat = math.radians((first["latitude"] + second["latitude"]) / 2)
+    dx = math.radians(second["longitude"] - first["longitude"]) * math.cos(lat) * 6_371_000
+    dy = math.radians(second["latitude"] - first["latitude"]) * 6_371_000
+    return (math.hypot(dx, dy) <= SAME_PLACE_M and first["event_type"] == second["event_type"]
+            and _dated_closely(first, second))
+
+
 def annotate(incidents: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Add mentions, regions, event type, freshness (per-type window), location confidence,
-    duplicate/related/conflict/corroborating ids and evidence_status to each report."""
+    """Add mentions, regions, districts, scripts, source category, event type, freshness (per-type window),
+    location confidence, duplicate/related/conflict/corroborating ids, evidence_status and lifecycle to each report."""
+    region = active_region()
+    place_pattern, state_pattern, road_aliases = _region_patterns(region.id)
+    windows = region.freshness_window_h
     tokens = {}
     for item in incidents:
         # The fetched page description is the article's own summary; full page text is not used because
         # navigation and related-story links would add unrelated roads and places.
         text = f"{item['title']} {item['summary']} {item.get('page_description') or ''}"
-        highways = sorted({match.upper() for match in HIGHWAY.findall(text)}, key=lambda value: (len(value), value))
-        item["mentions"] = {"highways": [f"NH-{number}" for number in highways], "places": list(dict.fromkeys(PLACE.findall(text)))}
+        numbers = {match.upper() for match in HIGHWAY.findall(text)}
+        numbers |= {road.removeprefix("NH-") for pattern, road in road_aliases if pattern.search(text)}
+        highways = sorted(numbers, key=lambda value: (len(value), value))
+        places = [region.place_index[name] for name in dict.fromkeys(place_pattern.findall(text))]
+        item["mentions"] = {"highways": [f"NH-{number}" for number in highways],
+                            "places": list(dict.fromkeys(place.name for place in places))}
         item["report_signal"] = _signal(text)
         item["event_types"] = [name for name, pattern in EVENT_TYPES if pattern.search(text)]
         item["event_type"] = item["event_types"][0] if item["event_types"] else "other"
-        item["freshness_window_h"] = FRESHNESS_WINDOW_H.get(item["event_type"], FRESHNESS_WINDOW_H["other"])
+        item["freshness_window_h"] = windows.get(item["event_type"], windows["other"])
         item["freshness"] = freshness(item.get("published_estimate"), item.get("published_approximate", False),
                                       item["freshness_window_h"] * 3600)
-        states = {"Arunachal Pradesh" if name == "Arunachal" else name for name in STATE.findall(text)}
-        states |= {PLACE_STATE[place] for place in item["mentions"]["places"] if place in PLACE_STATE}
-        item["regions"] = [state for state in STATES if state in states]
+        named = {region.state_aliases.get(name, name) for name in state_pattern.findall(text)}
+        named |= {place.state for place in places if place.state}
+        item["regions"] = [state for state in region.states if state in named]
+        item["districts"] = list(dict.fromkeys(place.district for place in places if place.district))
+        item["scripts"] = scripts_in(f"{item['title']} {item['summary']}")
+        item["source_category"] = source_category(item.get("source_url"), item.get("search_kind"))
         item["location_confidence"] = location_confidence(item)
         tokens[item["id"]] = _tokens(text)
 
@@ -182,7 +240,8 @@ def annotate(incidents: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for index, first in enumerate(incidents):
         for second in incidents[index + 1:]:
             a, b = tokens[first["id"]], tokens[second["id"]]
-            if len(a) >= 8 and len(b) >= 8 and len(a & b) / len(a | b) >= DUPLICATE_SIMILARITY:
+            similar_text = len(a) >= 8 and len(b) >= 8 and len(a & b) / len(a | b) >= DUPLICATE_SIMILARITY
+            if similar_text or _same_place_and_time(first, second):
                 parent[root(second["id"])] = root(first["id"])
     groups: dict[str, list[str]] = {}
     for item in incidents:
@@ -211,4 +270,5 @@ def annotate(incidents: list[dict[str, Any]]) -> list[dict[str, Any]]:
         ]
     for item in incidents:
         item["evidence_status"] = evidence_status(item)
+        item["lifecycle"] = lifecycle(item)
     return incidents

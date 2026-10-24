@@ -303,6 +303,55 @@
 .source-footnote { display: flex; align-items: flex-start; gap: 8px; padding: 0 4px; color: var(--muted); font-size: var(--fs-xs); line-height: 1.5; }
 .source-footnote svg { flex: none; color: var(--green); }
 
+/* Source type, lifecycle and re-checks */
+.source-badge { padding: 3px 8px; border-radius: 5px; font: 700 var(--fs-xs)/1.4 var(--font-body); color: var(--slate); box-shadow: inset 0 0 0 1px var(--line); }
+.source-badge.official { color: var(--teal); background: var(--teal-bg); box-shadow: none; }
+.hint-badge.recheck { color: var(--warn); background: var(--warn-bg); }
+.source-actions, .recheck-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-top: 8px; }
+.source-actions small, .recheck-row small { color: var(--faint); font-size: var(--fs-xs); }
+/* Re-checks are secondary actions: outlined, so "Run collection" stays the one green button in the panel. */
+.source-actions .text-button, .recheck-row .text-button { display: inline-flex; align-items: center; gap: 5px; padding: 5px 11px; border: 1px solid var(--line); border-radius: 999px; color: var(--route); background: var(--card); }
+.source-actions .text-button:hover:not(:disabled), .recheck-row .text-button:hover:not(:disabled) { border-color: var(--route); background: var(--card); }
+.source-choice { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 10px 0 0; padding: 0; border: 0; font-size: var(--fs-sm); }
+.source-choice legend { float: left; margin-right: 4px; color: var(--muted); font-size: var(--fs-xs); font-weight: 700; }
+.source-choice label { display: inline-flex; align-items: center; gap: 5px; color: var(--text); }
+
+/* Timeline: everything that happened to a report, newest first */
+.timeline { display: grid; gap: 6px; margin-top: 12px; }
+.timeline > b { color: var(--muted); font-size: var(--fs-xs); letter-spacing: .4px; text-transform: uppercase; }
+.timeline ol { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.timeline li { position: relative; display: grid; gap: 1px; padding: 0 0 9px 18px; border-left: 2px solid var(--line); margin-left: 4px; font-size: var(--fs-sm); line-height: 1.45; }
+.timeline li:last-child { border-left-color: transparent; }
+.timeline li::before { content: ""; position: absolute; left: -6px; top: 4px; width: 10px; height: 10px; border: 2px solid var(--card); border-radius: 50%; background: var(--slate); }
+.timeline li.review::before { background: var(--route); }
+.timeline li.published::before, .timeline li.collected::before { background: var(--green); }
+.timeline li.alert::before { background: var(--danger); }
+.timeline li.alert span { color: #7a2622; }
+.timeline time { color: var(--faint); font: 500 var(--fs-xs)/1.4 var(--font-data); }
+
+/* Region coverage */
+.region-panel { padding: 16px; }
+.region-corridor { margin: 0 0 8px; color: var(--muted); font-size: var(--fs-sm); }
+.coverage-list { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.coverage-list li { display: grid; grid-template-columns: 1fr auto; gap: 0 8px; padding: 7px 0; border-bottom: 1px solid var(--line-soft); font-size: var(--fs-sm); }
+.coverage-list li span { color: var(--text); font-family: var(--font-data); font-size: var(--fs-xs); text-align: right; }
+.coverage-list li small { grid-column: 1 / -1; color: var(--faint); font-size: var(--fs-xs); }
+.coverage-list li.gap b { color: var(--warn); }
+.coverage-list li.gap span { color: var(--warn); }
+
+/* Monitoring and evaluation */
+.monitoring { margin-top: 16px; padding: 18px; }
+.monitoring h2 { font-size: var(--fs-lg); }
+.monitoring-time { color: var(--faint); font: 500 var(--fs-xs)/1.4 var(--font-data); }
+.figure-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+.figure-group { display: grid; align-content: start; gap: 8px; padding: 12px; border-radius: 8px; background: var(--paper); }
+.figure-group h3 { margin: 0 0 2px; color: var(--muted); font: 700 var(--fs-xs)/1.3 var(--font-display); letter-spacing: .8px; text-transform: uppercase; }
+.figure { display: grid; grid-template-columns: 1fr auto; gap: 0 8px; align-items: baseline; }
+.figure span { color: var(--text); font-size: var(--fs-sm); }
+.figure b { font: 700 var(--fs-md)/1.3 var(--font-data); color: var(--ink); }
+.figure small { grid-column: 1 / -1; color: var(--faint); font-size: var(--fs-xs); }
+.figure b.unmeasured { color: var(--faint); font: 500 var(--fs-sm)/1.3 var(--font-body); }
+
 .page-footer { display: flex; justify-content: space-between; gap: 12px; margin-top: 20px; padding: 12px 2px 0; border-top: 1px solid var(--line); color: var(--faint); font-size: var(--fs-xs); }
 .page-footer span:first-child { color: var(--muted); font-weight: 700; letter-spacing: .4px; }
 .page-footer i { padding: 0 4px; font-style: normal; }
@@ -325,7 +374,7 @@
 @media (max-width: 760px) {
   .sidebar { inset: auto 0 0; width: auto; height: 62px; padding: 6px 8px; border-top: 1px solid var(--ink-line); }
   .sidebar > .brand, .sidebar-bottom { display: none; }
-  .side-nav { height: 100%; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+  .side-nav { height: 100%; grid-template-columns: repeat(5, 1fr); gap: 4px; }
   .nav-item { min-height: 50px; flex-direction: column; justify-content: center; gap: 3px; padding: 3px; font-size: var(--fs-xs); }
   .nav-item.active { box-shadow: inset 0 3px var(--milestone); }
   .nav-count { position: absolute; top: 2px; right: 14%; min-width: 18px; height: 16px; margin: 0; padding: 0 4px; }
@@ -347,7 +396,8 @@
   .incident-panel { order: 4; }
   .evidence-list-panel { order: 5; }
   .map-options { order: 6; }
-  .source-footnote { order: 7; }
+  .region-panel { order: 7; }
+  .source-footnote { order: 8; }
   .map-wrap { height: 340px; }
   .map-heading { padding: 10px 12px; }
   .route-card-list { grid-template-columns: 1fr; }

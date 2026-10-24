@@ -1,19 +1,24 @@
 import { useCallback, useEffect, useState } from 'react'
-import { getLatestCollectionRun, loadWorkspace } from '../services/api.js'
+import { getLatestCollectionRun, getMetrics, getRegion, loadWorkspace } from '../services/api.js'
 
-// API status (online, offline, degraded), stored evidence and the latest collection run, loaded on start and after every change.
+// API status (online, offline, degraded), stored evidence, the latest collection run, the region with its coverage,
+// and monitoring figures; loaded on start and after every change.
 export function useWorkspace() {
   const [incidents, setIncidents] = useState([])
   const [apiStatus, setApiStatus] = useState('checking')
   const [lastRun, setLastRun] = useState(null)
   const [problem, setProblem] = useState('')
+  const [region, setRegion] = useState(null)
+  const [metrics, setMetrics] = useState(null)
 
   const apply = useCallback((workspace) => {
     setApiStatus(workspace.status)
     setProblem(workspace.problem)
     if (workspace.incidents) setIncidents(workspace.incidents)
-    // The run log is informational; the evidence list still works without it.
+    // The run log, region coverage and metrics are informational; the evidence list still works without them.
     getLatestCollectionRun().then(setLastRun).catch(() => {})
+    getRegion().then(setRegion).catch(() => {})
+    getMetrics().then(setMetrics).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -28,5 +33,5 @@ export function useWorkspace() {
     if (workspace.status !== 'online') throw new Error(workspace.problem)
   }, [apply])
 
-  return { incidents, apiStatus, problem, lastRun, refresh }
+  return { incidents, apiStatus, problem, lastRun, region, metrics, refresh }
 }

@@ -39,12 +39,17 @@ The pilot corridor is **NH-6 / NH-306, Guwahati – Shillong – Silchar – Aiz
    - **Verify before dispatch**: reports nearby are unconfirmed, some reports have no location, evidence is over 24 hours old, or nothing has been collected.
    - **Proceed cautiously**: every relevant report is located and none is near the route. This never means the road is clear.
 
+4. **Re-check and follow a report's life.** Each report moves from *New* to *Needs re-check* (half its freshness window has passed since it was published or last checked) to *Stale*; only a reviewer marks it *Resolved*. *Re-check source* reads the page again with TinyFish Fetch, and *Re-check due sources* does it for every report that is due. The **timeline** keeps everything that happened to the report: when it was published, which run and query collected it, every sighting, page read and re-check, every review and flag. A changed page is flagged for review; an unreadable page never counts as a reopened road.
+5. **Check coverage and system health.** *Coverage by state* shows reports per state of the region; a state without recent reports is a gap, not a clear road. *Monitoring* (bottom of the page) shows evidence quality, freshness lag, reviewer decisions, collection failures, TinyFish usage against the free daily allowance and route-planning response times. Anything without data says "not measured".
+
 ## Current capability and limits
 
 - Route planning resolves place names with OpenStreetMap Nominatim and gets route geometry, distance, and time estimates from OSRM's public car profile. Vehicle type is recorded but vehicle restrictions are not checked.
 - No seed or fake incidents are inserted. Reports with no source time are marked freshness `unknown`; collection does not infer incident coordinates from text.
 - Event types, duplicates, conflicts, corroboration, regions and mentions are text heuristics and never change a reviewer's decision. Anyone can flag a record as outdated or wrong; flags wait for a reviewer and don't change the status.
-- Scheduled collection is off by default (`COLLECTION_INTERVAL_MINUTES` in `Backend/.env`).
+- Collection and re-checks run as background jobs on the API, one at a time; the dashboard follows each run's progress. Scheduled collection, followed by a re-check of due reports, is off by default (`COLLECTION_INTERVAL_MINUTES` in `Backend/.env`).
+- Sources are categorised as official (gov.in and nic.in domains), news, social or other. A collection can be limited to some categories, and an official source counts as corroboration (report section 9), never as a reviewer's confirmation.
+- The region (`REGION` in `Backend/.env`, defined in `Backend/app/regions.py`) sets the places with districts and alternate spellings, road names such as "GS Road" for NH-6, the searches, the allowed source categories and the freshness windows. Only Northeast India is configured; adding a region is a configuration entry. Reports keep their original text, and the writing script is recorded; the interface is not translated.
 - Geocodes and routes are cached in SQLite and served from the cache if OSRM is slow or down, labelled with when they were fetched. The exact Guwahati–Shillong example also has a historical snapshot in the frontend, marked not for dispatch. Map tiles and TinyFish collection need internet.
 - SQLite instead of the PostgreSQL + PostGIS in the proposal: it needs no setup on the demo laptop. PostGIS is the scale-up path.
 - The original shipment trace/event API is preserved under `/api/v1/*`.

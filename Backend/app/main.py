@@ -2,6 +2,7 @@ import asyncio
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timezone
 import logging
+import time
 from uuid import uuid4
 import sqlite3
 
@@ -9,21 +10,34 @@ from fastapi import FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .collection import collect_candidates, collection_runs, targeted_searches
+from . import jobs
+from .collection import (NOT_CONFIGURED, collect_candidates, collection_run, collection_runs, default_searches, recheck_reports,
+                         targeted_searches)
 from .config import get_settings
 from .database import get_connection, initialize_database
+from .monitoring import log_route_plan, metrics
+from .regions import active_region, coverage_by_state
 from .repository import add_event, create_trace, event_from_row, trace_from_row, update_trace
 from .road_intelligence import load_incidents, plan_route
 from .schemas import (CollectionRequest, CollectionResult, CollectionRun, DashboardSummary, EventCreate, EventOut, IncidentFlag,
-                      IncidentOut, IncidentReview, RoutePlanRequest, TraceCreate, TraceDetail, TracePage, TraceStatus, TraceUpdate)
+                      IncidentOut, IncidentReview, JobStarted, RecheckRequest, RecheckResult, RoutePlanRequest, TraceCreate,
+                      TraceDetail, TracePage, TraceStatus, TraceUpdate)
 
 settings = get_settings()
 logger = logging.getLogger("indiatrace")
 
 
 def _scheduled_collection() -> None:
-    with get_connection() as connection:
-        collect_candidates(connection, trigger="scheduled", recency_minutes=settings.collection_window_days * 1440 or None)
+    """Pilot searches, then a re-check of the reports that are due. Skipped while another run is going."""
+    try:
+        with jobs.exclusive(), get_connection() as connection:
+            try:
+                collect_candidates(connection, trigger="scheduled", recency_minutes=settings.collection_window_days * 1440 or None)
+            finally:
+                recheck_reports(connection, trigger="scheduled_recheck")
+    except HTTPException as exc:
+        if exc.detail != jobs.BUSY:
+            raise
 
 
 async def _collect_periodically(interval_minutes: int) -> None:
@@ -89,7 +103,18 @@ def health():
 
 @app.post("/api/routes/plan")
 def post_route_plan(payload: RoutePlanRequest):
-    return plan_route(payload)
+    started = time.monotonic()
+    status_code, routes = 200, None
+    try:
+        plan = plan_route(payload)
+        routes = len(plan["routes"])
+        return plan
+    except HTTPException as exc:
+        status_code = exc.status_code
+        raise
+    finally:
+        with get_connection() as connection:
+            log_route_plan(connection, round((time.monotonic() - started) * 1000), status_code, routes)
 
 
 @app.get("/api/incidents", response_model=list[IncidentOut])
@@ -121,7 +146,9 @@ def review_incident(incident_id: str, payload: IncidentReview):
             raise HTTPException(status_code=404, detail="Incident evidence not found")
         location = {field: getattr(payload, field) for field in ("location_text", "latitude", "longitude")
                     if field in payload.model_fields_set}
-        values = {"verification": payload.verification, "reviewed_at": reviewed_at, "review_note": payload.review_note, **location}
+        # A review is a check by a person, so it also counts as the report's latest check.
+        values = {"verification": payload.verification, "reviewed_at": reviewed_at, "last_checked_at": reviewed_at,
+                  "review_note": payload.review_note, **location}
         connection.execute(
             "UPDATE incidents SET " + ", ".join(f"{column} = ?" for column in values) + " WHERE id = ?",
             (*values.values(), incident_id),
@@ -153,21 +180,101 @@ def flag_incident(incident_id: str, payload: IncidentFlag):
         return find_incident(connection, incident_id)
 
 
-@app.post("/api/collection/run", response_model=CollectionResult)
-def run_collection(payload: CollectionRequest | None = None):
-    """Pilot searches by default; a road, place or event type runs a targeted search instead."""
+def _collection_plan(payload: CollectionRequest | None) -> tuple[list[dict[str, str]], str, int | None, list[str] | None]:
+    """Searches, trigger, recency and source categories for a request: region searches unless it names a target."""
     payload = payload or CollectionRequest()
     targeted = payload.road or payload.place or payload.event_type
-    searches = targeted_searches(payload.road, payload.place, payload.event_type) if targeted else None
+    searches = targeted_searches(payload.road, payload.place, payload.event_type) if targeted else default_searches()
+    return searches, "targeted" if targeted else "manual", payload.window_days * 1440 if payload.window_days else None, payload.source_categories
+
+
+@app.post("/api/collection/run", response_model=CollectionResult)
+def run_collection(payload: CollectionRequest | None = None):
+    """Runs the collection and answers when it has finished. The dashboard uses /api/collection/jobs instead."""
+    searches, trigger, recency, categories = _collection_plan(payload)
+    with jobs.exclusive(), get_connection() as connection:
+        return collect_candidates(connection, searches, trigger, recency, categories)
+
+
+@app.post("/api/collection/jobs", response_model=JobStarted, status_code=status.HTTP_202_ACCEPTED)
+def start_collection_job(response: Response, payload: CollectionRequest | None = None):
+    """Starts a collection in the background; follow it with GET /api/collection/runs/{run_id}."""
+    if not get_settings().tinyfish_api_key:
+        response.status_code = status.HTTP_200_OK
+        return {"status": "not_configured", "message": NOT_CONFIGURED}
+    searches, trigger, recency, categories = _collection_plan(payload)
+    run_id = jobs.start(trigger, searches, recency,
+                        lambda connection, run_id: collect_candidates(connection, searches, trigger, recency, categories, run_id))
+    return {"status": "running", "run_id": run_id, "message": f"Collection started: {len(searches)} searches."}
+
+
+@app.post("/api/recheck", response_model=RecheckResult)
+def recheck(payload: RecheckRequest | None = None):
+    """Reads report pages again now. Without ids, re-checks the reports whose lifecycle says they are due."""
+    with jobs.exclusive(), get_connection() as connection:
+        return recheck_reports(connection, payload.incident_ids if payload else None)
+
+
+@app.post("/api/recheck/jobs", response_model=JobStarted, status_code=status.HTTP_202_ACCEPTED)
+def start_recheck_job(response: Response, payload: RecheckRequest | None = None):
+    if not get_settings().tinyfish_api_key:
+        response.status_code = status.HTTP_200_OK
+        return {"status": "not_configured", "message": NOT_CONFIGURED}
+    ids = payload.incident_ids if payload else None
+    run_id = jobs.start("recheck", [], None, lambda connection, run_id: recheck_reports(connection, ids, run_id=run_id))
+    return {"status": "running", "run_id": run_id, "message": "Re-check started."}
+
+
+@app.post("/api/incidents/{incident_id}/recheck", response_model=IncidentOut)
+def recheck_incident(incident_id: str):
+    """Reads one report's page again and returns the report with the outcome in its timeline."""
     with get_connection() as connection:
-        return collect_candidates(connection, searches, "targeted" if targeted else "manual",
-                                  payload.window_days * 1440 if payload.window_days else None)
+        if connection.execute("SELECT 1 FROM incidents WHERE id = ?", (incident_id,)).fetchone() is None:
+            raise HTTPException(status_code=404, detail="Incident evidence not found")
+    if not get_settings().tinyfish_api_key:
+        raise HTTPException(status_code=503, detail=NOT_CONFIGURED)
+    with jobs.exclusive(), get_connection() as connection:
+        recheck_reports(connection, [incident_id], trigger="recheck")
+        return find_incident(connection, incident_id)
 
 
 @app.get("/api/collection/runs", response_model=list[CollectionRun])
 def list_collection_runs(limit: int = Query(default=10, ge=1, le=100)):
     with get_connection() as connection:
         return collection_runs(connection, limit)
+
+
+@app.get("/api/collection/runs/{run_id}", response_model=CollectionRun)
+def get_collection_run(run_id: str):
+    with get_connection() as connection:
+        run = collection_run(connection, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Collection run not found")
+    return run
+
+
+@app.get("/api/region")
+def region_overview():
+    """The active region's configuration (report 6.7) and its coverage by state."""
+    region = active_region()
+    with get_connection() as connection:
+        incidents = load_incidents(connection)
+    return {
+        "id": region.id, "name": region.name, "corridor": region.corridor, "states": region.states,
+        "places": [{"name": place.name, "state": place.state, "district": place.district, "aliases": place.aliases}
+                   for place in region.places if place.district],
+        "road_aliases": region.road_aliases, "searches": region.searches, "source_categories": region.source_categories,
+        "freshness_window_h": region.freshness_window_h, "scripts": region.scripts,
+        "coverage": coverage_by_state(region, incidents),
+        "coverage_note": "A state with no recent reports is a coverage gap, not evidence that its roads are clear.",
+    }
+
+
+@app.get("/api/metrics")
+def get_metrics():
+    """Monitoring and evaluation figures computed from logs and stored reports; unmeasured values are null."""
+    with get_connection() as connection:
+        return metrics(connection, load_incidents(connection))
 
 
 @app.get(f"{settings.api_prefix}/summary", response_model=DashboardSummary)

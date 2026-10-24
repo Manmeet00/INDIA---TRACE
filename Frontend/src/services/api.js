@@ -17,7 +17,7 @@ async function readJson(response, fallback) {
 }
 
 // Longer than the backend's own provider timeouts, so a slow provider reports its own error first.
-const TIMEOUT_MS = { read: 20000, plan: 60000, collect: 300000 }
+const TIMEOUT_MS = { read: 20000, plan: 60000 }
 
 async function request(path, fallback, { method = 'GET', body, timeoutMs = TIMEOUT_MS.read } = {}) {
   const controller = new AbortController()
@@ -47,8 +47,33 @@ export const getLatestCollectionRun = () => request('/api/collection/runs?limit=
 /** @param {{origin: string, destination: string, vehicle_type: string, priority: string}} plan */
 export const planRoute = (plan) => request('/api/routes/plan', 'Could not plan this route.', { method: 'POST', body: plan, timeoutMs: TIMEOUT_MS.plan })
 
-/** No road, place or event_type runs the pilot-corridor searches; any of them runs a targeted search. */
-export const runCollection = (options) => request('/api/collection/run', 'Collection could not run.', { method: 'POST', body: options, timeoutMs: TIMEOUT_MS.collect })
+/**
+ * Starts a background collection: no road, place or event_type runs the region's corridor searches, any of them
+ * a targeted search. Resolves to { status: 'running', run_id } or { status: 'not_configured', message }.
+ */
+export const startCollection = (options) => request('/api/collection/jobs', 'Collection could not start.', { method: 'POST', body: options })
+
+/** Starts a background re-check of report pages; without ids, of the reports that are due. */
+export const startRecheck = (ids) => request('/api/recheck/jobs', 'Re-check could not start.', { method: 'POST', body: ids ? { incident_ids: ids } : {} })
+
+export const getRun = (id) => request(`/api/collection/runs/${id}`, 'Could not follow the run.')
+
+/** Polls a background run until it finishes, passing each in-progress state to onProgress. */
+export async function followRun(id, onProgress, intervalMs = 1500) {
+  for (;;) {
+    await new Promise((resolve) => setTimeout(resolve, intervalMs))
+    const run = await getRun(id)
+    if (run.status !== 'running') return run
+    onProgress(run)
+  }
+}
+
+/** Reads one report's page again now; resolves to the updated report. */
+export const recheckIncident = (id) => request(`/api/incidents/${id}/recheck`, 'Could not re-check this source.', { method: 'POST', timeoutMs: TIMEOUT_MS.plan })
+
+export const getRegion = () => request('/api/region', 'Could not load the region.')
+
+export const getMetrics = () => request('/api/metrics', 'Could not load monitoring figures.')
 
 export const reviewIncident = (id, review) => request(`/api/incidents/${id}/review`, 'Could not save evidence review.', { method: 'PATCH', body: review })
 

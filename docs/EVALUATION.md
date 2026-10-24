@@ -51,6 +51,22 @@ Before these fixes, 19 of the API failure tests failed on the old code. The prob
 
 The browser tests also found a Leaflet script error (`_leaflet_pos`) when a route was planned again while the map was still zooming. It is fixed by fitting the map to the route without animation.
 
+## Report features beyond the MVP
+
+`Backend/tests/test_report_features.py` and the last browser test cover these.
+
+| # | Feature (report section) | Expected behaviour | Tests |
+|---|---|---|---|
+| 16 | Source categories and allowed sources (7, 9) | Government domains are *official*, and an official report reads *Corroborated* unless it is stale or conflicting. A run can keep only some categories; skipped results are counted and reported. | `test_source_categories`, `test_official_source_corroborates_but_never_outranks_stale_or_review`, `test_collection_keeps_only_the_allowed_source_categories` |
+| 17 | Regional configuration (5, 6.7) | Places resolve to one name, district and state ("Cherrapunji" → Sohra, East Khasi Hills). Road names ("GS Road") map to their highway. The writing script is recorded. "West Jaintia Hills" is not read as West Bengal. An unknown region is refused. | `test_region_names_districts_aliases_and_scripts`, `test_unknown_region_is_refused` |
+| 18 | Coverage by state (5, 11) | Reports and recent reports per state; a state without recent reports is shown as a gap. | `test_region_endpoint_shows_configuration_and_coverage_gaps` |
+| 19 | Lifecycle (6.5) | New → needs re-check (half the freshness window since publication or the last check) → stale. A check never makes a stale report fresh, and only a reviewer resolves one. | `test_lifecycle` |
+| 20 | Re-checks (6.5, 7.9) | A re-read page is recorded as unchanged, changed or unreadable. Statuses never change, and an unreadable page is not a reopening. Without ids, only reports that are due are read. | `test_recheck_records_changed_unchanged_and_unreadable_pages_without_changing_status`, `test_recheck_without_ids_reads_only_reports_that_are_due`, `test_single_report_recheck` |
+| 21 | Traceable runs and timeline (5, 6.3, 7.4) | Every report keeps the run that collected it. Its timeline lists publication, collection, sightings (one per run), page reads, reviews and flags, newest first. | `test_timeline_keeps_every_step_newest_first`, `test_a_page_found_by_several_searches_is_one_sighting_per_run` |
+| 22 | Location-based duplicates (6.4) | Reviewer-located reports of the same event type within 1 km and 72 hours are grouped. | `test_reviewer_located_reports_at_the_same_spot_and_time_are_grouped` |
+| 23 | Background collection (11) | A run returns at once, reports its progress and allows one run at a time (409 otherwise). A run cut off by a restart is marked interrupted. | `test_background_collection_reports_progress_and_allows_one_run_at_a_time`, `test_runs_left_running_by_a_restart_are_marked_interrupted` |
+| 24 | Monitoring (8, 13) | Usage, cache hits, failures, latency, freshness lag and reviewer decisions come only from what was logged; empty figures are null. | `test_metrics_count_only_what_was_measured` |
+
 ## Pilot acceptance checks (report section 13)
 
 | Check | How it is met |
@@ -73,6 +89,17 @@ Both runs on 24 Oct 2026, live TinyFish Search.
 | 2 | 4 pilot-corridor queries | 34 | 1 | 27 stale, 7 unknown, 0 fresh | 19 mention NH-6 and 7 mention NH-306. One syndicated NH-306 pair was grouped as duplicates, and one independent NH-6 (Sonapur, May 2022) pair was corroborated. |
 | 3 | Targeted: NH-6 landslide, last 30 days, web + news, then Fetch | 10 | 0 | — | All 10 pages read by Fetch in 15.1 s with no errors; 4 gained an exact publication time from the page. The search engine also matched NH-10 (Sikkim) reports, which a reviewer would dismiss. |
 
+## Metrics measured automatically
+
+The dashboard's *Monitoring* panel and `GET /api/metrics` compute these from logs and stored reports. A figure without data is reported as not measured.
+
+| Metric | How it is computed | Result |
+|---|---|---|
+| Freshness lag | Hours from an exact source publication time to `collected_at`. Approximate dates ("3 months ago") are excluded. | **Median 672 h (28 days), p90 696 h (29 days), n = 4** (live data, 24 Oct 2026). The sample is small, and these four were a backlog found by the first pilot collection, so the figure says nothing yet about steady-state delay. |
+| Stale share, unknown-time share, located share, duplicate-group share | Shares of active (or all) reports. | 75% stale, 25% no source time, 0% located, 5% in a duplicate group (44 reports, 24 Oct 2026). |
+| Kept after review | Share of reviewed reports a reviewer did not dismiss as irrelevant. It stands in for extraction precision only on what reviewers chose to look at, so it is not a random sample. | not measured (no reviews yet) |
+| Collection reliability, usage and latency | Failed searches, unreadable pages, run time, TinyFish calls against the free daily allowance, route-planning p50/p95. | Logged from 24 Oct 2026 onwards. |
+
 ## Metrics still to measure manually (report section 13)
 
 Fill these in after the team reviews a sample by hand. Until then they are **not measured**.
@@ -82,13 +109,16 @@ Fill these in after the team reviews a sample by hand. Until then they are **not
 | Extraction precision | For 30 collected reports, count those that really describe a road disruption on the pilot corridor. | not measured |
 | Duplicate rate | Count events that appear as more than one ungrouped record. | not measured |
 | Route-match precision | For reviewer-located reports, check that every flagged route really passes within 3 km. | not measured |
-| Freshness lag | Compare source dates with `collected_at` for reports that have exact dates. | not measured |
+| Extraction recall | Compare collected reports against a hand-made list of relevant reports for the same days. | not measured |
 
 ## Limitations
 
-- **Coverage.** One corridor, four search queries, and only what TinyFish Search returns. Many results are social posts. No reports does not mean the road is clear.
+- **Coverage.** One corridor, six search queries, and only what TinyFish Search returns. Many results are social posts. No reports does not mean the road is clear.
 - **Freshness windows** (accident 12 h, weather 24 h, flood and closure 48 h, landslide 72 h, bridge 14 days, construction 30 days) are reasonable defaults, not measured values.
 - **Relevance score** (location 50, freshness 20, evidence 20, severity 10) orders reports for review. It is not a probability that a road is blocked.
+- **Source categories** come from the domain: government domains are official, and a list of social and news sites covers the rest. A news site missing from the list counts as *other* unless TinyFish news search found it.
+- **Re-check timing** (half the freshness window, or a day for reports without a time) is a default, not a measured value. Re-checks read the page again; they do not search for newer reports.
+- **Regions.** Only Northeast India is configured. Districts are listed only for corridor places we are sure of, and road aliases only where OSRM's highway refs back them. The interface is in English.
 - **Location.** Coordinates come only from a reviewer. Highway mentions show that a report may be relevant, but not where on the road it is.
 - **Text heuristics.** Event types, duplicates, conflicts and corroboration are keyword and similarity rules, shown as hints. They can miss or misjudge reports, and they never change a reviewer's decision.
 - **Routing.** The public OSRM car profile: no live traffic and no truck restrictions, so vehicle suitability is always "unknown". The public server can be slow or rate-limited; cached routes are labelled with their fetch time.

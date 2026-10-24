@@ -6,6 +6,8 @@ import RouteMap, { MapLayers } from './components/RouteMap.jsx'
 import RouteComparison from './components/RouteComparison.jsx'
 import EvidenceDesk from './components/EvidenceDesk.jsx'
 import EvidenceList from './components/EvidenceList.jsx'
+import Monitoring from './components/Monitoring.jsx'
+import RegionCoverage from './components/RegionCoverage.jsx'
 import { useWorkspace } from './hooks/useWorkspace.js'
 import { useEvidenceFilters } from './hooks/useEvidenceFilters.js'
 import { INACTIVE_STATES, formatDistance, formatDuration, formatTime } from './lib/format.js'
@@ -20,7 +22,7 @@ const API_STATUS = {
 }
 
 function App() {
-  const { incidents, apiStatus, problem, lastRun, refresh: refreshWorkspace } = useWorkspace()
+  const { incidents, apiStatus, problem, lastRun, region, metrics, refresh: refreshWorkspace } = useWorkspace()
   const [statusLabel, statusNote] = API_STATUS[apiStatus]
   const [search, setSearch] = useState('')
   const { filters, setFilter, visibleIncidents } = useEvidenceFilters(incidents, search)
@@ -31,6 +33,7 @@ function App() {
   const [routeLoading, setRouteLoading] = useState(false)
   const [routeError, setRouteError] = useState('')
   const [collectionLoading, setCollectionLoading] = useState(false)
+  const [runProgress, setRunProgress] = useState(null)
   const [refreshing, setRefreshing] = useState(false)
   const [message, setMessage] = useState('')
 
@@ -59,15 +62,35 @@ function App() {
     } finally { setRouteLoading(false) }
   }
 
-  const collect = async (options) => {
+  // Collections and re-checks run in the background on the API; the dashboard follows the run until it ends.
+  const runJob = async (start) => {
     setCollectionLoading(true)
+    setRunProgress(null)
     setMessage('')
     try {
-      const result = await api.runCollection(options)
-      setMessage(result.message)
+      const job = await start()
+      if (job.status !== 'running') {
+        setMessage(job.message)
+        return
+      }
+      const run = await api.followRun(job.run_id, setRunProgress)
+      setMessage(run.message || `The run ended with status ${run.status}.`)
       await refreshWorkspace()
-    } catch (error) { setMessage(error.message || 'Collection failed.') }
-    finally { setCollectionLoading(false) }
+    } catch (error) { setMessage(error.message || 'The run failed.') }
+    finally {
+      setCollectionLoading(false)
+      setRunProgress(null)
+    }
+  }
+  const collect = (options) => runJob(() => api.startCollection(options))
+  const recheckDue = () => runJob(() => api.startRecheck())
+
+  const recheckIncident = async (incident) => {
+    try {
+      const updated = await api.recheckIncident(incident.id)
+      setMessage(updated.timeline[0]?.text || 'Source re-checked.')
+      await refreshWorkspace()
+    } catch (error) { setMessage(error.message) }
   }
 
   const refresh = async () => {
@@ -117,6 +140,7 @@ function App() {
         <a className="nav-item" href="#route-planning"><Icon name="route"/> <span>Plan route</span></a>
         <a className="nav-item" href="#evidence"><Icon name="alert"/> <span>Live evidence</span>{incidents.length > 0 && <span className="nav-count">{incidents.length}</span>}</a>
         <a className="nav-item" href="#map-section"><Icon name="layers"/> <span>Map view</span></a>
+        <a className="nav-item" href="#monitoring"><Icon name="clock"/> <span>Monitoring</span></a>
       </nav>
       <div className="sidebar-bottom">
         <div className="offline-card"><span className={`status-dot ${apiStatus}`} /><span><b>{statusLabel}</b><small>{statusNote}</small></span></div>
@@ -141,6 +165,7 @@ function App() {
           <div className="left-column">
             <RoutePlanner loading={routeLoading} error={routeError} isSnapshot={Boolean(plan?.offline_demo)} onPlan={planRoute}/>
             <MapLayers plan={plan} incidents={relevantIncidents} hiddenTypes={hiddenTypes} onToggle={toggleLayer}/>
+            <RegionCoverage region={region}/>
           </div>
 
           <div className="center-column" id="map-section">
@@ -149,11 +174,12 @@ function App() {
           </div>
 
           <aside className="right-column" id="evidence">
-            <EvidenceDesk incident={activeIncident} incidents={incidents} visibleCount={visibleIncidents.length} message={message || problem} refreshing={refreshing} onRefresh={refresh} onSelect={selectIncident} onReview={reviewIncident} onFlag={flagIncident}/>
-            <EvidenceList incidents={incidents} visibleIncidents={visibleIncidents} activeId={activeIncident?.id} onSelect={setSelectedIncidentId} filters={filters} onFilterChange={setFilter} canCollect={apiStatus === 'online'} collecting={collectionLoading} onCollect={collect} lastRun={lastRun}/>
+            <EvidenceDesk incident={activeIncident} incidents={incidents} visibleCount={visibleIncidents.length} message={message || problem} refreshing={refreshing} onRefresh={refresh} onSelect={selectIncident} onReview={reviewIncident} onFlag={flagIncident} canRecheck={apiStatus === 'online' && !collectionLoading} onRecheck={recheckIncident}/>
+            <EvidenceList incidents={incidents} visibleIncidents={visibleIncidents} activeId={activeIncident?.id} onSelect={setSelectedIncidentId} filters={filters} onFilterChange={setFilter} canCollect={apiStatus === 'online'} collecting={collectionLoading} progress={runProgress} onCollect={collect} onRecheckDue={recheckDue} lastRun={lastRun}/>
             <div className="source-footnote"><Icon name="check" size={15}/><span>Evidence is unverified until independently reviewed. Dispatch advice remains cautious.</span></div>
           </aside>
         </section>
+        <Monitoring metrics={metrics}/>
         <footer className="page-footer"><span>INDIA-TRACE <i>·</i> Team Tech Titans</span><span>{chosenRoute ? `Selected estimate · ${formatDistance(chosenRoute.distance_m)} · ${formatDuration(chosenRoute.duration_s)}` : 'Road intelligence for essential deliveries'}</span></footer>
       </div>
     </main>

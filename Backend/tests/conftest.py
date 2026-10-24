@@ -5,7 +5,7 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 from fastapi.testclient import TestClient
 
-from app import road_intelligence
+from app import jobs, road_intelligence
 from app.config import get_settings
 from app.database import get_connection
 
@@ -19,21 +19,25 @@ def client(tmp_path, monkeypatch):
     from app.main import app
     with TestClient(app) as test_client:
         yield test_client
+    # A background run must not outlive its test and write into the next one's database.
+    assert jobs._running.acquire(timeout=10), "a background run was still going after the test"
+    jobs._running.release()
     get_settings.cache_clear()
 
 
 @pytest.fixture
 def add_incident(client):
     def add(incident_id, verification="unverified", latitude=None, longitude=None, collected_at=None,
-            summary="Landslide reported", published_at=None):
+            summary="Landslide reported", published_at=None, source_url=None, last_checked_at=None):
+        collected_at = collected_at or datetime.now(timezone.utc).isoformat()
         with get_connection() as connection:
             connection.execute(
                 """INSERT INTO incidents
                 (id, title, summary, source_name, source_url, collected_at, latitude, longitude, verification, content_hash,
-                published_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                published_at, last_checked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (incident_id, f"Report {incident_id}", summary, "Test source",
-                 f"https://example.org/{incident_id}", collected_at or datetime.now(timezone.utc).isoformat(),
-                 latitude, longitude, verification, incident_id, published_at),
+                 source_url or f"https://example.org/{incident_id}", collected_at,
+                 latitude, longitude, verification, incident_id, published_at, last_checked_at or collected_at),
             )
     return add
 

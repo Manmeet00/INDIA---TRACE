@@ -12,6 +12,7 @@ import math
 import re
 import sqlite3
 import ssl
+import time
 from typing import Any, Callable
 from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
@@ -22,6 +23,7 @@ from fastapi import HTTPException
 from .config import get_settings
 from .database import get_connection
 from .evidence import annotate
+from .monitoring import log_call
 
 
 def _request_json(url: str, headers: dict[str, str] | None = None, body: Any = None, timeout: float = 15) -> Any:
@@ -56,20 +58,26 @@ def _cached_json(url: str, max_age_s: float, valid: Callable[[Any], bool]) -> tu
     services are rate-limited and sometimes slow, so successful responses are kept in SQLite.
     A response that fails `valid` counts as a failure and is never cached.
     """
+    service = "nominatim" if "nominatim" in url else "osrm"
     with get_connection() as connection:
         row = connection.execute("SELECT response, fetched_at FROM provider_cache WHERE url = ?", (url,)).fetchone()
-    if row and _age_seconds(row["fetched_at"]) <= max_age_s:
-        return json.loads(row["response"]), row["fetched_at"]
+        if row and _age_seconds(row["fetched_at"]) <= max_age_s:
+            log_call(connection, service, "cache")
+            return json.loads(row["response"]), row["fetched_at"]
+    started = time.monotonic()
     try:
         data = _request_json(url)
         if not valid(data):
             raise HTTPException(status_code=502, detail=f"An external routing or search service is unavailable ({urlsplit(url).hostname} returned an unexpected response).")
     except HTTPException:
+        with get_connection() as connection:
+            log_call(connection, service, "stale_cache" if row else "failed", started)
         if row:
             return json.loads(row["response"]), row["fetched_at"]
         raise
     fetched_at = datetime.now(timezone.utc).isoformat()
     with get_connection() as connection:
+        log_call(connection, service, "ok", started)
         connection.execute("INSERT OR REPLACE INTO provider_cache (url, response, fetched_at) VALUES (?, ?, ?)",
                            (url, json.dumps(data), fetched_at))
     return data, fetched_at
@@ -225,6 +233,8 @@ def incident_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "location_text": row["location_text"], "verification": row["verification"],
         "reviewed_at": row["reviewed_at"],
         "review_note": row["review_note"],
+        "last_checked_at": _as_utc(datetime.fromisoformat(row["last_checked_at"])) if row["last_checked_at"] else None,
+        "collection_run_id": row["collection_run_id"],
         # Provenance: which TinyFish search found the report, and what TinyFish Fetch read from its page.
         **{key: row[key] for key in ("publisher", "search_query", "search_kind", "last_seen_at", "published_source",
                                      "page_description", "page_excerpt", "page_author", "fetched_at", "fetch_error")},
@@ -240,13 +250,67 @@ def load_incidents(connection: sqlite3.Connection, limit: int = 500) -> list[dic
         history.setdefault(review["incident_id"], []).append({
             key: review[key] for key in ("previous_verification", "verification", "review_note", "location_changed",
                                          "location_text", "latitude", "longitude", "reviewed_at")})
-    flags: dict[str, list[dict[str, Any]]] = {}
-    for flag in connection.execute("SELECT * FROM incident_flags WHERE resolved_at IS NULL ORDER BY created_at DESC").fetchall():
-        flags.setdefault(flag["incident_id"], []).append({key: flag[key] for key in ("reason", "note", "created_at")})
+    flags: dict[str, list[sqlite3.Row]] = {}
+    for flag in connection.execute("SELECT * FROM incident_flags ORDER BY created_at DESC").fetchall():
+        flags.setdefault(flag["incident_id"], []).append(flag)
+    checks: dict[str, list[sqlite3.Row]] = {}
+    for check in connection.execute("SELECT * FROM incident_checks ORDER BY checked_at DESC").fetchall():
+        checks.setdefault(check["incident_id"], []).append(check)
     for incident in incidents:
         incident["review_history"] = history.get(incident["id"], [])
-        incident["open_flags"] = flags.get(incident["id"], [])
+        incident["open_flags"] = [{key: flag[key] for key in ("reason", "note", "created_at")}
+                                  for flag in flags.get(incident["id"], []) if flag["resolved_at"] is None]
+        incident["timeline"] = timeline(incident, checks.get(incident["id"], []), flags.get(incident["id"], []))
     return annotate(incidents)
+
+
+CHECK_TEXT = {
+    "seen_again": "Seen again in a TinyFish search",
+    "page_read": "Page read with TinyFish Fetch",
+    "page_unchanged": "Re-checked: page read, no change since the last read",
+    "page_changed": "Re-checked: the page has changed since the last read; review the source again",
+    "page_unreadable": "Page could not be read. This does not mean the road has reopened",
+}
+
+
+def timeline(incident: dict[str, Any], checks: list[sqlite3.Row], flags: list[sqlite3.Row]) -> list[dict[str, Any]]:
+    """Everything that happened to a report, newest first (report 5: nothing is overwritten).
+
+    Includes how its data was transformed, for example a publication date taken from the page.
+    """
+    events = []
+    if incident["published_estimate"]:
+        origin = {"page": "from the page", "search": "from the search result"}.get(incident["published_source"] or "", "")
+        events.append({"at": incident["published_estimate"], "kind": "published", "approximate": incident["published_approximate"],
+                       "text": f"Published by the source (“{incident['published_at']}”{', ' + origin if origin else ''})"})
+    run = f" · run {incident['collection_run_id'].removeprefix('run_')[:8]}" if incident["collection_run_id"] else ""
+    events.append({"at": incident["collected_at"], "kind": "collected",
+                   "text": f"Collected by TinyFish {incident['search_kind'] or 'web'} search"
+                           f"{' “' + incident['search_query'] + '”' if incident['search_query'] else ''}{run}"})
+    for check in checks:
+        detail = f": {check['detail']}" if check["detail"] and check["outcome"] == "page_unreadable" else ""
+        events.append({"at": check["checked_at"], "kind": check["outcome"], "text": CHECK_TEXT.get(check["outcome"], check["outcome"]) + detail})
+    if not any(check["kind"] == "fetch" for check in checks) and incident["fetched_at"]:
+        # Reports collected before checks were recorded.
+        outcome = "page_unreadable" if incident["fetch_error"] else "page_read"
+        events.append({"at": incident["fetched_at"], "kind": outcome,
+                       "text": CHECK_TEXT[outcome] + (f": {incident['fetch_error']}" if incident["fetch_error"] else "")})
+    for review in incident["review_history"]:
+        change = f"{review['previous_verification'] or 'new'} → {review['verification']}"
+        events.append({"at": review["reviewed_at"], "kind": "review",
+                       "text": f"Reviewed: {change}{' · location updated' if review['location_changed'] else ''} — {review['review_note']}"})
+    if not incident["review_history"] and incident["review_note"] and incident["reviewed_at"]:
+        # Reviewed before every review was kept.
+        events.append({"at": incident["reviewed_at"], "kind": "review", "text": f"Reviewed: {incident['verification']} — {incident['review_note']}"})
+    for flag in flags:
+        events.append({"at": flag["created_at"], "kind": "flagged",
+                       "text": f"Flagged as {flag['reason'].replace('_', ' ')}{' — ' + flag['note'] if flag['note'] else ''}"})
+        if flag["resolved_at"]:
+            events.append({"at": flag["resolved_at"], "kind": "flag_closed", "text": "Flag closed by a review"})
+    for event in events:
+        event["at"] = _as_utc(event["at"] if isinstance(event["at"], datetime) else datetime.fromisoformat(event["at"]))
+        event.setdefault("approximate", False)
+    return sorted(events, key=lambda event: event["at"], reverse=True)
 
 
 MATCH_TOLERANCE_M = 3000

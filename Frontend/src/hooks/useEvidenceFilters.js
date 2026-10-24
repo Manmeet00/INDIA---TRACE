@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 
-const ALL = { type: 'all', status: 'all', region: 'all', road: 'all', time: 'all', source: 'all' }
+const ALL = { type: 'all', status: 'all', region: 'all', road: 'all', time: 'all', category: 'all', lifecycle: 'all', source: 'all' }
 
 // Text search plus the evidence list's filters. The publish-time cutoff is fixed when the filter changes,
 // so the list does not shift while it is open.
@@ -20,6 +20,8 @@ export function useEvidenceFilters(incidents, search) {
       && (filters.status === 'all' || item.evidence_status === filters.status)
       && (filters.region === 'all' || item.regions?.includes(filters.region))
       && (filters.road === 'all' || item.mentions?.highways?.includes(filters.road))
+      && (filters.category === 'all' || item.source_category === filters.category)
+      && (filters.lifecycle === 'all' || item.lifecycle === filters.lifecycle)
       && (filters.source === 'all' || item.source_name === filters.source)
       && (publishedAfter === null || (item.published_estimate && new Date(item.published_estimate).valueOf() >= publishedAfter)))
   }, [incidents, search, filters, publishedAfter])

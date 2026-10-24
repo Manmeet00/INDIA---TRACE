@@ -80,3 +80,13 @@ export function exposureSummary(exposure) {
 export function placeName(place) {
   return place.name.split(',')[0]
 }
+
+// Report 7 and 9: where a source comes from. Official means a government domain (gov.in, nic.in).
+export const SOURCE_LABELS = { official: 'Official source', news: 'News', social: 'Social post', other: 'Other web page' }
+
+// Report 6.5: new, then needs a re-check of its source, then stale; resolved and dismissed come from a reviewer.
+export const LIFECYCLE_LABELS = { new: 'New', needs_recheck: 'Needs re-check', stale: 'Stale', resolved: 'Resolved', dismissed: 'Dismissed' }
+
+export function formatShare(value) {
+  return value == null ? 'not measured' : `${Math.round(value * 100)}%`
+}

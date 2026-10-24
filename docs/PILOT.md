@@ -23,7 +23,7 @@ Silchar → Aizawl is the segment that demonstrates route comparison; OSRM retur
 
 ## Source policy
 
-- **Ingestion path:** TinyFish **Search** and **Fetch**, called only from the backend with `TINYFISH_API_KEY`. Both are free within TinyFish's daily limits (12,000 searches and 1,000 fetched URLs per day). Six searches run per collection (`PILOT_SEARCHES` in [collection.py](../Backend/app/collection.py)):
+- **Ingestion path:** TinyFish **Search** and **Fetch**, called only from the backend with `TINYFISH_API_KEY`. Both are free within TinyFish's daily limits (12,000 searches and 1,000 fetched URLs per day). Six searches run per collection (the `northeast` region's `searches` in [regions.py](../Backend/app/regions.py), which also holds the corridor's places, districts, road aliases, allowed source categories and freshness windows):
   1. web: `NH-6 Guwahati Shillong road closure landslide update`
   2. web: `NH-6 Shillong Silchar Sonapur Ratacherra landslide traffic`
   3. web: `NH-306 Silchar Aizawl road blocked landslide`
@@ -35,9 +35,15 @@ Silchar → Aizawl is the segment that demonstrates route comparison; OSRM retur
 - **Fetch:** each new result's page is read with TinyFish Fetch, 10 URLs per request. The app keeps the page description, an excerpt, the author and the page's `published_date`; a page date fills in a missing search date and is labelled "from the page". Only the page description feeds the automatic hints, because full page text includes navigation and unrelated stories.
 - **Stored per result:** title, snippet, source URL (normalised), publisher or site, the source's own date text, the query and search type that found it, when we collected it, and when a later search last saw it again.
 - **Every run is logged** (`GET /api/collection/runs`): searches, results, new reports, re-seen reports, pages read, failures and duration. Each failed search is retried once.
-- **Scheduled collection** is off by default. Set `COLLECTION_INTERVAL_MINUTES` in `Backend/.env` to turn it on.
+- **Scheduled collection** is off by default. Set `COLLECTION_INTERVAL_MINUTES` in `Backend/.env` to turn it on; each scheduled run is followed by a re-check of the reports that are due.
+- **Source categories:** official (gov.in, nic.in), news, social and other. All are allowed for this pilot; *Sources to keep* narrows a run. An official source counts as corroboration, never as confirmation.
+- **Re-checks:** a report needs a re-check once half its freshness window has passed since it was published or last checked. A re-check reads the page again; a changed page is flagged in the timeline, and an unreadable page is recorded without changing anything.
 - **Not done:** coordinates are never inferred from text, and no sample or seeded incidents are inserted.
 - **Sources observed** in the 24 Oct 2026 pilot collection (search results, not a curated or endorsed list): facebook.com (14), instagram.com (5), timesofindia.indiatimes.com (2), barakbulletin.com (2), indiatodayne.in (2), youtube.com (2), morungexpress.com, sentinelassam.com, assamtribune.com, hindustantimes.com, reddit.com, en.wikipedia.org (1 each). Social posts dominate, which is why reviewer checks and the dismiss action matter.
+
+## Success criteria
+
+The pilot succeeds when the acceptance checks in [EVALUATION.md](EVALUATION.md) hold on live data and the team has measured, on a hand-reviewed sample, the metrics listed there as not measured. Speed and coverage targets are not set, because no baseline has been measured yet.
 
 ## Before the demo
 
