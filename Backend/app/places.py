@@ -18,7 +18,7 @@ from fastapi import HTTPException
 from .database import get_connection
 from .monitoring import log_call
 from .regions import active_region
-from .road_intelligence import INDIA_BOX, _cached_json, _request_json
+from .road_intelligence import INDIA_BOX, _cached_json, _place_rank, _request_json
 
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 RETRY_AFTER = timedelta(days=30)  # a place Nominatim could not find is tried again after this
@@ -110,11 +110,15 @@ def suggest_places(query: str) -> list[dict[str, Any]]:
                 continue
             detail = ", ".join(part for part in (props.get("county") or props.get("city"), props.get("state")) if isinstance(part, str) and part)
             value = ", ".join(part for part in (name, props.get("state")) if isinstance(part, str) and part)
-            if all(item["value"].lower() != value.lower() for item in suggestions):
-                suggestions.append({"label": name, "detail": detail, "value": value, "source": "search", "point": _point(feature)})
+            rank = _place_rank(props.get("osm_key"), props.get("osm_value"))
+            same = next((item for item in suggestions if item["value"].lower() == value.lower()), None)
+            if same is None:
+                suggestions.append({"label": name, "detail": detail, "value": value, "source": "search", "point": _point(feature), "rank": rank})
+            elif same["source"] == "search" and rank < same["rank"] and _point(feature):
+                same.update(point=_point(feature), rank=rank)  # "Patiala, Punjab": the city, not the district around it
     suggestions = suggestions[:SUGGEST_LIMIT]
     _remember_points(suggestions)
-    return [{key: item for key, item in suggestion.items() if key != "point"} for suggestion in suggestions]
+    return [{key: item for key, item in suggestion.items() if key not in ("point", "rank")} for suggestion in suggestions]
 
 
 def _point(feature: dict[str, Any]) -> tuple[float, float] | None:

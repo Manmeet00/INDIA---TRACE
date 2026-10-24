@@ -154,6 +154,30 @@ def test_a_chosen_suggestion_is_routed_from_its_own_coordinates(client, provider
     assert any(host == "nominatim.openstreetmap.org" for host, _ in providers["calls"])  # its point was outside India
 
 
+def test_a_town_is_routed_to_the_town_not_the_middle_of_its_district(client, providers):
+    # OpenStreetMap's best match for "Patiala, Punjab" is the district, whose centre is 13 km south of the city.
+    district = {"category": "boundary", "type": "administrative", "display_name": "Patiala, Punjab, India", "lat": "30.2092778", "lon": "76.3397231"}
+    city = {"category": "place", "type": "city", "display_name": "Patiala, Patiala Tahsil, Punjab, India", "lat": "30.3301995", "lon": "76.4007656"}
+    providers["nominatim.openstreetmap.org"] = lambda request: [district, city] if "Patiala" in request.full_url else [
+        {"category": "boundary", "type": "national_park", "display_name": "Kaziranga National Park, Assam, India", "lat": "26.6581", "lon": "93.3927"}]
+    body = client.post("/api/routes/plan", json={"origin": "26.18000, 91.75000", "destination": "Patiala, Punjab"}).json()
+    assert (body["destination"]["latitude"], body["destination"]["longitude"]) == (30.3301995, 76.4007656)
+    assert "limit=5" in next(request.full_url for host, request in providers["calls"] if host == "nominatim.openstreetmap.org")
+    park = client.post("/api/routes/plan", json={"origin": "26.18000, 91.75000", "destination": "Kaziranga National Park"}).json()
+    assert park["destination"]["latitude"] == 26.6581  # no settlement of that name: the place itself
+
+    providers["photon.komoot.io"] = {"features": [
+        {"properties": {"name": "Patiala", "state": "Punjab", "countrycode": "IN", "osm_key": "boundary", "osm_value": "administrative"},
+         "geometry": {"type": "Point", "coordinates": [76.3397231, 30.2092778]}},
+        {"properties": {"name": "Patiala", "state": "Punjab", "countrycode": "IN", "osm_key": "place", "osm_value": "city"},
+         "geometry": {"type": "Point", "coordinates": [76.4007656, 30.3301995]}},
+    ]}
+    assert [item["value"] for item in client.get("/api/places/suggest?q=Patiala").json()] == ["Patiala, Punjab"]
+    providers["nominatim.openstreetmap.org"] = lambda request: []  # the suggestion's own point is used
+    chosen = client.post("/api/routes/plan", json={"origin": "26.18000, 91.75000", "destination": "Patiala, Punjab"}).json()
+    assert (chosen["destination"]["latitude"], chosen["destination"]["longitude"]) == (30.3301995, 76.4007656)
+
+
 def test_suggestions_still_offer_region_towns_when_photon_is_down(client, providers):
     providers["photon.komoot.io"] = TimeoutError("timed out")
     assert [item["label"] for item in client.get("/api/places/suggest?q=Shil").json()] == ["Shillong"]

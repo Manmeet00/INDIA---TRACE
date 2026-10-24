@@ -170,6 +170,16 @@ def _valid_line(geometry: Any) -> bool:
 
 COORDINATES = re.compile(r"^\s*(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)\s*$")
 INDIA_BOX = (6.0, 38.0, 68.0, 98.0)  # south, north, west, east
+# Where people live and roads lead. A town's name also names its district (OpenStreetMap: an administrative
+# boundary), whose centre can be many kilometres from the town, so a settlement of that name wins.
+SETTLEMENTS = {"city", "town", "village", "suburb", "hamlet", "neighbourhood", "quarter", "locality", "borough", "isolated_dwelling"}
+
+
+def _place_rank(key: Any, value: Any) -> int:
+    """0 for a settlement, 2 for an administrative boundary or a region, 1 for anything else (a park, a station)."""
+    if key == "place" and value in SETTLEMENTS:
+        return 0
+    return 2 if key == "boundary" or key == "place" else 1
 
 
 def _geocode(place: str) -> dict[str, Any]:
@@ -186,11 +196,13 @@ def _geocode(place: str) -> dict[str, Any]:
         known = connection.execute("SELECT latitude, longitude FROM suggested_places WHERE value = ?", (place,)).fetchone()
     if known:
         return {"name": f"{place}, India", "latitude": known["latitude"], "longitude": known["longitude"]}
-    query = urlencode({"q": f"{place}, India", "format": "jsonv2", "limit": 1, "countrycodes": "in"})
+    query = urlencode({"q": f"{place}, India", "format": "jsonv2", "limit": 5, "countrycodes": "in"})
     results, _ = _cached_json(f"https://nominatim.openstreetmap.org/search?{query}", GEOCODE_CACHE_S, _valid_geocode)
-    if not results:
+    usable = [item for item in results if isinstance(item, dict) and _number(item.get("lat")) and _number(item.get("lon"))]
+    if not usable:
         raise HTTPException(status_code=422, detail=f"Could not find '{place}' in India. Try a more specific place name.")
-    item = results[0]
+    # Nominatim's best match for "Patiala, Punjab" is the district; the city of that name is the destination.
+    item = min(usable, key=lambda result: _place_rank(result.get("category"), result.get("type")))
     return {"name": str(item.get("display_name") or place), "latitude": float(item["lat"]), "longitude": float(item["lon"])}
 
 
