@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import get_settings
 from .database import get_connection, initialize_database
 from .repository import add_event, create_trace, event_from_row, trace_from_row, update_trace
-from .road_intelligence import collect_candidates, incident_from_row, plan_route
+from .road_intelligence import collect_candidates, load_incidents, plan_route
 from .schemas import CollectionResult, DashboardSummary, EventCreate, EventOut, IncidentOut, IncidentReview, RoutePlanRequest, TraceCreate, TraceDetail, TracePage, TraceStatus, TraceUpdate
 
 settings = get_settings()
@@ -57,17 +57,21 @@ def post_route_plan(payload: RoutePlanRequest):
 @app.get("/api/incidents", response_model=list[IncidentOut])
 def list_incidents(limit: int = Query(default=100, ge=1, le=500)):
     with get_connection() as connection:
-        rows = connection.execute("SELECT * FROM incidents ORDER BY collected_at DESC LIMIT ?", (limit,)).fetchall()
-    return [incident_from_row(row) for row in rows]
+        return load_incidents(connection, limit)
+
+
+def find_incident(connection: sqlite3.Connection, incident_id: str) -> dict:
+    """One report, annotated against the others so duplicate and conflict hints are included."""
+    incident = next((item for item in load_incidents(connection) if item["id"] == incident_id), None)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident evidence not found")
+    return incident
 
 
 @app.get("/api/incidents/{incident_id}", response_model=IncidentOut)
 def get_incident(incident_id: str):
     with get_connection() as connection:
-        row = connection.execute("SELECT * FROM incidents WHERE id = ?", (incident_id,)).fetchone()
-    if row is None:
-        raise HTTPException(status_code=404, detail="Incident evidence not found")
-    return incident_from_row(row)
+        return find_incident(connection, incident_id)
 
 
 @app.patch("/api/incidents/{incident_id}/review", response_model=IncidentOut)
@@ -84,8 +88,7 @@ def review_incident(incident_id: str, payload: IncidentReview):
             "UPDATE incidents SET " + ", ".join(f"{column} = ?" for column in values) + " WHERE id = ?",
             (*values.values(), incident_id),
         )
-        updated = connection.execute("SELECT * FROM incidents WHERE id = ?", (incident_id,)).fetchone()
-    return incident_from_row(updated)
+        return find_incident(connection, incident_id)
 
 
 @app.post("/api/collection/run", response_model=CollectionResult)

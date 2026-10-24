@@ -23,6 +23,7 @@ from fastapi import HTTPException
 
 from .config import get_settings
 from .database import get_connection
+from .evidence import annotate, normalize_source_url
 
 
 def _request_json(url: str, headers: dict[str, str] | None = None) -> Any:
@@ -150,6 +151,12 @@ def incident_from_row(row: sqlite3.Row) -> dict[str, Any]:
     }
 
 
+def load_incidents(connection: sqlite3.Connection, limit: int = 500) -> list[dict[str, Any]]:
+    """Newest reports first, with duplicate, conflict and mention hints computed across them."""
+    rows = connection.execute("SELECT * FROM incidents ORDER BY collected_at DESC LIMIT ?", (limit,)).fetchall()
+    return annotate([incident_from_row(row) for row in rows])
+
+
 def collect_candidates(connection: sqlite3.Connection) -> dict[str, Any]:
     key = get_settings().tinyfish_api_key
     if not key:
@@ -185,6 +192,7 @@ def collect_candidates(connection: sqlite3.Connection) -> dict[str, Any]:
             parsed_url = urlsplit(source_url)
             if parsed_url.scheme not in {"http", "https"} or not parsed_url.hostname or parsed_url.username or parsed_url.password:
                 continue
+            source_url = normalize_source_url(source_url)
             raw_title = item.get("title")
             raw_snippet = item.get("snippet")
             title = (raw_title.strip() if isinstance(raw_title, str) else "")[:300] or "Untitled public source"
@@ -215,14 +223,13 @@ def collect_candidates(connection: sqlite3.Connection) -> dict[str, Any]:
                     raise
     if failed_queries == len(queries):
         raise HTTPException(status_code=502, detail="TinyFish could not return search results. Try again later.")
-    rows = connection.execute("SELECT * FROM incidents ORDER BY collected_at DESC LIMIT 100").fetchall()
     status = "partial" if failed_queries else "complete"
     message = "Search results are unverified evidence candidates. Geographic location is unknown until independently confirmed."
     if failed_queries:
         message = f"{failed_queries} of {len(queries)} TinyFish searches failed. Partial results are shown. " + message
     return {"status": status, "collected": collected, "duplicates": duplicates,
             "message": message,
-            "incidents": [incident_from_row(row) for row in rows]}
+            "incidents": load_incidents(connection, 100)}
 
 
 MATCH_TOLERANCE_M = 3000

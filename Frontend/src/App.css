@@ -178,7 +178,22 @@
 .icon-button { display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid #e4eaf0; border-radius: 6px; color: #64778f; background: #fff; }
 .icon-button:hover { border-color: #a8c4e4; color: #176fc1; }
 .selected-incident { padding: 11px; border: 1px solid #e5eaf0; border-radius: 8px; background: #fff; }
-.incident-top { display: flex; justify-content: space-between; align-items: center; gap: 5px; }
+.incident-top { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.hint-badge { padding: 4px 6px; border-radius: 4px; color: #4b5d74; background: #e9eef4; font-size: 7px; font-weight: 800; letter-spacing: .25px; text-transform: uppercase; }
+.hint-badge.conflict { color: #a34842; background: #ffebe8; }
+.report-hints { display: grid; gap: 5px; margin-top: 9px; }
+.mention-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.mention-row > small { margin-right: 2px; color: #71839b; font-size: 8px; font-weight: 700; }
+.mention-chip { padding: 2px 6px; border: 1px solid #dbe4ee; border-radius: 10px; color: #3c5574; background: #f6f9fc; font-size: 8px; font-weight: 600; }
+.report-link { display: grid; gap: 2px; padding: 6px 8px; border: 1px solid #e3e9f0; border-left-width: 3px; border-radius: 5px; text-align: left; color: #4b5d74; background: #fbfcfd; }
+.report-link:hover { background: #f4f9ff; }
+.report-link b { font-size: 7px; letter-spacing: .3px; text-transform: uppercase; }
+.report-link span { overflow: hidden; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.report-link.conflict { border-left-color: #df6259; }
+.report-link.conflict b { color: #a34842; }
+.report-link.duplicate { border-left-color: #8a7be0; }
+.report-link.related { border-left-color: #9fb4cc; }
+.hint-note { color: #8593a5; font-size: 8px; }
 .verification-badge, .freshness-badge { padding: 4px 6px; border-radius: 4px; font-size: 7px; font-weight: 800; letter-spacing: .25px; text-transform: uppercase; }
 .verification-badge.unverified { color: #a26c22; background: #fff2d9; }
 .verification-badge.confirmed { color: #287344; background: #e4f5e9; }

@@ -1,0 +1,60 @@
+from app.evidence import annotate, normalize_source_url
+from app.road_intelligence import parse_published
+
+COLLECTED = "2026-10-24T12:00:00+00:00"
+
+
+def report(incident_id, title, summary, published_at=None):
+    estimate, _ = parse_published(published_at, COLLECTED)
+    return {"id": incident_id, "title": title, "summary": summary, "published_at": published_at, "published_estimate": estimate}
+
+
+def by_id(incidents):
+    return {item["id"]: item for item in annotate(incidents)}
+
+
+def test_same_truncated_title_with_different_stories_is_not_a_duplicate():
+    title = "Continuous heavy rainfall has triggered multiple landslides that ..."
+    items = by_id([
+        report("a", title, "National Highway 10 was temporarily closed to vehicular movement at Bardang, 20th Mile, following a severe morning mudslide."),
+        report("b", title, "Landslides have severely damaged sections of the Jeypore-Deomali National Highway (NH-315A) in Arunachal."),
+    ])
+    assert items["a"]["duplicate_ids"] == []
+
+
+def test_reposted_story_is_grouped_as_duplicate():
+    text = "Traffic movement along National Highway-2 at Khisama has come to a severe standstill following recurring landslide disruptions near Kohima."
+    items = by_id([report("a", "Khisama standstill", text), report("b", "Khisama standstill", text + " Updated."), report("c", "Unrelated", "Bridge repairs finished in Agartala city centre without any delay today.")])
+    assert items["a"]["duplicate_ids"] == ["b"]
+    assert items["c"]["duplicate_ids"] == []
+
+
+def test_mentions_extract_highway_formats_and_places():
+    items = by_id([report("a", "NH06 closed", "National Highway (NH-315A), NH-37 on the Imphal- Silchar route, Highway No. 306 near Aizawl, National Highway 6 at Mao.")])
+    assert items["a"]["mentions"] == {"highways": ["NH-6", "NH-37", "NH-306", "NH-315A"], "places": ["Imphal", "Silchar", "Aizawl", "Mao"]}
+
+
+def test_closure_and_reopening_close_in_time_are_possible_conflict():
+    items = by_id([
+        report("closed", "NH-6 blocked", "NH-6 blocked by landslide near Sonapur.", "2026-10-22T08:00:00Z"),
+        report("open", "Traffic restored", "Traffic on National Highway 6 has been restored.", "2026-10-23T10:00:00Z"),
+        report("old", "NH-6 restored", "Traffic on NH-6 restored.", "May 29, 2024"),
+    ])
+    assert items["closed"]["conflict_ids"] == ["open"]
+    assert items["open"]["conflict_ids"] == ["closed"]
+    assert items["old"]["conflict_ids"] == []
+    assert sorted(items["old"]["related_ids"]) == ["closed", "open"]
+
+
+def test_coarse_relative_dates_are_never_treated_as_conflicts():
+    items = by_id([
+        report("a", "NH-2 closed", "NH-2 closed by mudslide.", "3 months ago"),
+        report("b", "NH-2 reopened", "NH-2 reopened for traffic.", "3 months ago"),
+    ])
+    assert items["a"]["conflict_ids"] == []
+
+
+def test_normalize_source_url_strips_tracking_and_fragments():
+    assert normalize_source_url("https://WWW.Instagram.com/reel/DZ4UTPCiJki/?hl=en&utm_source=x#top") == "https://www.instagram.com/reel/DZ4UTPCiJki"
+    assert normalize_source_url("https://example.org/news?id=7&fbclid=abc") == "https://example.org/news?id=7"
+    assert normalize_source_url("https://example.org/") == "https://example.org"
