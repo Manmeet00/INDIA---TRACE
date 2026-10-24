@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { escapeHtml, loadMappls } from '../lib/mappls.js'
 import { INACTIVE_STATES, mapCategory, statusLabel } from '../lib/format.js'
+import { BORDER_COLOR, MASK_COLOR } from '../lib/mapStyle.js'
 
 // Same colours as the OpenStreetMap view, so routes and evidence read the same on either map.
 const COLORS = { route: '#0878e8', candidate: '#64748b', origin: '#079352', destination: '#e44a58', confirmed: '#df3946', stale: '#9ba8b8', other: '#e99b28' }
@@ -19,7 +20,14 @@ function marker(mappls, map, { lat, lng, color, size, popup }) {
 
 // The Mappls Web SDK draws on its own canvas, so routes and markers are added and removed imperatively.
 // onUnavailable is called if the SDK cannot load or the map never becomes ready (for example an invalid key).
-export default function MapplsMap({ apiKey, plan, incidents, selectedRoute, selectedIncident, onSelectIncident, hiddenTypes, onUnavailable }) {
+// One polygon covering the world with India's land parts as holes, as standard GeoJSON ([lng, lat]).
+function indiaMask(boundary) {
+  return { type: 'FeatureCollection', features: [{ type: 'Feature',
+    properties: { fill: MASK_COLOR, 'fill-opacity': 1, stroke: BORDER_COLOR, 'stroke-opacity': 0.55, 'stroke-width': 1.2 },
+    geometry: { type: 'Polygon', coordinates: [[[-180, -89], [180, -89], [180, 89], [-180, 89], [-180, -89]], ...boundary] } }] }
+}
+
+export default function MapplsMap({ apiKey, plan, incidents, selectedRoute, selectedIncident, onSelectIncident, hiddenTypes, boundary, onUnavailable }) {
   // The SDK documents creating a map from its container's id.
   const [containerId] = useState(() => `mappls-map-${++mapCount}`)
   const select = useRef(onSelectIncident)
@@ -50,6 +58,14 @@ export default function MapplsMap({ apiKey, plan, incidents, selectedRoute, sele
       instance?.remove?.()
     }
   }, [apiKey, containerId, onUnavailable])
+
+  // Only India: added before routes and markers, so they draw above it.
+  useEffect(() => {
+    if (!map || !boundary) return undefined
+    const mappls = window.mappls
+    const layer = mappls.addGeoJson({ map, data: indiaMask(boundary), cType: 1, preserveViewport: true })
+    return () => mappls.remove({ map, layer })
+  }, [map, boundary])
 
   // Routes: the selected one on top, and the view fitted to it, as in the OpenStreetMap view.
   useEffect(() => {

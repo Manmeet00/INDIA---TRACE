@@ -108,3 +108,12 @@ export async function loadOfflineRoute() {
   if (!response.ok) throw new Error('Saved route snapshot is unavailable.')
   return response.json()
 }
+
+// India's land boundary, served with the frontend: the official boundary as per the Survey of India,
+// from datameet/maps (CC0), simplified to about 500 m. Resolves to the outer ring of each land part, as [lng, lat].
+export async function loadIndiaBoundary() {
+  const response = await fetch(`${import.meta.env.BASE_URL}india-boundary.geojson`)
+  if (!response.ok) throw new Error('India boundary is unavailable.')
+  const data = await response.json()
+  return data.features[0].geometry.coordinates.map((polygon) => polygon[0])
+}

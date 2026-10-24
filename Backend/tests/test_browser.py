@@ -282,7 +282,7 @@ def test_background_run_source_choice_timeline_recheck_coverage_and_monitoring(d
 # follows the documented v3 API (mappls.Map, Polyline, Marker, remove, addListener) and records each call.
 
 FAKE_MAPPLS_SDK = """
-window.__mappls = { maps: [], polylines: [], markers: [] };
+window.__mappls = { maps: [], polylines: [], markers: [], geojson: [] };
 class Listening { constructor() { this.listeners = {}; } addListener(name, fn) { (this.listeners[name] ||= []).push(fn); } fire(name) { (this.listeners[name] || []).forEach((fn) => fn()); } }
 window.mappls = {
   ControlPosition: { RIGHT_BOTTOM: 'bottom-right' },
@@ -293,6 +293,7 @@ window.mappls = {
   },
   Polyline: class { constructor(options) { this.options = options; this.removed = false; window.__mappls.polylines.push(this); } },
   Marker: class extends Listening { constructor(options) { super(); this.options = options; this.removed = false; window.__mappls.markers.push(this); } },
+  addGeoJson(options) { const layer = { options, removed: false }; window.__mappls.geojson.push(layer); return layer; },
   remove({ layer }) { layer.removed = true; },
 };
 """
@@ -321,6 +322,10 @@ def test_mappls_draws_routes_markers_and_selects_evidence(dashboard, mappls_key,
     expect(page.locator(".map-foot")).to_contain_text("Map © Mappls (MapmyIndia)")
     expect(page.locator(".leaflet-container")).to_have_count(0)
     assert [marker["position"] for marker in live(page, "markers")] == [{"lat": 25.9, "lng": 91.8}]  # located evidence only
+    page.wait_for_function("window.__mappls.geojson.length === 1")
+    mask = live(page, "geojson")[0]
+    rings = mask["data"]["features"][0]["geometry"]["coordinates"]
+    assert mask["cType"] == 1 and rings[0][0] == [-180, -89] and len(rings) == 59  # the world, with India's 58 land parts cut out
 
     plan(page, "Guwahati, Assam", "Shillong, Meghalaya")
     expect(page.locator(".route-card")).to_have_count(2)
@@ -356,10 +361,12 @@ def test_rejected_mappls_key_falls_back_to_openstreetmap(dashboard, mappls_key):
     expect(page.locator(".leaflet-container")).to_have_count(1)
 
 
-def test_without_a_mappls_key_the_map_is_openstreetmap(dashboard):
+def test_without_a_mappls_key_the_map_is_openstreetmap_showing_only_india(dashboard):
     page = dashboard
     page.open()
     expect(page.locator(".leaflet-container")).to_have_count(1)
+    expect(page.locator(".leaflet-india-mask-pane path")).to_have_count(2)  # the mask and India's outline
+    expect(page.locator(".map-foot")).to_contain_text("India boundary: Survey of India")
     expect(page.locator(".map-fallback")).to_have_count(0)
 
 

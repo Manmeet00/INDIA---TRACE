@@ -1,9 +1,14 @@
-import { useCallback, useEffect, useState } from 'react'
-import { CircleMarker, MapContainer, Polyline, TileLayer, Tooltip, ZoomControl, useMap } from 'react-leaflet'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { CircleMarker, MapContainer, Pane, Polygon, Polyline, TileLayer, Tooltip, ZoomControl, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import Icon from './Icon.jsx'
 import MapplsMap from './MapplsMap.jsx'
 import { INACTIVE_STATES, MAP_CATEGORIES, formatTime, mapCategory, placeName, statusLabel } from '../lib/format.js'
+import { BORDER_COLOR, MASK_COLOR } from '../lib/mapStyle.js'
+import { loadIndiaBoundary } from '../services/api.js'
+
+const WORLD = [[-89, -180], [-89, 180], [89, 180], [89, -180]]
+const INDIA_BOUNDS = [[5.5, 67], [38, 98.5]]
 
 function MapBounds({ geometry }) {
   const map = useMap()
@@ -15,11 +20,21 @@ function MapBounds({ geometry }) {
   return null
 }
 
+// Covers everything outside India and outlines its boundary, below routes and markers.
+function IndiaMask({ boundary }) {
+  const rings = useMemo(() => boundary.map((ring) => ring.map(([lng, lat]) => [lat, lng])), [boundary])
+  return <Pane name="india-mask" style={{ zIndex: 350 }}>
+    <Polygon positions={[WORLD, ...rings]} interactive={false} pathOptions={{ stroke: false, fillColor: MASK_COLOR, fillOpacity: 1 }}/>
+    <Polygon positions={rings.map((ring) => [ring])} interactive={false} pathOptions={{ color: BORDER_COLOR, weight: 1.2, opacity: 0.55, fill: false }}/>
+  </Pane>
+}
+
 // Only reports with reviewer-confirmed coordinates are drawn; text mentions never become map points.
-function DashboardMap({ plan, incidents, selectedRoute, selectedIncident, onSelectIncident, hiddenTypes }) {
+function DashboardMap({ plan, incidents, selectedRoute, selectedIncident, onSelectIncident, hiddenTypes, boundary }) {
   const route = plan?.routes?.find((item) => item.id === selectedRoute) || plan?.routes?.[0]
   const center = plan?.origin ? [plan.origin.latitude, plan.origin.longitude] : [26.2, 92.4]
-  return <MapContainer key={`${plan?.origin?.latitude || 'default'}-${plan?.destination?.latitude || 'default'}`} center={center} zoom={plan ? 7 : 6} zoomControl={false} className="map-canvas">
+  return <MapContainer key={`${plan?.origin?.latitude || 'default'}-${plan?.destination?.latitude || 'default'}`} center={center} zoom={plan ? 7 : 6} minZoom={4} maxBounds={INDIA_BOUNDS} maxBoundsViscosity={1} zoomControl={false} className="map-canvas">
+    {boundary && <IndiaMask boundary={boundary}/>}
     {route && <MapBounds geometry={route.geometry} />}
     <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
     <ZoomControl position="bottomright" />
@@ -34,15 +49,22 @@ function DashboardMap({ plan, incidents, selectedRoute, selectedIncident, onSele
 // key) the map falls back to OpenStreetMap and says so, so the dashboard never loses its map.
 export default function RouteMap({ plan, mapConfig, ...mapProps }) {
   const [mapplsProblem, setMapplsProblem] = useState('')
+  const [boundary, setBoundary] = useState(null)
+  useEffect(() => {
+    let active = true
+    // Without the file the map still works, with neighbouring countries visible.
+    loadIndiaBoundary().then((rings) => { if (active) setBoundary(rings) }).catch(() => {})
+    return () => { active = false }
+  }, [])
   const onUnavailable = useCallback((reason) => setMapplsProblem(reason || 'The Mappls map could not load.'), [])
   const useMappls = mapConfig?.provider === 'mappls' && !mapplsProblem
   const status = plan?.offline_demo ? 'Historical snapshot' : plan ? `Routing fetched ${formatTime(plan.routing_fetched_at)}` : 'Map ready'
   return <article className="panel map-panel"><div className="map-heading"><div><span className="section-kicker">NORTHEAST INDIA · NETWORK VIEW</span><h2>{plan ? `${placeName(plan.origin)} to ${placeName(plan.destination)}` : 'Regional road intelligence'}</h2></div><span className={`map-status ${plan?.offline_demo ? 'demo' : ''}`}><i/>{status}</span></div>
     {mapplsProblem && <p className="map-fallback" role="status">{mapplsProblem} Showing OpenStreetMap instead.</p>}
     <div className="map-wrap">{!mapConfig ? <div className="map-canvas"/> : useMappls
-      ? <MapplsMap apiKey={mapConfig.mappls_key} plan={plan} {...mapProps} onUnavailable={onUnavailable}/>
-      : <DashboardMap plan={plan} {...mapProps}/>}<div className="map-legend"><span><i className="legend-route"/> Selected route</span><span><i className="legend-candidate"/> Other candidates</span><span><i className="legend-incident"/> Geolocated evidence</span></div></div>
-    <div className="map-foot"><span><Icon name="pin" size={14}/>{plan ? `${placeName(plan.origin)} → ${placeName(plan.destination)}` : 'Assam · Meghalaya · Northeast India'}</span><span>{useMappls ? 'Map © Mappls (MapmyIndia)' : 'Map tiles © OpenStreetMap contributors'}</span></div>
+      ? <MapplsMap apiKey={mapConfig.mappls_key} plan={plan} boundary={boundary} {...mapProps} onUnavailable={onUnavailable}/>
+      : <DashboardMap plan={plan} boundary={boundary} {...mapProps}/>}<div className="map-legend"><span><i className="legend-route"/> Selected route</span><span><i className="legend-candidate"/> Other candidates</span><span><i className="legend-incident"/> Geolocated evidence</span></div></div>
+    <div className="map-foot"><span><Icon name="pin" size={14}/>{plan ? `${placeName(plan.origin)} → ${placeName(plan.destination)}` : 'Assam · Meghalaya · Northeast India'}</span><span>{useMappls ? 'Map © Mappls (MapmyIndia)' : 'Map tiles © OpenStreetMap contributors'} · India boundary: Survey of India</span></div>
   </article>
 }
 
