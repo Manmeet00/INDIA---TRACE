@@ -361,3 +361,18 @@ def test_without_a_mappls_key_the_map_is_openstreetmap(dashboard):
     page.open()
     expect(page.locator(".leaflet-container")).to_have_count(1)
     expect(page.locator(".map-fallback")).to_have_count(0)
+
+
+def test_sidebar_can_be_hidden_and_the_choice_is_remembered(dashboard):
+    page = dashboard
+    page.open()
+    toggle = page.locator(".sidebar-toggle")
+    expect(toggle).to_have_attribute("aria-expanded", "true")
+    toggle.click()
+    expect(toggle).to_have_attribute("aria-label", "Show sidebar")
+    expect(page.locator("#sidebar")).to_be_hidden()
+    expect(page.locator(".topbar-brand")).to_be_visible()
+    page.reload()
+    expect(page.locator(".sidebar-toggle")).to_have_attribute("aria-expanded", "false")
+    page.locator(".sidebar-toggle").click()
+    expect(page.locator("#sidebar")).to_be_visible()

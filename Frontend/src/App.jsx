@@ -10,6 +10,7 @@ import Monitoring from './components/Monitoring.jsx'
 import RegionCoverage from './components/RegionCoverage.jsx'
 import { useWorkspace } from './hooks/useWorkspace.js'
 import { useEvidenceFilters } from './hooks/useEvidenceFilters.js'
+import { useSidebar } from './hooks/useSidebar.js'
 import { INACTIVE_STATES, formatDistance, formatDuration, formatTime } from './lib/format.js'
 import * as api from './services/api.js'
 
@@ -24,6 +25,7 @@ const API_STATUS = {
 function App() {
   const { incidents, apiStatus, problem, lastRun, region, metrics, mapConfig, refresh: refreshWorkspace } = useWorkspace()
   const [statusLabel, statusNote] = API_STATUS[apiStatus]
+  const sidebar = useSidebar()
   const [search, setSearch] = useState('')
   const { filters, setFilter, visibleIncidents } = useEvidenceFilters(incidents, search)
   const [plan, setPlan] = useState(null)
@@ -132,8 +134,8 @@ function App() {
   const sourceCount = new Set(incidents.map((item) => item.source_name)).size
   const chosenRoute = plan?.routes?.find((item) => item.id === selectedRoute)
 
-  return <div className="app-shell">
-    <aside className="sidebar">
+  return <div className={`app-shell${sidebar.hidden ? ' sidebar-hidden' : ''}`}>
+    <aside className="sidebar" id="sidebar" inert={sidebar.hidden}>
       <a className="brand" href="#overview" aria-label="INDIA-TRACE home"><span className="brand-mark"><span /><span /><span /></span><span className="brand-copy"><b>INDIA-TRACE</b><small>Essential deliveries · Northeast India</small></span></a>
       <nav className="side-nav" aria-label="Main navigation">
         <a className="nav-item active" href="#overview"><Icon name="home"/> <span>Overview</span></a>
@@ -150,7 +152,7 @@ function App() {
     </aside>
 
     <main className="main-area" id="overview">
-      <header className="topbar"><div className="topbar-brand"><span className="brand-mark small"><span /><span /><span /></span><span><b>INDIA-TRACE</b><small>Road risk dashboard</small></span></div><label className="global-search"><Icon name="search" size={19}/><input aria-label="Search evidence" placeholder="Search locations, roads, sources or reports…" value={search} onChange={(event) => setSearch(event.target.value)}/></label><div className="top-actions"><span className={`connection-label ${apiStatus}`}><i/>{statusLabel}</span><div className="profile-avatar">TT</div><span className="profile-name">Tech Titans</span></div></header>
+      <header className="topbar"><button type="button" className="sidebar-toggle" onClick={sidebar.toggle} aria-controls="sidebar" aria-expanded={!sidebar.hidden} aria-label={sidebar.hidden ? 'Show sidebar' : 'Hide sidebar'} title={sidebar.hidden ? 'Show sidebar' : 'Hide sidebar'}><Icon name="sidebar" size={20}/></button><div className="topbar-brand"><span className="brand-mark small"><span /><span /><span /></span><span><b>INDIA-TRACE</b><small>Road risk dashboard</small></span></div><label className="global-search"><Icon name="search" size={19}/><input aria-label="Search evidence" placeholder="Search locations, roads, sources or reports…" value={search} onChange={(event) => setSearch(event.target.value)}/></label><div className="top-actions"><span className={`connection-label ${apiStatus}`}><i/>{statusLabel}</span><div className="profile-avatar">TT</div><span className="profile-name">Tech Titans</span></div></header>
 
       <div className="page-content">
         <section className="summary-grid" aria-label="Workspace summary">

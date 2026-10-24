@@ -1,4 +1,5 @@
 const PATHS = {
+  sidebar: <><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></>,
   home: <><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1Z"/><path d="M9 21v-6h6v6"/></>,
   route: <><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><path d="M8.5 18H12a3 3 0 0 0 3-3v-3a3 3 0 0 1 3-3"/></>,
   alert: <><path d="m12 3 9 16H3l9-16Z"/><path d="M12 9v4m0 3h.01"/></>,
