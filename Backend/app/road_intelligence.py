@@ -210,16 +210,21 @@ def load_incidents(connection: sqlite3.Connection, limit: int = 500) -> list[dic
     return annotate(incidents)
 
 
+# Pilot corridor: NH-6 / NH-306, Guwahati – Shillong – Silchar – Aizawl. See docs/PILOT.md.
+PILOT_QUERIES = [
+    "NH-6 Guwahati Shillong road closure landslide update",
+    "NH-6 Shillong Silchar Sonapur Ratacherra landslide traffic",
+    "NH-306 Silchar Aizawl road blocked landslide",
+    "Meghalaya Mizoram Barak Valley highway closure latest",
+]
+
+
 def collect_candidates(connection: sqlite3.Connection) -> dict[str, Any]:
     key = get_settings().tinyfish_api_key
     if not key:
         return {"status": "not_configured", "collected": 0, "duplicates": 0,
                 "message": "TinyFish is not configured. Add TINYFISH_API_KEY to Backend/.env to collect public web evidence.", "incidents": []}
-    queries = [
-        "Northeast India road closure landslide highway official update",
-        "Assam Arunachal road disruption bridge closure latest",
-        "Manipur Mizoram Meghalaya road closure landslide update",
-    ]
+    queries = PILOT_QUERIES
     collected = 0
     duplicates = 0
     failed_queries = 0

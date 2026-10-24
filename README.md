@@ -30,9 +30,11 @@ Open `http://localhost:5173`. The backend docs are at `http://127.0.0.1:8000/doc
 
 ## Demo walkthrough
 
-1. **Run collection** (Evidence panel). TinyFish search hits are stored as unverified evidence with source links. Freshness is estimated from the source's date text ("3 months ago", "Jul 3, 2023").
-2. **Review a report.** Open it, check the linked source, and save a status and note. Mentions (NH numbers, places), possible duplicates and possible conflicts are shown as hints only. Mark irrelevant search hits **Dismissed**. Add coordinates only after checking the source.
-3. **Plan a route.** Guwahati → Tezpur returns two OSRM routes, so it shows route comparison well; Guwahati → Shillong returns one. Each route gets a recommendation with reasons:
+The pilot corridor is **NH-6 / NH-306, Guwahati – Shillong – Silchar – Aizawl**. See [docs/PILOT.md](docs/PILOT.md) for the reasons, the source policy, pre-demo steps and the demo script, and [docs/EVALUATION.md](docs/EVALUATION.md) for the evidence test cases, measured runs and limitations.
+
+1. **Run collection** (Evidence panel). Four corridor queries go to TinyFish Search, and results are stored as unverified evidence with source links. Freshness is estimated from the source's date text ("3 months ago", "Jul 3, 2023").
+2. **Review a report.** Every report shows one evidence status: *Unverified*, *Corroborated* (an independent publisher agrees), *Confirmed by reviewer*, *Conflicting*, *Stale* (outranks confirmed) or *Dismissed*. Duplicates, conflicts, event types and highway or place mentions are automatic hints. Saving a review adds to the report's history instead of overwriting it. Add coordinates only after checking the source.
+3. **Plan a route.** Guwahati → Shillong runs on NH-27 and NH-6, and OSRM returns one route; Silchar → Aizawl returns two, so it shows route comparison. Route cards list reports that name a highway the route uses, with their location marked unconfirmed. Each route gets a recommendation with reasons:
    - **Consider an alternative**: a reviewer-confirmed report is within 3 km and another route has none.
    - **Verify before dispatch**: reports nearby are unconfirmed, some reports have no location, evidence is over 24 hours old, or nothing has been collected.
    - **Proceed cautiously**: every relevant report is located and none is near the route. This never means the road is clear.
@@ -41,8 +43,9 @@ Open `http://localhost:5173`. The backend docs are at `http://127.0.0.1:8000/doc
 
 - Route planning resolves place names with OpenStreetMap Nominatim and gets route geometry, distance, and time estimates from OSRM's public car profile. Vehicle type is recorded but vehicle restrictions are not checked.
 - No seed or fake incidents are inserted. Reports with no source time are marked freshness `unknown`; collection does not infer incident coordinates from text.
-- Duplicate, conflict and mention hints are text heuristics and never change a report's verification state.
-- The exact Guwahati–Shillong example has a historical OSRM snapshot fallback for offline presentation; it is marked not for dispatch. Map tiles, routing, geocoding and TinyFish collection need internet.
+- Event types, duplicates, conflicts, corroboration and mentions are text heuristics and never change a reviewer's decision.
+- Geocodes and routes are cached in SQLite and served from the cache if OSRM is slow or down, labelled with when they were fetched. The exact Guwahati–Shillong example also has a historical snapshot in the frontend, marked not for dispatch. Map tiles and TinyFish collection need internet.
+- SQLite instead of the PostgreSQL + PostGIS in the proposal: it needs no setup on the demo laptop. PostGIS is the scale-up path.
 - The original shipment trace/event API is preserved under `/api/v1/*`.
 
 ## Tests
