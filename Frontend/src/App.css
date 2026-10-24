@@ -195,6 +195,8 @@
 .report-link.conflict { border-left-color: #df6259; }
 .report-link.conflict b { color: #a34842; }
 .report-link.duplicate { border-left-color: #8a7be0; }
+.report-link.corroborating { border-left-color: #2a9d8f; }
+.report-link.corroborating b { color: #1f6f6a; }
 .report-link.related { border-left-color: #9fb4cc; }
 .hint-note { color: #8593a5; font-size: 8px; }
 .verification-badge, .freshness-badge { padding: 4px 6px; border-radius: 4px; font-size: 7px; font-weight: 800; letter-spacing: .25px; text-transform: uppercase; }
@@ -202,6 +204,8 @@
 .verification-badge.confirmed { color: #287344; background: #e4f5e9; }
 .verification-badge.conflicting { color: #a34842; background: #ffebe8; }
 .verification-badge.unknown { color: #68788d; background: #edf1f4; }
+.verification-badge.corroborated { color: #1f6f6a; background: #dff4f1; }
+.verification-badge.stale { color: #5d6b7c; background: #eceff3; }
 .verification-badge.dismissed { color: #5d6b7c; background: #e6eaef; text-decoration: line-through; }
 .freshness-badge { color: #697a8e; background: #f0f3f6; }
 .incident-card h3, .selected-incident h3 { margin: 9px 0 8px; color: #172842; font: 800 13px/1.4 Manrope, sans-serif; }
@@ -244,6 +248,8 @@
 .mini-status.confirmed { background: #28a36c; }
 .mini-status.conflicting { background: #df6259; }
 .mini-status.unknown { background: #9ba8b8; }
+.mini-status.corroborated { background: #2a9d8f; }
+.mini-status.stale { background: #c3ccd6; }
 .mini-status.dismissed { background: transparent; box-shadow: inset 0 0 0 1.5px #9ba8b8; }
 .evidence-row-copy { display: grid; min-width: 0; flex: 1; gap: 3px; }
 .evidence-row-copy b { overflow: hidden; color: #354861; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }

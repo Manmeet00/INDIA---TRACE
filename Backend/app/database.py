@@ -60,6 +60,19 @@ CREATE TABLE IF NOT EXISTS incidents (
     review_note TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_incidents_collected_at ON incidents(collected_at DESC);
+CREATE TABLE IF NOT EXISTS incident_reviews (
+    id TEXT PRIMARY KEY,
+    incident_id TEXT NOT NULL REFERENCES incidents(id) ON DELETE CASCADE,
+    previous_verification TEXT,
+    verification TEXT NOT NULL,
+    review_note TEXT NOT NULL,
+    location_changed INTEGER NOT NULL DEFAULT 0,
+    location_text TEXT,
+    latitude REAL,
+    longitude REAL,
+    reviewed_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_incident_reviews_incident ON incident_reviews(incident_id, reviewed_at DESC);
 CREATE TABLE IF NOT EXISTS provider_cache (
     url TEXT PRIMARY KEY,
     response TEXT NOT NULL,

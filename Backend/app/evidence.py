@@ -43,6 +43,39 @@ DUPLICATE_SIMILARITY = 0.6
 CONFLICT_WINDOW_S = 72 * 3600
 
 
+PAGE_SCOPED_HOSTS = {"facebook.com", "m.facebook.com"}
+# Reel and video URLs on these hosts do not show who posted them, so they cannot prove independence.
+UNATTRIBUTABLE_HOSTS = {"instagram.com", "youtube.com", "youtu.be", "x.com", "twitter.com"}
+
+
+def publisher(url: str | None) -> str | None:
+    """Who published a source, as far as its URL shows; None when posters cannot be told apart."""
+    parts = urlsplit(url or "")
+    host = (parts.hostname or "").removeprefix("www.")
+    if not host or host in UNATTRIBUTABLE_HOSTS:
+        return None
+    if host in PAGE_SCOPED_HOSTS:
+        page = parts.path.strip("/").split("/")[0].lower()
+        return f"{host}/{page}" if page else None
+    return host
+
+
+def evidence_status(item: dict[str, Any]) -> str:
+    """One label in the project's evidence vocabulary. Stale outranks confirmed so old reports never read as current."""
+    verification = item.get("verification", "unverified")
+    if verification == "dismissed":
+        return "dismissed"
+    if verification == "conflicting" or item["conflict_ids"]:
+        return "conflicting"
+    if item.get("freshness") == "stale":
+        return "stale"
+    if verification == "confirmed":
+        return "confirmed"
+    if item["corroborating_ids"]:
+        return "corroborated"
+    return "unknown" if verification == "unknown" else "unverified"
+
+
 def normalize_source_url(url: str) -> str:
     """Drop fragments, tracking parameters and trailing slashes so reposted links deduplicate."""
     parts = urlsplit(url)
@@ -72,7 +105,7 @@ def _dated_closely(first: dict[str, Any], second: dict[str, Any]) -> bool:
 
 
 def annotate(incidents: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Add mentions, report_signal, event_type(s), duplicate_ids, related_ids and conflict_ids to each report."""
+    """Add mentions, report_signal, event_type(s), duplicate/related/conflict/corroborating ids and evidence_status."""
     tokens = {}
     for item in incidents:
         text = f"{item['title']} {item['summary']}"
@@ -114,4 +147,15 @@ def annotate(incidents: list[dict[str, Any]]) -> list[dict[str, Any]]:
         opposite = {"closure": "reopening", "reopening": "closure"}.get(item["report_signal"] or "")
         item["conflict_ids"] = [other["id"] for other in related.values()
                                 if opposite and other["report_signal"] == opposite and _dated_closely(item, other)]
+        # Corroboration needs a different, identifiable publisher saying the same thing at about the
+        # same time. Duplicates are excluded so syndicated copies never count as confirmation.
+        own_publisher = publisher(item.get("source_url"))
+        item["corroborating_ids"] = [
+            other["id"] for other in related.values()
+            if other["id"] not in item["duplicate_ids"] and item["report_signal"] in ("closure", "reopening")
+            and other["report_signal"] == item["report_signal"] and own_publisher
+            and publisher(other.get("source_url")) not in (None, own_publisher) and _dated_closely(item, other)
+        ]
+    for item in incidents:
+        item["evidence_status"] = evidence_status(item)
     return incidents

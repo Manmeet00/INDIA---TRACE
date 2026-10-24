@@ -119,6 +119,17 @@ class RoutePlanRequest(BaseModel):
     priority: str = Field(default="balanced", pattern=r"^(balanced|fastest|shortest|cautious)$")
 
 
+class ReviewEntry(BaseModel):
+    previous_verification: str | None
+    verification: str
+    review_note: str
+    location_changed: bool
+    location_text: str | None
+    latitude: float | None
+    longitude: float | None
+    reviewed_at: datetime
+
+
 class IncidentOut(BaseModel):
     id: str
     title: str
@@ -144,6 +155,9 @@ class IncidentOut(BaseModel):
     duplicate_ids: list[str] = Field(default_factory=list)
     related_ids: list[str] = Field(default_factory=list)
     conflict_ids: list[str] = Field(default_factory=list)
+    corroborating_ids: list[str] = Field(default_factory=list)
+    evidence_status: str = "unverified"
+    review_history: list[ReviewEntry] = Field(default_factory=list)
 
 
 class CollectionResult(BaseModel):

@@ -71,3 +71,30 @@ def test_event_types_are_tagged_with_a_primary_type():
     assert items["bridge"]["event_type"] == "bridge"
     assert items["flood"]["event_types"] == ["flood", "weather"]
     assert items["none"]["event_type"] == "other"
+
+
+def sourced(incident_id, url, summary, published_at, verification="unverified", freshness="unknown"):
+    return {**report(incident_id, incident_id, summary, published_at), "source_url": url,
+            "verification": verification, "freshness": freshness}
+
+
+def test_independent_publishers_corroborate_but_reposts_and_unattributable_links_do_not():
+    items = by_id([
+        sourced("news", "https://assamtribune.com/nh6-closed", "NH-6 blocked by landslide at Sonapur.", "2026-10-22T08:00:00Z"),
+        sourced("page", "https://www.facebook.com/nemediahub/posts/1", "Traffic on National Highway 6 closed near Sonapur.", "2026-10-22T11:00:00Z"),
+        sourced("same", "https://assamtribune.com/nh6-update", "NH-6 remains closed at Sonapur.", "2026-10-22T12:00:00Z"),
+        sourced("reel", "https://www.instagram.com/reel/abc", "NH-6 blocked, watch.", "2026-10-22T09:00:00Z"),
+    ])
+    assert items["news"]["corroborating_ids"] == ["page"]
+    assert items["news"]["evidence_status"] == "corroborated"
+    assert items["reel"]["corroborating_ids"] == []
+    assert sorted(items["same"]["corroborating_ids"]) == ["page"]
+
+
+def test_stale_outranks_confirmed_and_dismissed_outranks_everything():
+    items = by_id([
+        sourced("old", "https://a.example/1", "Bridge damaged.", "Jul 3, 2023", "confirmed", "stale"),
+        sourced("current", "https://b.example/1", "Bridge damaged.", None, "confirmed", "fresh"),
+        sourced("gone", "https://c.example/1", "Unrelated.", None, "dismissed", "stale"),
+    ])
+    assert (items["old"]["evidence_status"], items["current"]["evidence_status"], items["gone"]["evidence_status"]) == ("stale", "confirmed", "dismissed")

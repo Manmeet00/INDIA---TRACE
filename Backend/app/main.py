@@ -78,15 +78,22 @@ def get_incident(incident_id: str):
 def review_incident(incident_id: str, payload: IncidentReview):
     reviewed_at = datetime.now(timezone.utc).isoformat()
     with get_connection() as connection:
-        row = connection.execute("SELECT id FROM incidents WHERE id = ?", (incident_id,)).fetchone()
+        row = connection.execute("SELECT id, verification FROM incidents WHERE id = ?", (incident_id,)).fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail="Incident evidence not found")
-        values = {"verification": payload.verification, "reviewed_at": reviewed_at, "review_note": payload.review_note}
-        values.update({field: getattr(payload, field) for field in ("location_text", "latitude", "longitude")
-                       if field in payload.model_fields_set})
+        location = {field: getattr(payload, field) for field in ("location_text", "latitude", "longitude")
+                    if field in payload.model_fields_set}
+        values = {"verification": payload.verification, "reviewed_at": reviewed_at, "review_note": payload.review_note, **location}
         connection.execute(
             "UPDATE incidents SET " + ", ".join(f"{column} = ?" for column in values) + " WHERE id = ?",
             (*values.values(), incident_id),
+        )
+        # Every review is kept so status changes and their reasons are never overwritten.
+        connection.execute(
+            """INSERT INTO incident_reviews (id, incident_id, previous_verification, verification, review_note,
+            location_changed, location_text, latitude, longitude, reviewed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (f"rv_{uuid4().hex}", incident_id, row["verification"], payload.verification, payload.review_note, bool(location),
+             location.get("location_text"), location.get("latitude"), location.get("longitude"), reviewed_at),
         )
         return find_incident(connection, incident_id)
 

@@ -97,3 +97,14 @@ def test_provider_responses_are_cached_and_served_when_provider_fails(client, mo
     monkeypatch.setattr(road_intelligence, "ROUTE_CACHE_S", -1)  # force a refresh attempt
     fallback = client.post("/api/routes/plan", json={"origin": "Guwahati", "destination": "Shillong"}).json()
     assert fallback["routing_fetched_at"] == first["routing_fetched_at"]
+
+
+def test_review_history_keeps_every_status_change(client, add_incident):
+    add_incident("h1")
+    url = "/api/incidents/h1/review"
+    client.patch(url, json={"verification": "confirmed", "review_note": "Matches district advisory", "latitude": 25.9, "longitude": 91.8})
+    body = client.patch(url, json={"verification": "conflicting", "review_note": "Later report says reopened"}).json()
+    history = body["review_history"]
+    assert [(entry["previous_verification"], entry["verification"]) for entry in history] == [("confirmed", "conflicting"), ("unverified", "confirmed")]
+    assert [entry["location_changed"] for entry in history] == [False, True]
+    assert body["evidence_status"] == "conflicting"

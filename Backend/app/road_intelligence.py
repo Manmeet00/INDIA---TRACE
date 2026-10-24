@@ -199,7 +199,15 @@ def incident_from_row(row: sqlite3.Row) -> dict[str, Any]:
 def load_incidents(connection: sqlite3.Connection, limit: int = 500) -> list[dict[str, Any]]:
     """Newest reports first, with duplicate, conflict and mention hints computed across them."""
     rows = connection.execute("SELECT * FROM incidents ORDER BY collected_at DESC LIMIT ?", (limit,)).fetchall()
-    return annotate([incident_from_row(row) for row in rows])
+    incidents = [incident_from_row(row) for row in rows]
+    history: dict[str, list[dict[str, Any]]] = {}
+    for review in connection.execute("SELECT * FROM incident_reviews ORDER BY reviewed_at DESC").fetchall():
+        history.setdefault(review["incident_id"], []).append({
+            key: review[key] for key in ("previous_verification", "verification", "review_note", "location_changed",
+                                         "location_text", "latitude", "longitude", "reviewed_at")})
+    for incident in incidents:
+        incident["review_history"] = history.get(incident["id"], [])
+    return annotate(incidents)
 
 
 def collect_candidates(connection: sqlite3.Connection) -> dict[str, Any]:
@@ -304,6 +312,7 @@ def route_exposure(route_geometry: dict[str, Any], incidents: list[dict[str, Any
         "unlocated_reports": len(unlocated),
         "nearby": {"confirmed": 0, "unverified": 0, "conflicting": 0, "unknown": 0},
         "nearby_stale": 0,
+        "nearby_confirmed_stale": 0,
         "nearby_ids": [],
         "highway_mentions": highway_mentions,
         "highway_mention_ids": mention_ids,
@@ -327,6 +336,7 @@ def route_exposure(route_geometry: dict[str, Any], incidents: list[dict[str, Any
         state = incident["verification"]
         exposure["nearby"][state] = exposure["nearby"].get(state, 0) + 1
         exposure["nearby_stale"] += incident["freshness"] == "stale"
+        exposure["nearby_confirmed_stale"] += state == "confirmed" and incident["freshness"] == "stale"
         exposure["nearby_ids"].append(incident["id"])
     return exposure
 
@@ -357,7 +367,9 @@ def recommend(route: dict[str, Any], routes: list[dict[str, Any]], newest_collec
     km = f"{exposure['tolerance_m'] / 1000:g} km"
     confirmed = exposure["nearby"]["confirmed"]
     if confirmed:
-        reasons = [f"{_plural(confirmed, 'reviewer-confirmed report')} within {km} of this route."]
+        old = exposure["nearby_confirmed_stale"]
+        reasons = [f"{_plural(confirmed, 'reviewer-confirmed report')} within {km} of this route"
+                   f"{f' ({old} published over 24 hours ago; check it is still current)' if old else ''}."]
         alternatives = [other for other in routes if other is not route and other["exposure"]["nearby"]["confirmed"] == 0]
         if alternatives:
             best = min(alternatives, key=lambda other: (_unconfirmed_nearby(other["exposure"]), other["duration_s"]))
