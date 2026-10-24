@@ -18,18 +18,21 @@ function savedVoice() {
 // "Then" when another turn follows soon after), time and distance left in a sheet at the bottom, spoken
 // directions with a mute button. now/prepared come from the map (see RouteMap). Times are the routing service's
 // estimates without live traffic, and say so.
-export default function NavigationPanel({ prepared, now, here, destination, rerouting, error, onExit, onReroute,
-  following, onRecentre, overview, onOverview }) {
+// mode 'preview' (away from the route's start): the turns one by one with ‹ ›, no voice and no re-routing.
+export default function NavigationPanel({ mode = 'live', prepared, now, here, destination, rerouting, error, onExit, onReroute,
+  following, onRecentre, overview, onOverview, previewStep, onPreviewStep }) {
   const [voice, setVoice] = useState(savedVoice)
-  const next = now ? prepared.steps[now.step] : null
-  const after = now ? prepared.steps[now.step + 1] : null
+  const previewing = mode === 'preview' && prepared
+  const nextIndex = previewing ? previewStep : now?.step
+  const next = nextIndex != null && prepared ? prepared.steps[nextIndex] : null
+  const after = next ? prepared.steps[nextIndex + 1] : null
   const thenStep = after && after.type !== 'arrive' && next?.distance_m <= THEN_WITHIN_M ? after : null
   const name = destination ? placeName(destination) : 'your destination'
 
   // Spoken directions: once when a new turn comes up (with its distance) and again just before it.
   const said = useRef({ step: null, near: false, arrived: false })
   const near = now ? now.toStep < NEAR_M : false
-  const announcement = !now ? '' : now.arrived ? `You have arrived at ${name}` : spoken(next, now.toStep)
+  const announcement = !now || previewing ? '' : now.arrived ? `You have arrived at ${name}` : spoken(next, now.toStep)
   useEffect(() => {
     if (!voice || !announcement || rerouting || typeof window === 'undefined' || !('speechSynthesis' in window)) return
     const say = (text) => {
@@ -59,7 +62,7 @@ export default function NavigationPanel({ prepared, now, here, destination, rero
   const lastReroute = useRef(0)
   const reroute = useRef(onReroute)
   useEffect(() => { reroute.current = onReroute })
-  const off = Boolean(now?.offRoute && !now.arrived)
+  const off = Boolean(!previewing && now?.offRoute && !now.arrived)
   useEffect(() => {
     offCount.current = off ? offCount.current + 1 : 0
     if (offCount.current >= REROUTE_AFTER && !rerouting && Date.now() - lastReroute.current > REROUTE_EVERY_MS) {
@@ -70,7 +73,12 @@ export default function NavigationPanel({ prepared, now, here, destination, rero
   }, [off, here, rerouting])
 
   let banner
-  if (rerouting) banner = <div className="nav-banner"><div className="nav-turn"><Icon name="refresh" size={40}/></div><div className="nav-road"><b>Rerouting…</b><span>Finding a route from where you are</span></div></div>
+  if (previewing) {
+    const { headline, action } = instructionParts(next)
+    const reach = nextIndex === 0 ? 'Start' : distanceText(prepared.steps[nextIndex - 1].distance_m)
+    banner = <div className="nav-banner"><div className="nav-turn"><Icon name={turnIcon(next)} size={44}/><b>{reach}</b></div>
+      <div className="nav-road">{action && <span>{action}</span>}<b>{headline}</b></div></div>
+  } else if (rerouting) banner = <div className="nav-banner"><div className="nav-turn"><Icon name="refresh" size={40}/></div><div className="nav-road"><b>Rerouting…</b><span>Finding a route from where you are</span></div></div>
   else if (error) banner = <div className="nav-banner problem"><div className="nav-turn"><Icon name="alert" size={40}/></div><div className="nav-road"><b>No new route</b><span>{error}</span></div></div>
   else if (!prepared) banner = <div className="nav-banner problem"><div className="nav-turn"><Icon name="alert" size={40}/></div><div className="nav-road"><b>This route cannot be followed</b><span>It has no turn-by-turn steps.</span></div></div>
   else if (!now) banner = <div className="nav-banner"><div className="nav-turn"><Icon name="locate" size={40}/></div><div className="nav-road"><b>Finding your location…</b><span>Guidance starts when the device finds you</span></div></div>
@@ -92,16 +100,25 @@ export default function NavigationPanel({ prepared, now, here, destination, rero
       </div>}
     </div>
     <div className="nav-side">
-      <button type="button" className="nav-round" onClick={toggleVoice} aria-pressed={voice} aria-label={voice ? 'Mute voice directions' : 'Turn on voice directions'} title={voice ? 'Mute' : 'Unmute'}>
-        <Icon name={voice ? 'volume' : 'volume-off'} size={22}/></button>
+      {previewing ? <button type="button" className={`nav-round${overview ? ' on' : ''}`} onClick={onOverview} aria-pressed={overview} aria-label="Route overview" title="Route overview"><Icon name="route" size={22}/></button>
+        : <button type="button" className="nav-round" onClick={toggleVoice} aria-pressed={voice} aria-label={voice ? 'Mute voice directions' : 'Turn on voice directions'} title={voice ? 'Mute' : 'Unmute'}>
+        <Icon name={voice ? 'volume' : 'volume-off'} size={22}/></button>}
     </div>
-    {!following && now && !now.arrived && <button type="button" className="nav-recentre" onClick={onRecentre}><Icon name="navigate" size={18}/> Re-centre</button>}
-    <div className="nav-sheet">
+    {!following && (previewing || (now && !now.arrived)) && <button type="button" className="nav-recentre" onClick={onRecentre}><Icon name="navigate" size={18}/> Re-centre</button>}
+    {previewing ? <div className="nav-sheet">
+      <button type="button" className="nav-close" onClick={onExit} aria-label="Close preview" title="Close preview"><Icon name="close" size={24}/></button>
+      <div className="nav-eta preview"><b>Turn {nextIndex + 1} of {prepared.steps.length}</b>
+        <span>{distanceText(prepared.distance - prepared.stepsAt[nextIndex])} · {durationText((prepared.duration * (prepared.distance - prepared.stepsAt[nextIndex])) / (prepared.distance || 1))} from here</span></div>
+      <div className="nav-steps">
+        <button type="button" className="nav-round" onClick={() => onPreviewStep(nextIndex - 1)} disabled={nextIndex === 0} aria-label="Previous turn" title="Previous turn"><Icon name="chevron-left" size={22}/></button>
+        <button type="button" className="nav-round" onClick={() => onPreviewStep(nextIndex + 1)} disabled={nextIndex >= prepared.steps.length - 1} aria-label="Next turn" title="Next turn"><Icon name="chevron-right" size={22}/></button>
+      </div>
+    </div> : <div className="nav-sheet">
       <button type="button" className="nav-close" onClick={onExit} aria-label={now?.arrived ? 'Done' : 'Exit navigation'} title={now?.arrived ? 'Done' : 'Exit navigation'}><Icon name="close" size={24}/></button>
       {now && !now.arrived ? <div className="nav-eta" title="Routing service estimates without live traffic">
         <b>{durationText(now.remainingTime)}</b><span>{distanceText(now.remaining)}{arrival && ` · ${arrival}`}</span>
       </div> : <div className="nav-eta"><b>{now?.arrived ? 'Arrived' : 'Navigation'}</b><span>{destination ? placeName(destination) : ''}</span></div>}
       <button type="button" className={`nav-round${overview ? ' on' : ''}`} onClick={onOverview} aria-pressed={overview} aria-label="Route overview" title="Route overview"><Icon name="route" size={22}/></button>
-    </div>
+    </div>}
   </div>
 }

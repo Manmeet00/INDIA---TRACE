@@ -69,13 +69,13 @@ function HereLayer({ here, hasPlan, focusKey }) {
 }
 
 // The followed route as Google Maps draws it while navigating: the part already driven in grey, the rest in blue
-// with a darker edge, and a blue arrow pointing along the route (on it while on the route, at the device when
-// off it). Following keeps the map on the arrow; dragging the map stops that until Re-centre. Overview fits the
-// rest of the route.
-function NavigationLayer({ line, now, here, following, overview, onUserMove }) {
+// with a darker edge, and a blue arrow at focus ({ position: [lat, lon], bearing }: the device while guiding, the
+// current turn in a preview). Following keeps the map on the arrow; dragging the map stops that until Re-centre.
+// Overview fits the rest of the route.
+function NavigationLayer({ line, now, focus, following, overview, onUserMove }) {
   const map = useMap()
   useMapEvents({ dragstart: onUserMove })
-  const position = now && !now.offRoute ? [now.snapped[1], now.snapped[0]] : inIndia(here) ? [here.latitude, here.longitude] : null
+  const position = focus?.position || null
   const latitude = position?.[0]
   const longitude = position?.[1]
   useEffect(() => {
@@ -96,7 +96,7 @@ function NavigationLayer({ line, now, here, following, overview, onUserMove }) {
     <Polyline positions={ahead} interactive={false} pathOptions={{ color: '#1967d2', weight: 10, opacity: 1 }}/>
     <Polyline positions={ahead} interactive={false} pathOptions={{ color: '#4285f4', weight: 6, opacity: 1 }}/>
     {position && <Marker position={position} interactive={false} keyboard={false} zIndexOffset={1000}
-      icon={L.divIcon({ className: '', html: `<span class="nav-arrow" style="transform: rotate(${Math.round(now?.bearing || 0)}deg)">${ARROW_SVG}</span>`, iconSize: [40, 40], iconAnchor: [20, 20] })}/>}
+      icon={L.divIcon({ className: '', html: `<span class="nav-arrow" style="transform: rotate(${Math.round(focus?.bearing || 0)}deg)">${ARROW_SVG}</span>`, iconSize: [40, 40], iconAnchor: [20, 20] })}/>}
   </>
 }
 const NAVIGATION_ZOOM = 17
@@ -302,7 +302,7 @@ function useFullscreen(element) {
 // Mappls when the API has a Mappls key, OpenStreetMap otherwise. If Mappls cannot load (no internet, a rejected
 // key) the map falls back to OpenStreetMap and says so, so the dashboard never loses its map.
 // onStart begins navigation (null when the route cannot be followed); navigation is the followed route's state.
-export default function RouteMap({ plan, mapConfig, here, hereProblem, onRetryHere, onSearch, searchStatus, onStart, navigation, ...mapProps }) {
+export default function RouteMap({ plan, mapConfig, here, hereProblem, onRetryHere, onSearch, searchStatus, onStart, startMode, navigation, ...mapProps }) {
   const [focusKey, setFocusKey] = useState(0)
   const layers = useMapLayers()
   const wrap = useRef(null)
@@ -329,13 +329,22 @@ export default function RouteMap({ plan, mapConfig, here, hereProblem, onRetryHe
   // Where the device is along the followed route, shared by the guidance panel and the map.
   const followed = navigation?.route
   const prepared = useMemo(() => (followed?.steps?.length ? prepareRoute(followed) : null), [followed])
-  const now = navigating && prepared && inIndia(here) ? progress(prepared, here) : null
+  const previewing = navigation?.mode === 'preview'
+  const now = navigating && !previewing && prepared && inIndia(here) ? progress(prepared, here) : null
+  // Preview: which turn is shown; live: none. The arrow sits on the device (snapped to the route while on it) or,
+  // in a preview, on the turn shown, pointing the way the route leaves it.
+  const [previewStep, setPreviewStep] = useState(0)
+  const shownStep = previewing && prepared ? prepared.steps[Math.min(previewStep, prepared.steps.length - 1)] : null
+  const focus = shownStep ? { position: [shownStep.location[1], shownStep.location[0]], bearing: shownStep.bearing_after ?? 0 }
+    : now && !now.offRoute ? { position: [now.snapped[1], now.snapped[0]], bearing: now.bearing }
+      : inIndia(here) ? { position: [here.latitude, here.longitude], bearing: now?.bearing || 0 } : null
   // Following the arrow, or looking around (after a drag) or at the whole route (overview); reset at each start.
   const [view, setView] = useState({ following: true, overview: false })
   const [viewFor, setViewFor] = useState(navigating)
   if (viewFor !== navigating) {
     setViewFor(navigating)
     setView({ following: true, overview: false })
+    setPreviewStep(0)
   }
   const onUserMove = useCallback(() => setView({ following: false, overview: false }), [])
   const recentre = () => setView({ following: true, overview: false })
@@ -347,10 +356,12 @@ export default function RouteMap({ plan, mapConfig, here, hereProblem, onRetryHe
     {mapplsProblem && <p className="map-fallback" role="status">{mapplsProblem} Showing OpenStreetMap instead.</p>}
     <div className={`map-wrap${fullscreen.on ? ' fullscreen' : ''}${navigating ? ' navigating' : ''}`} ref={wrap}>{!mapConfig ? <div className="map-canvas"/> : useMappls
       ? <MapplsMap apiKey={mapConfig.mappls_key} plan={plan} boundary={boundary} here={here} focusKey={focusKey} {...mapProps} onUnavailable={onUnavailable}/>
-      : <DashboardMap plan={plan} boundary={boundary} here={here} focusKey={focusKey} base={layers.base} overlays={layers.overlays} navigation={navigating ? { now, ...view, onUserMove } : null} {...mapProps}/>}
+      : <DashboardMap plan={plan} boundary={boundary} here={here} focusKey={focusKey} base={layers.base} overlays={layers.overlays} navigation={navigating ? { now, focus, ...view, onUserMove } : null} {...mapProps}/>}
       {navigation ? <NavigationPanel {...navigation} prepared={prepared} now={now} here={here} following={view.following}
+        previewStep={previewing ? Math.min(previewStep, (prepared?.steps.length || 1) - 1) : null}
+        onPreviewStep={(index) => { setPreviewStep(index); setView({ following: true, overview: false }) }}
         onRecentre={recentre} overview={view.overview} onOverview={toggleOverview}/> : <MapSearch onSearch={onSearch} status={searchStatus}/>}
-      {plan && onStart && !navigation && <button type="button" className="map-start" onClick={onStart}><Icon name="navigate" size={18}/> Start</button>}
+      {plan && onStart && !navigation && <button type="button" className="map-start" onClick={onStart}><Icon name={startMode === 'preview' ? 'route' : 'navigate'} size={18}/> {startMode === 'preview' ? 'Preview' : 'Start'}</button>}
       {mapConfig && <LayersPanel base={layers.base} overlays={layers.overlays} onBase={layers.setBase} onToggle={layers.toggleOverlay} mappls={useMappls}/>}
       <button type="button" className="locate-button" onClick={() => (here ? setFocusKey((key) => key + 1) : onRetryHere())} disabled={Boolean(here) && !inIndia(here)} aria-label="Show my location" title={inIndia(here) ? 'Show my location' : here ? hereText : `${hereText} Press to try again.`}><Icon name="locate" size={20}/></button>
       <button type="button" className="fullscreen-button" onClick={fullscreen.toggle} aria-pressed={fullscreen.on} aria-label={fullscreen.on ? 'Exit full screen' : 'Show the map full screen'} title={fullscreen.on ? 'Exit full screen (Esc)' : 'Full screen'}><Icon name={fullscreen.on ? 'fullscreen-exit' : 'fullscreen'} size={20}/></button>

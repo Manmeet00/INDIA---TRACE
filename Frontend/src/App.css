@@ -213,6 +213,10 @@
 .nav-close { display: grid; place-items: center; width: 48px; height: 48px; padding: 0; border: 0; border-radius: 50%; color: #3c4043; background: #f1f3f4; }
 .nav-close:hover { background: #e3e5e8; }
 .nav-eta { text-align: center; }
+.nav-eta.preview b { color: #202124; font-size: 22px; }
+.nav-steps { display: flex; gap: 8px; }
+.nav-steps .nav-round { width: 44px; height: 44px; box-shadow: none; background: #f1f3f4; }
+.nav-steps .nav-round:disabled { color: #bdc1c6; cursor: not-allowed; }
 .nav-eta b { display: block; color: #188038; font: 500 26px/1.1 Roboto, Arial, sans-serif; }
 .nav-eta span { display: block; margin-top: 3px; color: #5f6368; font: 400 15px/1.3 Roboto, Arial, sans-serif; }
 .nav-arrow { display: block; width: 40px; height: 40px; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .45)); transition: transform .3s ease; }

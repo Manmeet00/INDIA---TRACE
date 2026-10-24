@@ -28,6 +28,8 @@ const PATHS = {
   toll: <><path d="M4 21V9h7v12M4 13h7"/><path d="M11 12h9"/><path d="M14 12v-2M17 12v-2"/></>,
   volume: <><path d="M4 9h4l5-4v14l-5-4H4Z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></>,
   'volume-off': <><path d="M4 9h4l5-4v14l-5-4H4Z"/><path d="m17 9.5 5 5M22 9.5l-5 5"/></>,
+  'chevron-left': <><path d="m15 5-7 7 7 7"/></>,
+  'chevron-right': <><path d="m9 5 7 7-7 7"/></>,
   navigate: <><path d="M12 3 5 20l7-4 7 4Z"/></>,
   // Turn arrows for navigation (see lib/navigation.js turnIcon).
   straight: <><path d="M12 21V4M6 10l6-6 6 6"/></>,

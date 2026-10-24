@@ -692,18 +692,56 @@ def test_navigation_recentres_shows_the_overview_mutes_and_reroutes_on_its_own(d
     expect(page.locator(".nav-banner .nav-road b")).to_have_text("GS Road (NH6)")
 
 
-def test_start_is_only_for_routes_from_your_location(dashboard, providers):
+def test_a_route_away_from_you_is_previewed_turn_by_turn(dashboard, providers):
     providers["router.project-osrm.org"] = osrm_with_steps
     page = dashboard
     page.add_init_script(DRIVING)
+    page.add_init_script(SPEECH)
+    page.open()
+    expect(page.locator("#origin")).to_have_value("Your location")
+    page.evaluate("driveTo(25.0, 93.0)")  # far from Guwahati, where the route starts
+    plan(page, "Guwahati", "Shillong")
+    expect(page.locator(".route-card")).to_have_count(2)
+    button = page.locator(".start-button")
+    expect(button).to_have_text("Preview")
+    expect(button).to_be_enabled()
+    expect(page.locator(".start-note")).to_have_text("Preview steps through the turns. Live guidance starts when you are at Guwahati.")
+    expect(page.locator(".map-start")).to_have_text("Preview")
+
+    button.click()
+    banner = page.locator(".nav-banner")
+    expect(banner.locator(".nav-road b")).to_have_text("Head south")
+    expect(banner.locator(".nav-turn")).to_have_text("Start")
+    sheet = page.locator(".nav-sheet")
+    expect(sheet).to_contain_text("Turn 1 of 3")
+    expect(page.get_by_role("button", name="Previous turn")).to_be_disabled()
+    page.get_by_role("button", name="Next turn").click()
+    expect(banner.locator(".nav-road span")).to_have_text("Turn left")
+    expect(banner.locator(".nav-road b")).to_have_text("GS Road (NH6)")
+    expect(banner.locator(".nav-turn")).to_have_text("50 km")  # how far this turn is from the one before
+    expect(sheet).to_contain_text("Turn 2 of 3")
+    page.get_by_role("button", name="Next turn").click()
+    expect(banner).to_contain_text("Arrive at your destination")
+    expect(page.get_by_role("button", name="Next turn")).to_be_disabled()
+    expect(page.locator(".nav-off-route")).to_have_count(0)  # a preview never says you are off the route
+    expect(page.locator(".leaflet-marker-pane .nav-arrow")).to_have_count(1)
+    assert page.evaluate("window.said") == []  # and never speaks
+    page.get_by_role("button", name="Close preview").click()
+    expect(page.locator(".navigation")).to_have_count(0)
+
+
+def test_a_typed_start_where_you_are_is_guided_live(dashboard, providers):
+    providers["router.project-osrm.org"] = osrm_with_steps
+    page = dashboard
+    page.add_init_script(DRIVING)  # the device is at Guwahati
     page.open()
     expect(page.locator("#origin")).to_have_value("Your location")
     plan(page, "Guwahati", "Shillong")
-    expect(page.locator(".route-card")).to_have_count(2)
-    expect(page.locator(".start-button")).to_be_disabled()
-    expect(page.locator(".start-note")).to_have_text("Start follows routes that begin at Your location.")
-    expect(page.locator(".map-start")).to_have_count(0)
-
+    expect(page.locator(".start-button")).to_have_text("Start")
+    expect(page.locator(".start-note")).to_have_count(0)
+    page.locator(".start-button").click()
+    expect(page.locator(".nav-banner .nav-road b")).to_have_text("GS Road (NH6)")
+    expect(page.locator(".nav-sheet")).to_contain_text("min")
 
 def test_route_cards_list_toll_plazas_on_the_route_without_inventing_prices(dashboard, providers):
     import os

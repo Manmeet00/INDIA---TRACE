@@ -17,8 +17,9 @@ const place = (text) => ({ text, query: text })
 // chips. The form owns its inputs and hands a plan request to onPlan; App decides how to fetch it.
 // searched: a destination chosen in the map's search bar ({ text, query, at }); it fills the destination and,
 // once the starting point is known, finds routes straight away (otherwise onSearchWithoutStart is told).
-// onStart begins turn-by-turn navigation of the chosen route (null when it cannot: startNote says why).
-export default function RoutePlanner({ loading, error, isSnapshot, onPlan, searched, onSearchWithoutStart, hasPlan, onStart, startNote }) {
+// onStart opens the chosen route turn by turn (null when it cannot: startNote says why); startMode is 'live'
+// (Start: guidance from where you are) or 'preview' (Preview: step through the turns from anywhere).
+export default function RoutePlanner({ loading, error, isSnapshot, onPlan, searched, onSearchWithoutStart, hasPlan, onStart, startMode, startNote }) {
   // The start is the device's position (found when the form opens); the destination is chosen by the person.
   const [origin, setOrigin] = useState(place(''))
   const [destination, setDestination] = useState(place(''))
@@ -69,7 +70,7 @@ export default function RoutePlanner({ loading, error, isSnapshot, onPlan, searc
       </fieldset>
 
       <div className={hasPlan ? 'planner-actions' : undefined}>
-        {hasPlan && <button type="button" className="start-button" onClick={onStart} disabled={!onStart || loading} title={startNote || 'Follow this route turn by turn'}><Icon name="navigate" size={17}/> Start</button>}
+        {hasPlan && <button type="button" className="start-button" onClick={onStart} disabled={!onStart || loading} title={startNote || 'Follow this route turn by turn'}><Icon name={startMode === 'preview' ? 'route' : 'navigate'} size={17}/> {startMode === 'preview' ? 'Preview' : 'Start'}</button>}
         <button className={`primary-button${hasPlan ? ' secondary' : ''}`} type="submit" disabled={loading}>{loading ? 'Finding routes…' : <><Icon name="route" size={17}/> Find routes</>}</button>
       </div>
       {hasPlan && startNote && <small className="start-note">{startNote}</small>}

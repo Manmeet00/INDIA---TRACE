@@ -64,7 +64,7 @@ export function turnIcon(step) {
 }
 
 // Metres between two [longitude, latitude] points, flat-earth: fine over the few hundred metres compared here.
-function metres([lon1, lat1], [lon2, lat2]) {
+export function metres([lon1, lat1], [lon2, lat2]) {
   const x = (lon2 - lon1) * 111320 * Math.cos(((lat1 + lat2) / 2) * (Math.PI / 180))
   const y = (lat2 - lat1) * 110540
   return Math.hypot(x, y)
