@@ -20,7 +20,8 @@ function MapBounds({ geometry }) {
   const map = useMap()
   useEffect(() => {
     const points = geometry.coordinates.map(([longitude, latitude]) => [latitude, longitude])
-    // No animation: planning again remounts the map, and removing it mid-zoom throws in Leaflet (_leaflet_pos).
+    // The same map moves to each new route (it is never rebuilt, so loaded imagery, roads and names are kept).
+    // No animation: a route chosen mid-zoom would otherwise throw in Leaflet (_leaflet_pos).
     if (points.length > 1) map.fitBounds(points, { padding: [36, 36], maxZoom: 10, animate: false })
   }, [geometry, map])
   return null
@@ -169,10 +170,10 @@ function DashboardMap({ plan, incidents, selectedRoute, selectedIncident, onSele
   const startHere = !plan && inIndia(here)
   const center = plan?.origin ? [plan.origin.latitude, plan.origin.longitude] : startHere ? [here.latitude, here.longitude] : [26.2, 92.4]
   const shown = (item) => !INACTIVE_STATES.includes(item.verification) && !hiddenTypes.includes(mapCategory(item))
-  return <MapContainer key={`${plan?.origin?.latitude || 'default'}-${plan?.destination?.latitude || 'default'}`} center={center} zoom={plan ? 7 : startHere ? HERE_ZOOM : 6} minZoom={4} maxBounds={INDIA_BOUNDS} maxBoundsViscosity={1} zoomControl={false} attributionControl={false} className="map-canvas">
+  return <MapContainer center={center} zoom={plan ? 7 : startHere ? HERE_ZOOM : 6} minZoom={4} maxBounds={INDIA_BOUNDS} maxBoundsViscosity={1} zoomControl={false} attributionControl={false} className="map-canvas">
     {boundary && <IndiaMask boundary={boundary}/>}
     {route && <MapBounds geometry={route.geometry} />}
-    <TileLayer key={base} url={BASE_LAYERS[base].url} maxZoom={BASE_LAYERS[base].maxZoom} {...TILE_OPTIONS}/>
+    <TileLayer key={base} url={BASE_LAYERS[base].url} maxZoom={BASE_LAYERS[base].maxZoom} {...(BASE_LAYERS[base].subdomains && { subdomains: BASE_LAYERS[base].subdomains })} {...TILE_OPTIONS}/>
     {BASE_LAYERS[base].roads && <HybridRoads key={`${base}-roads`} maxZoom={BASE_LAYERS[base].maxZoom}/>}
     {BASE_LAYERS[base].labels && <Pane name="place-labels" style={{ zIndex: 380, pointerEvents: 'none' }}><PlaceLabels boundary={boundary}/></Pane>}
     <DetailLayers overlays={overlays} here={here} plan={plan}/>

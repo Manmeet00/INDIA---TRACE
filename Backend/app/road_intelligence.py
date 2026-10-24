@@ -6,6 +6,7 @@ left unknown unless a structured coordinate is available from a trusted source.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import gzip
 import http.client
 import json
 import math
@@ -28,8 +29,12 @@ from .monitoring import log_call
 
 
 def _request_json(url: str, headers: dict[str, str] | None = None, body: Any = None, timeout: float = 15) -> Any:
-    """GET, or POST a JSON body; provider failures, timeouts and unreadable responses become 502 errors."""
-    headers = {"User-Agent": get_settings().geocoder_user_agent, **(headers or {})}
+    """GET, or POST a JSON body; provider failures, timeouts and unreadable responses become 502 errors.
+
+    Responses are asked for gzip-compressed: a route with its turn-by-turn steps is several hundred kilobytes,
+    which takes far longer to download from the public servers than they take to compute it.
+    """
+    headers = {"User-Agent": get_settings().geocoder_user_agent, "Accept-Encoding": "gzip", **(headers or {})}
     data = None
     if body is not None:
         data = json.dumps(body).encode("utf-8")
@@ -37,9 +42,13 @@ def _request_json(url: str, headers: dict[str, str] | None = None, body: Any = N
     request = Request(url, data=data, headers=headers, method="POST" if data else "GET")
     try:
         with urlopen(request, timeout=timeout, context=ssl.create_default_context(cafile=certifi.where())) as response:
-            return json.loads(response.read().decode("utf-8"))
-    # URLError, timeouts and dropped connections are OSErrors; a cut-off or non-JSON body raises IncompleteRead or ValueError.
-    except (OSError, http.client.HTTPException, ValueError) as exc:
+            body = response.read()
+            if (response.headers.get("Content-Encoding") or "").lower() == "gzip":
+                body = gzip.decompress(body)
+            return json.loads(body.decode("utf-8"))
+    # URLError, timeouts and dropped connections are OSErrors; a cut-off or non-JSON body raises IncompleteRead or
+    # ValueError; a damaged gzip body raises BadGzipFile (an OSError) or EOFError.
+    except (OSError, EOFError, http.client.HTTPException, ValueError) as exc:
         host = urlsplit(url).hostname
         timed_out = isinstance(exc, TimeoutError) or isinstance(getattr(exc, "reason", None), TimeoutError)
         reason = f"{host} did not answer within {timeout:g} s" if timed_out else f"{host}: {exc}"
@@ -108,6 +117,33 @@ def _valid_geocode(data: Any) -> bool:
     return isinstance(data, list) and (not data or (isinstance(data[0], dict) and _number(data[0].get("lat")) and _number(data[0].get("lon"))))
 
 
+def _decode_polyline(encoded: str, precision: int = 6) -> list[list[float]]:
+    """An encoded polyline (Google's format, as OSRM sends with geometries=polyline6) as [longitude, latitude] pairs."""
+    coordinates, index, lat, lon = [], 0, 0, 0
+    while index < len(encoded):
+        deltas = []
+        for _ in range(2):
+            shift = result = 0
+            while True:
+                byte = ord(encoded[index]) - 63
+                index += 1
+                result |= (byte & 0x1F) << shift
+                shift += 5
+                if byte < 0x20:
+                    break
+            deltas.append(~(result >> 1) if result & 1 else result >> 1)
+        lat, lon = lat + deltas[0], lon + deltas[1]
+        coordinates.append([lon / 10 ** precision, lat / 10 ** precision])
+    return coordinates
+
+
+def _route_line(geometry: Any) -> dict[str, Any]:
+    """A route's line as GeoJSON, whether OSRM sent an encoded polyline or GeoJSON."""
+    if isinstance(geometry, str):
+        return {"type": "LineString", "coordinates": _decode_polyline(geometry)}
+    return geometry
+
+
 def _valid_routes(data: Any) -> bool:
     """OSRM's answer; when it reports routes, each needs a distance, a duration and a line geometry."""
     if not isinstance(data, dict):
@@ -117,11 +153,19 @@ def _valid_routes(data: Any) -> bool:
     routes = data.get("routes")
     return isinstance(routes, list) and all(
         isinstance(route, dict) and _number(route.get("distance")) and _number(route.get("duration"))
-        and isinstance(route.get("geometry"), dict) and isinstance(route["geometry"].get("coordinates"), list)
-        and len(route["geometry"]["coordinates"]) >= 2
-        and all(isinstance(point, list) and len(point) >= 2 and _number(point[0]) and _number(point[1])
-                for point in route["geometry"]["coordinates"])
+        and _valid_line(route.get("geometry"))
         for route in routes)
+
+
+def _valid_line(geometry: Any) -> bool:
+    """At least two numeric points, from an encoded polyline or GeoJSON."""
+    try:
+        line = _route_line(geometry) if isinstance(geometry, (str, dict)) else None
+    except (IndexError, TypeError):  # a cut-off polyline
+        return False
+    coordinates = line.get("coordinates") if isinstance(line, dict) else None
+    return isinstance(coordinates, list) and len(coordinates) >= 2 and all(
+        isinstance(point, list) and len(point) >= 2 and _number(point[0]) and _number(point[1]) for point in coordinates)
 
 
 COORDINATES = re.compile(r"^\s*(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)\s*$")
@@ -137,6 +181,11 @@ def _geocode(place: str) -> dict[str, Any]:
         if not (south <= latitude <= north and west <= longitude <= east):
             raise HTTPException(status_code=422, detail="That position is outside India.")
         return {"name": "Your location", "latitude": latitude, "longitude": longitude}
+    # A place chosen from the suggestions already has its OpenStreetMap coordinates; no second lookup by name.
+    with get_connection() as connection:
+        known = connection.execute("SELECT latitude, longitude FROM suggested_places WHERE value = ?", (place,)).fetchone()
+    if known:
+        return {"name": f"{place}, India", "latitude": known["latitude"], "longitude": known["longitude"]}
     query = urlencode({"q": f"{place}, India", "format": "jsonv2", "limit": 1, "countrycodes": "in"})
     results, _ = _cached_json(f"https://nominatim.openstreetmap.org/search?{query}", GEOCODE_CACHE_S, _valid_geocode)
     if not results:
@@ -154,7 +203,7 @@ def plan_route(payload) -> dict[str, Any]:
     destination["query"] = "Your location" if COORDINATES.match(destination_query) else destination_query
     coordinates = f"{origin['longitude']},{origin['latitude']};{destination['longitude']},{destination['latitude']}"
     routes, routing_fetched_at = _cached_json(
-        f"https://router.project-osrm.org/route/v1/driving/{coordinates}?{urlencode({'overview':'full','geometries':'geojson','alternatives':'3','steps':'true'})}",
+        f"https://router.project-osrm.org/route/v1/driving/{coordinates}?{urlencode({'overview':'full','geometries':'polyline6','alternatives':'3','steps':'true'})}",
         ROUTE_CACHE_S,
         _valid_routes,
     )
@@ -164,6 +213,7 @@ def plan_route(payload) -> dict[str, Any]:
         incident_items = load_incidents(connection)
     candidates = []
     for index, route in enumerate(routes["routes"]):
+        route = {**route, "geometry": _route_line(route["geometry"])}  # the compact polyline OSRM sends, as GeoJSON
         highways = _route_highways(route)
         candidates.append({
             "id": f"route-{index + 1}",

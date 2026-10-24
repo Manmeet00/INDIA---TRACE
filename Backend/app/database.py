@@ -134,6 +134,14 @@ CREATE TABLE IF NOT EXISTS place_locations (
     display_name TEXT,
     geocoded_at TEXT NOT NULL
 );
+-- Coordinates of places offered as suggestions (OpenStreetMap, via Photon), so a chosen suggestion is routed
+-- from them directly instead of being looked up again by name.
+CREATE TABLE IF NOT EXISTS suggested_places (
+    value TEXT PRIMARY KEY COLLATE NOCASE,
+    latitude REAL NOT NULL,
+    longitude REAL NOT NULL,
+    suggested_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS provider_cache (
     url TEXT PRIMARY KEY,
     response TEXT NOT NULL,

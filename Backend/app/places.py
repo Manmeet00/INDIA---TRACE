@@ -15,9 +15,10 @@ from urllib.parse import urlencode
 
 from fastapi import HTTPException
 
+from .database import get_connection
 from .monitoring import log_call
 from .regions import active_region
-from .road_intelligence import _cached_json, _request_json
+from .road_intelligence import INDIA_BOX, _cached_json, _request_json
 
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 RETRY_AFTER = timedelta(days=30)  # a place Nominatim could not find is tried again after this
@@ -110,5 +111,27 @@ def suggest_places(query: str) -> list[dict[str, Any]]:
             detail = ", ".join(part for part in (props.get("county") or props.get("city"), props.get("state")) if isinstance(part, str) and part)
             value = ", ".join(part for part in (name, props.get("state")) if isinstance(part, str) and part)
             if all(item["value"].lower() != value.lower() for item in suggestions):
-                suggestions.append({"label": name, "detail": detail, "value": value, "source": "search"})
-    return suggestions[:SUGGEST_LIMIT]
+                suggestions.append({"label": name, "detail": detail, "value": value, "source": "search", "point": _point(feature)})
+    suggestions = suggestions[:SUGGEST_LIMIT]
+    _remember_points(suggestions)
+    return [{key: item for key, item in suggestion.items() if key != "point"} for suggestion in suggestions]
+
+
+def _point(feature: dict[str, Any]) -> tuple[float, float] | None:
+    """A Photon feature's (latitude, longitude), when it has a usable point inside India."""
+    coordinates = (feature.get("geometry") or {}).get("coordinates") if isinstance(feature.get("geometry"), dict) else None
+    try:
+        longitude, latitude = float(coordinates[0]), float(coordinates[1])
+    except (TypeError, ValueError, IndexError):
+        return None
+    south, north, west, east = INDIA_BOX
+    return (latitude, longitude) if south <= latitude <= north and west <= longitude <= east else None
+
+
+def _remember_points(suggestions: list[dict[str, Any]]) -> None:
+    """Keeps the coordinates of the places suggested, for when one is chosen (see road_intelligence._geocode)."""
+    now = datetime.now(timezone.utc).isoformat()
+    rows = [(item["value"], *item["point"], now) for item in suggestions if item.get("point")]
+    if rows:
+        with get_connection() as connection:
+            connection.executemany("INSERT OR REPLACE INTO suggested_places (value, latitude, longitude, suggested_at) VALUES (?, ?, ?, ?)", rows)

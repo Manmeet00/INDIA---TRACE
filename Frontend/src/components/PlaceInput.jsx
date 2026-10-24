@@ -13,7 +13,7 @@ export default function PlaceInput({ id, label, value, onChange, placeholder, au
   const listId = useId()
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(-1)
-  const [suggestions, setSuggestions] = useState([])
+  const [suggestions, setSuggestions] = useState({ query: '', items: [] }) // items found for query
   const [locating, setLocating] = useState(false)
   const [note, setNote] = useState('')
   const latest = useRef(0)
@@ -22,15 +22,19 @@ export default function PlaceInput({ id, label, value, onChange, placeholder, au
 
   const text = value.text
   const typed = text.trim().length >= 2 && text !== LOCATION.label
-  const options = typed ? suggestions : (offerLocation && 'geolocation' in navigator ? [LOCATION] : [])
+  // Earlier suggestions stay up only while the same words are being refined ("Shil" → "Shill"); for a different
+  // place they are hidden until its own arrive, so a quick click never picks the previous place.
+  const current = typed && suggestions.query && text.trim().toLowerCase().startsWith(suggestions.query.toLowerCase())
+  const options = typed ? (current ? suggestions.items : []) : (offerLocation && 'geolocation' in navigator ? [LOCATION] : [])
 
   useEffect(() => {
     if (!open || !typed) return undefined
     const request = ++latest.current
     const timer = setTimeout(() => {
-      suggestPlaces(text.trim())
-        .then((items) => { if (request === latest.current) setSuggestions(items) })
-        .catch(() => { if (request === latest.current) setSuggestions([]) })
+      const query = text.trim()
+      suggestPlaces(query)
+        .then((items) => { if (request === latest.current) setSuggestions({ query, items }) })
+        .catch(() => { if (request === latest.current) setSuggestions({ query, items: [] }) })
     }, SUGGEST_DELAY_MS)
     return () => clearTimeout(timer)
   }, [open, typed, text])

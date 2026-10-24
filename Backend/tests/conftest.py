@@ -69,18 +69,34 @@ def nominatim(request):
             for name, (lat, lon) in PLACES.items() if query.startswith(name)]
 
 
-def osrm(_request):
+def encode_polyline(line, precision=6):
+    """[longitude, latitude] pairs as an encoded polyline, the compact format OSRM sends with geometries=polyline6."""
+    out, last = [], (0, 0)
+    for lon, lat in line:
+        point = (round(lat * 10 ** precision), round(lon * 10 ** precision))
+        for value in (point[0] - last[0], point[1] - last[1]):
+            value = ~(value << 1) if value < 0 else value << 1
+            while value >= 0x20:
+                out.append(chr((0x20 | (value & 0x1F)) + 63))
+                value >>= 5
+            out.append(chr(value + 63))
+        last = point
+    return "".join(out)
+
+
+def osrm(request):
+    polyline = "geometries=polyline6" in request.full_url
     return {"code": "Ok", "routes": [
         {"distance": 100000 + 20000 * index, "duration": 4000 + 600 * index,
-         "geometry": {"type": "LineString", "coordinates": line},
+         "geometry": encode_polyline(line) if polyline else {"type": "LineString", "coordinates": line},
          "legs": [{"steps": [{"ref": "NH6", "distance": 90000}]}]}
         for index, line in enumerate(ROUTE_LINES)]}
 
 
 class Answer:
     """A provider response body, or an error raised while reading it (for example a connection cut mid-body)."""
-    def __init__(self, body=b"", error=None):
-        self.body, self.error = body, error
+    def __init__(self, body=b"", error=None, headers=None):
+        self.body, self.error, self.headers = body, error, headers or {}
 
     def __enter__(self):
         return self

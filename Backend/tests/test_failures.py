@@ -57,12 +57,29 @@ def test_routing_timeout_without_a_cached_copy_is_a_clear_502(client, providers,
     ConnectionResetError("Connection reset by peer"),
     lambda _: __import__("conftest").Answer(error=http.client.IncompleteRead(b'[{"lat"')),
     lambda _: __import__("conftest").Answer(b"<html>502 Bad Gateway</html>"),
-], ids=["reset", "cut-off-body", "html-instead-of-json"])
+    lambda _: __import__("conftest").Answer(b"\x1f\x8b\x08\x00broken", headers={"Content-Encoding": "gzip"}),
+], ids=["reset", "cut-off-body", "html-instead-of-json", "damaged-gzip"])
 def test_dropped_or_garbled_provider_responses_are_502_not_500(client, providers, answer):
     providers["router.project-osrm.org"] = answer
     response = client.post("/api/routes/plan", json=ROUTE)
     assert response.status_code == 502
     assert "router.project-osrm.org" in response.json()["detail"]
+
+
+def test_routes_are_asked_for_compressed_and_compact_then_drawn_as_geojson(client, providers):
+    import gzip
+    import json
+    from conftest import ROUTE_LINES, osrm
+    providers["router.project-osrm.org"] = lambda request: __import__("conftest").Answer(
+        gzip.compress(json.dumps(osrm(request)).encode()), headers={"Content-Encoding": "gzip"})
+    response = client.post("/api/routes/plan", json=ROUTE)
+    assert response.status_code == 200
+    request = next(request for host, request in providers["calls"] if host == "router.project-osrm.org")
+    assert request.get_header("Accept-encoding") == "gzip"
+    assert "geometries=polyline6" in request.full_url  # a fraction of GeoJSON's size, so it downloads quickly
+    lines = sorted(route["geometry"]["coordinates"] for route in response.json()["routes"])
+    assert lines == sorted(ROUTE_LINES)
+    assert all(route["geometry"]["type"] == "LineString" for route in response.json()["routes"])
 
 
 def test_routing_timeout_serves_the_last_good_route_with_its_age(client, providers, monkeypatch):
@@ -136,7 +153,8 @@ def test_malformed_fetch_response_does_not_lose_the_collected_reports(client, ti
     ("nominatim.openstreetmap.org", {"error": "Rate limited"}),
     ("router.project-osrm.org", {"code": "Ok", "routes": [{"distance": 1000}]}),
     ("router.project-osrm.org", {"code": "Ok", "routes": [{"distance": 1, "duration": 1, "geometry": {"coordinates": [["a", "b"], [1]]}}]}),
-], ids=["geocode-bad-lat", "geocode-error-object", "route-no-geometry", "route-bad-points"])
+    ("router.project-osrm.org", {"code": "Ok", "routes": [{"distance": 1, "duration": 1, "geometry": "_p~iF~ps|U_"}]}),
+], ids=["geocode-bad-lat", "geocode-error-object", "route-no-geometry", "route-bad-points", "route-cut-off-polyline"])
 def test_malformed_provider_data_is_a_502_and_is_never_cached(client, providers, host, answer):
     good = providers[host]
     providers[host] = answer

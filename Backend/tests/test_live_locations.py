@@ -136,6 +136,24 @@ def test_suggestions_put_region_towns_first_and_keep_only_places_in_india(client
     assert client.get("/api/places/suggest?q=T").status_code == 422
 
 
+def test_a_chosen_suggestion_is_routed_from_its_own_coordinates(client, providers):
+    providers["photon.komoot.io"] = {"features": [
+        {"properties": {"name": "Shillong Peak", "state": "Meghalaya", "countrycode": "IN"},
+         "geometry": {"type": "Point", "coordinates": [91.8806, 25.5455]}},
+        {"properties": {"name": "Shillong Road", "state": "Nowhere", "countrycode": "IN"},
+         "geometry": {"type": "Point", "coordinates": [-0.12, 51.5]}},  # not in India: never used as a position
+    ]}
+    assert [item["value"] for item in client.get("/api/places/suggest?q=Shillong").json()] == [
+        "Shillong, Meghalaya", "Shillong Peak, Meghalaya", "Shillong Road, Nowhere"]
+    assert "point" not in client.get("/api/places/suggest?q=Shillong").json()[1]
+    body = client.post("/api/routes/plan", json={"origin": "26.18000, 91.75000", "destination": "shillong peak, Meghalaya"}).json()
+    assert (body["destination"]["latitude"], body["destination"]["longitude"]) == (25.5455, 91.8806)
+    assert body["destination"]["name"] == "shillong peak, Meghalaya, India"
+    assert not any(host == "nominatim.openstreetmap.org" for host, _ in providers["calls"])  # no second lookup by name
+    client.post("/api/routes/plan", json={"origin": "26.18000, 91.75000", "destination": "Shillong Road, Nowhere"})
+    assert any(host == "nominatim.openstreetmap.org" for host, _ in providers["calls"])  # its point was outside India
+
+
 def test_suggestions_still_offer_region_towns_when_photon_is_down(client, providers):
     providers["photon.komoot.io"] = TimeoutError("timed out")
     assert [item["label"] for item in client.get("/api/places/suggest?q=Shil").json()] == ["Shillong"]

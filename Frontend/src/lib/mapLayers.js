@@ -10,7 +10,10 @@ export const BASE_LAYERS = {
     credit: 'Map tiles © OpenStreetMap contributors', thumb: '/map-thumbs/default.png',
   },
   satellite: {
-    label: 'Satellite', url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', maxZoom: 19,
+    // Esri serves the same imagery from two host names over HTTP/1.1 (six downloads at a time per host), so tiles
+    // are spread across both: twice as many load at once. Each tile always comes from the same host, so it caches.
+    label: 'Satellite', url: 'https://{s}.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', maxZoom: 19,
+    subdomains: ['server', 'services'],
     credit: 'Imagery © Esri, Maxar, Earthstar Geographics · Roads and place names © OpenStreetMap contributors via OpenFreeMap',
     thumb: '/map-thumbs/satellite.jpg',
     // Like Google's satellite view: roads, road names and highway numbers drawn over the imagery (HybridRoads),
