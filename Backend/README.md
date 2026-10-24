@@ -6,7 +6,7 @@ FastAPI service for route planning and road disruption evidence. SQLite is used 
 
 ```sh
 cd Backend
-python3 -m venv .venv
+python3 -m venv .venv  # Python 3.11+
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
@@ -19,13 +19,13 @@ The API listens at `http://127.0.0.1:8000`. Interactive docs are at `/docs`. SQL
 ## INDIA-TRACE endpoints
 
 - `GET /api/health` — service/database health.
-- `POST /api/routes/plan` — geocodes Indian place names with Nominatim, retrieves candidate driving routes from OSRM, and returns provider-sourced distances, durations, and route geometry. Body: `{"origin":"Guwahati","destination":"Shillong","vehicle_type":"truck","priority":"balanced"}`. Supported vehicles: `truck`, `van`, `ambulance`; priorities: `balanced`, `fastest`, `shortest`, `cautious`.
-- `GET /api/incidents` — stored evidence candidates, including freshness and verification labels.
+- `POST /api/routes/plan` — geocodes Indian place names with Nominatim, retrieves candidate driving routes from OSRM, and returns provider-sourced distances, durations, route geometry, and per-route `exposure` (reviewer-located reports within 3 km by verification state, plus the count of reports with no location) with a `recommendation` (`proceed_cautiously`, `consider_alternative`, `verify_before_dispatch`) and `recommendation_reasons`. Body: `{"origin":"Guwahati","destination":"Shillong","vehicle_type":"truck","priority":"balanced"}`. Supported vehicles: `truck`, `van`, `ambulance`; priorities: `balanced`, `fastest`, `shortest`, `cautious`.
+- `GET /api/incidents` — stored evidence candidates, including freshness (from `published_estimate`, parsed from the source's date text), verification labels, and reviewer hints: `mentions`, `duplicate_ids`, `related_ids` (same highway), `conflict_ids` (closure vs reopening on the same highway within 72 hours).
 - `GET /api/incidents/{id}` — one evidence record.
-- `PATCH /api/incidents/{id}/review` — save a human verification state and review note. Optional location name and coordinates are stored only when supplied by the reviewer.
-- `POST /api/collection/run` — searches TinyFish for Northeast India disruption reports, deduplicates by source URL, and stores search hits as unverified. Without `TINYFISH_API_KEY`, returns `not_configured` and does not invent fallback reports.
+- `PATCH /api/incidents/{id}/review` — save a verification state (`unverified`, `confirmed`, `conflicting`, `unknown`, `dismissed`) and review note. Location fields left out are kept; fields sent as `null` are cleared. Latitude and longitude must be sent together.
+- `POST /api/collection/run` — searches TinyFish for Northeast India disruption reports, deduplicates by normalised source URL, and stores search hits as unverified. Without `TINYFISH_API_KEY`, returns `not_configured` and does not invent fallback reports.
 
-Route results always include a `verify_before_dispatch` recommendation while disruption and vehicle restriction data remain unverified. An unknown location is not matched to a route, and no reports do not imply that a road is clear. OSRM's public routing service and OpenStreetMap Nominatim require internet access; respect their usage policies and use an offline/local routing provider for disconnected operation.
+Recommendations never state that a road is clear: `proceed_cautiously` requires every non-dismissed report to have a reviewer-confirmed location with none near the route, and vehicle restrictions are always reported as unchecked. An unknown location is not matched to a route, and no reports do not imply that a road is clear. OSRM's public routing service and OpenStreetMap Nominatim require internet access; respect their usage policies and use an offline/local routing provider for disconnected operation.
 
 ## Existing tracking API
 
@@ -34,3 +34,12 @@ The original shipment trace API remains available at `/health` and `/api/v1/*` (
 ## Configuration
 
 Set app name, API prefix, SQLite path, CORS origins, `TINYFISH_API_KEY`, and geocoder User-Agent in `.env`. Never put service keys in frontend environment variables.
+
+## Tests
+
+```sh
+pip install -r requirements-dev.txt
+pytest
+```
+
+Tests use a temporary SQLite database and replace Nominatim, OSRM and TinyFish with fakes, so they run offline.
