@@ -601,3 +601,17 @@ def test_satellite_view_names_places_inside_india_only(dashboard, client, provid
     expect(page.locator(".map-label", has_text="Sylhet")).to_have_count(0)
     expect(page.locator(".leaflet-tile-pane img[src*='World_Transportation']").first).to_be_attached()  # roads over the imagery
     expect(page.locator(".map-foot")).to_contain_text("Place names © OpenStreetMap contributors")
+
+
+def test_corner_thumbnail_switches_between_map_and_satellite(dashboard):
+    page = dashboard
+    page.open()
+    switch = page.locator(".base-switch")
+    expect(switch).to_have_text("Satellite")
+    switch.click()
+    expect(page.locator(".leaflet-tile-pane img[src*='World_Imagery']").first).to_be_attached()
+    expect(page.locator(".leaflet-tile-pane .hybrid-roads")).to_have_count(1)  # Google-style hybrid roads over the imagery
+    expect(switch).to_have_text("Map")
+    switch.click()
+    expect(page.locator(".leaflet-tile-pane img[src*='tile.openstreetmap.org']").first).to_be_attached()
+    expect(page.locator(".leaflet-control-scale")).to_have_count(1)

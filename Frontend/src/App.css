@@ -201,13 +201,31 @@
 .layer-thumb.cycling { background: #2e7d32; }
 .layer-thumb.air { background: #689f38; }
 .layers-note { margin: 12px 0 0; color: var(--on-ink-muted); font-size: var(--fs-xs); line-height: 1.45; }
-/* Place names on satellite imagery: white text with a dark halo, sized by importance, centred on the place. */
-.map-label { position: absolute; transform: translate(-50%, -50%); color: #fff; font: 600 11px/1.2 var(--font-body); white-space: nowrap; pointer-events: none;
-  text-shadow: 0 0 2px #000, 0 0 3px #000, 0 1px 3px rgba(0, 0, 0, .9); }
-.map-label.city { font: 700 15px/1.2 var(--font-display); letter-spacing: .2px; }
-.map-label.town { font: 700 13px/1.2 var(--font-display); }
-.map-label.suburb { font-size: 12px; }
-.map-label.village, .map-label.quarter, .map-label.neighbourhood { font-size: 11px; font-weight: 500; color: #f1f4f8; }
+/* Google Maps' satellite look: Roboto names in white with a soft dark halo, larger and bolder for bigger places. */
+.map-label { position: absolute; transform: translate(-50%, -50%); color: #fff; font: 400 12px/1.2 Roboto, Arial, sans-serif; letter-spacing: .1px; white-space: nowrap; pointer-events: none;
+  text-shadow: 0 0 1px rgba(0, 0, 0, .95), 0 0 2px rgba(0, 0, 0, .85), 0 0 4px rgba(0, 0, 0, .55); }
+.map-label.city { font-size: 16px; font-weight: 500; }
+.map-label.town { font-size: 14px; font-weight: 500; }
+.map-label.suburb { font-size: 13px; }
+.map-label.village { font-size: 12px; color: #f2f2f2; }
+.map-label.quarter, .map-label.neighbourhood { font-size: 11.5px; color: #e6e6e6; }
+/* Roads in Google's hybrid colours: Esri's peach roads turned to yellow highways and pale roads. */
+.hybrid-roads { filter: hue-rotate(16deg) saturate(1.15) brightness(1.25); opacity: .72 !important; }
+
+/* Google-style map controls: square white buttons with a soft shadow and grey icons, a metric scale bar,
+   and the Map/Satellite thumbnail in the bottom-left corner. */
+.map-canvas .leaflet-bar { border: 0; border-radius: 2px; box-shadow: rgba(0, 0, 0, .3) 0 1px 4px -1px; }
+.map-canvas .leaflet-bar a { width: 40px; height: 40px; border-bottom-color: #e6e6e6; color: #666; font: 400 22px/40px Roboto, Arial, sans-serif; }
+.map-canvas .leaflet-bar a:hover { color: #333; background: #fff; }
+.map-canvas .leaflet-control-scale-line { border-color: #fff; border-top: 0; color: #fff; background: rgba(0, 0, 0, .35); font: 500 10px/1.4 Roboto, Arial, sans-serif; text-shadow: 0 0 2px #000; }
+.map-canvas .leaflet-control-attribution { font: 400 10px/1.4 Roboto, Arial, sans-serif; color: #444; background: rgba(255, 255, 255, .7); }
+.base-switch { position: absolute; z-index: 460; left: 12px; bottom: 12px; width: 66px; height: 66px; padding: 0; overflow: hidden; border: 2px solid #fff; border-radius: 8px;
+  background: #fff; box-shadow: rgba(0, 0, 0, .3) 0 1px 4px -1px; cursor: pointer; }
+.base-switch img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.base-switch span { position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 0 4px; color: #fff; font: 500 11px/1 Roboto, Arial, sans-serif; text-align: center;
+  background: linear-gradient(transparent, rgba(0, 0, 0, .7)); }
+.base-switch.default span { color: #fff; }
+.base-switch:hover { box-shadow: rgba(0, 0, 0, .45) 0 2px 6px; }
 .aqi-pill { display: inline-block; padding: 3px 8px; border: 2px solid #fff; border-radius: 999px; color: #fff; font: 700 11px/1.2 var(--font-data); white-space: nowrap; box-shadow: 0 1px 4px rgba(14, 26, 43, .35); }
 .aqi-pill.good { background: #2e7d32; }
 .aqi-pill.moderate { color: #3b2f00; background: #f9c80e; }
@@ -215,14 +233,14 @@
 .aqi-pill.unhealthy { background: #c62828; }
 .aqi-pill.very { background: #6a1b9a; }
 .aqi-pill.hazardous { background: #4e1a1a; }
-.locate-button { position: absolute; z-index: 450; right: 10px; bottom: 96px; display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 2px solid rgba(0, 0, 0, .2); border-radius: 4px; color: var(--route); background: #fff; background-clip: padding-box; }
-.locate-button:hover:not(:disabled) { background-color: #f4f7fb; }
+.locate-button { position: absolute; z-index: 450; right: 10px; bottom: 160px; display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 2px; color: #666; background: #fff; box-shadow: rgba(0, 0, 0, .3) 0 1px 4px -1px; }
+.locate-button:hover:not(:disabled) { color: var(--route); }
 .locate-button:disabled { color: var(--faint); cursor: not-allowed; }
 .map-legend .legend-here { width: 10px; height: 10px; border: 2px solid #fff; border-radius: 50%; background: #1a73e8; box-shadow: 0 0 0 1px #1a73e8; }
 .here-dot { display: block; box-sizing: border-box; width: 18px; height: 18px; border: 3px solid #fff; border-radius: 50%; box-shadow: 0 0 0 6px rgba(26, 115, 232, .18), 0 1px 3px rgba(14, 26, 43, .35); }
 .mappls-dot { display: block; box-sizing: border-box; border: 2px solid #fff; border-radius: 50%; box-shadow: 0 1px 3px rgba(14, 26, 43, .35); cursor: pointer; }
 .map-fallback { margin: 0; padding: 7px 16px; color: var(--warn); background: var(--warn-bg); font-size: var(--fs-xs); font-weight: 700; }
-.map-legend { position: absolute; z-index: 400; bottom: 12px; left: 12px; display: flex; flex-wrap: wrap; gap: 12px; padding: 8px 11px; border-radius: var(--radius-sm); background: rgba(255, 255, 255, .95); box-shadow: var(--shadow); }
+.map-legend { position: absolute; z-index: 400; bottom: 12px; left: 88px; max-width: calc(100% - 88px - 64px); display: flex; flex-wrap: wrap; gap: 12px; padding: 8px 11px; border-radius: var(--radius-sm); background: rgba(255, 255, 255, .95); box-shadow: var(--shadow); }
 .map-legend span { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; }
 .map-legend i { display: block; width: 14px; height: 3px; border-radius: 2px; }
 .legend-route { background: var(--route); }
