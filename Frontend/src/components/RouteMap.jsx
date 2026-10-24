@@ -123,15 +123,6 @@ function PlaceLabels({ boundary }) {
     icon={L.divIcon({ className: '', html: `<span class="map-label ${label.kind}">${label.name.replace(/[&<>"']/g, '')}</span>`, iconSize: [0, 0], iconAnchor: [0, 0] })}/>)
 }
 
-// Google Maps' corner switch: a thumbnail of the other map type; one click swaps Map and Satellite.
-function BaseSwitch({ base, onBase }) {
-  const target = base === 'satellite' ? 'default' : 'satellite'
-  const name = target === 'satellite' ? 'Satellite' : 'Map'
-  return <button type="button" className={`base-switch ${target}`} onClick={() => onBase(target)} aria-label={`Show the ${name.toLowerCase()} view`} title={`Show the ${name.toLowerCase()} view`}>
-    <img src={BASE_LAYERS[target].thumb} alt=""/><span>{name}</span>
-  </button>
-}
-
 // The chosen detail layers over the base map: NASA imagery as WMS, the rest as tiles, air quality as labels.
 function DetailLayers({ overlays, here, plan }) {
   return overlays.map((key) => {
@@ -192,7 +183,6 @@ export default function RouteMap({ plan, mapConfig, here, hereProblem, ...mapPro
     <div className="map-wrap">{!mapConfig ? <div className="map-canvas"/> : useMappls
       ? <MapplsMap apiKey={mapConfig.mappls_key} plan={plan} boundary={boundary} here={here} focusKey={focusKey} {...mapProps} onUnavailable={onUnavailable}/>
       : <DashboardMap plan={plan} boundary={boundary} here={here} focusKey={focusKey} base={layers.base} overlays={layers.overlays} {...mapProps}/>}
-      {mapConfig && !useMappls && <BaseSwitch base={layers.base} onBase={layers.setBase}/>}
       {mapConfig && <LayersPanel base={layers.base} overlays={layers.overlays} onBase={layers.setBase} onToggle={layers.toggleOverlay} mappls={useMappls}/>}
       <button type="button" className="locate-button" onClick={() => setFocusKey((key) => key + 1)} disabled={!inIndia(here)} aria-label="Show my location" title={inIndia(here) ? 'Show my location' : hereText}><Icon name="locate" size={20}/></button><div className="map-legend"><span><i className="legend-route"/> Selected route</span><span><i className="legend-candidate"/> Other candidates</span><span><i className="legend-incident"/> Geolocated evidence</span><span><i className="legend-here"/> You</span></div></div>
     <div className="map-foot"><span><Icon name="pin" size={14}/>{plan ? `${placeName(plan.origin)} → ${placeName(plan.destination)}` : hereText}</span><span>{useMappls ? 'Map © Mappls (MapmyIndia)' : [BASE_LAYERS[layers.base].credit, ...layers.overlays.map((key) => OVERLAYS[key].credit)].join(' · ')} · India boundary: Survey of India</span></div>
