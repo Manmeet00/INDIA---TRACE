@@ -105,7 +105,10 @@
 .legend-swatch { width: 13px; height: 4px; border-radius: 3px; }
 .route-swatch { background: #167ce2; }
 .evidence-swatch { width: 9px; height: 9px; border-radius: 50%; background: #e99b28; }
-.toggle-note { margin-left: auto; color: #8b99aa; font-size: 9px; }
+.toggle-note { margin-left: auto; color: #8b99aa; font-size: 9px; white-space: nowrap; }
+.toggle-note + input + .switch { margin-left: 8px; }
+.list-filters { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px; }
+.list-filters select { min-width: 0; height: 28px; padding: 0 6px; border: 1px solid #dce4ed; border-radius: 5px; color: #455871; background: #fff; font-size: 9px; }
 .toggle-row input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 .switch { position: relative; width: 28px; height: 16px; margin-left: auto; border-radius: 10px; background: #bcc7d3; transition: background .15s; }
 .switch::after { position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #fff; content: ''; transition: transform .15s; }

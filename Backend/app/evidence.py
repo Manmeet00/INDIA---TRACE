@@ -25,6 +25,16 @@ PLACES = (
 PLACE = re.compile(r"\b(" + "|".join(re.escape(place) for place in PLACES) + r")\b")
 CLOSURE = re.compile(r"\b(blocked|blockade|closed|closure|snapped|cut off|suspended|collapsed?|collapses|washed (?:away|off)|standstill|stranded)\b", re.IGNORECASE)
 REOPENING = re.compile(r"\b(restored|restores|reopened|re-opened|reopens|resumed|open for traffic|normalcy)\b", re.IGNORECASE)
+# Checked in this order; the first match is the report's primary event_type.
+EVENT_TYPES = (
+    ("landslide", re.compile(r"\b(landslides?|mudslides?|rockslides?|rockfalls?|rock fall|land slip)\b", re.IGNORECASE)),
+    ("flood", re.compile(r"\b(flood(?:s|ing|ed)?|waterlogg(?:ed|ing)|inundat\w*|flash floods?)\b", re.IGNORECASE)),
+    ("bridge", re.compile(r"\bbridges?\b", re.IGNORECASE)),
+    ("accident", re.compile(r"\b(accidents?|crash(?:ed|es)?|collisions?|overturned)\b", re.IGNORECASE)),
+    ("construction", re.compile(r"\b(construction|repairs?|maintenance|road ?works?|widening)\b", re.IGNORECASE)),
+    ("closure", CLOSURE),
+    ("weather", re.compile(r"\b(heavy rain\w*|rainfall|downpours?|cloudbursts?|cyclone|storms?)\b", re.IGNORECASE)),
+)
 COARSE_RELATIVE = re.compile(r"(week|month|year)s?\s+ago$", re.IGNORECASE)
 STOPWORDS = {"the", "and", "for", "has", "have", "had", "was", "were", "are", "that", "this", "with", "from", "after",
              "due", "its", "into", "over", "near", "along", "amid", "been", "which", "their", "more", "than"}
@@ -62,13 +72,15 @@ def _dated_closely(first: dict[str, Any], second: dict[str, Any]) -> bool:
 
 
 def annotate(incidents: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Add mentions, report_signal, duplicate_ids, related_ids and conflict_ids to each report."""
+    """Add mentions, report_signal, event_type(s), duplicate_ids, related_ids and conflict_ids to each report."""
     tokens = {}
     for item in incidents:
         text = f"{item['title']} {item['summary']}"
         highways = sorted({match.upper() for match in HIGHWAY.findall(text)}, key=lambda value: (len(value), value))
         item["mentions"] = {"highways": [f"NH-{number}" for number in highways], "places": list(dict.fromkeys(PLACE.findall(text)))}
         item["report_signal"] = _signal(text)
+        item["event_types"] = [name for name, pattern in EVENT_TYPES if pattern.search(text)]
+        item["event_type"] = item["event_types"][0] if item["event_types"] else "other"
         tokens[item["id"]] = _tokens(text)
 
     # Near-duplicate groups, compared on title and snippet together: search titles are often

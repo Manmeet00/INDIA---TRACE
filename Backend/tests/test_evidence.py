@@ -58,3 +58,16 @@ def test_normalize_source_url_strips_tracking_and_fragments():
     assert normalize_source_url("https://WWW.Instagram.com/reel/DZ4UTPCiJki/?hl=en&utm_source=x#top") == "https://www.instagram.com/reel/DZ4UTPCiJki"
     assert normalize_source_url("https://example.org/news?id=7&fbclid=abc") == "https://example.org/news?id=7"
     assert normalize_source_url("https://example.org/") == "https://example.org"
+
+
+def test_event_types_are_tagged_with_a_primary_type():
+    items = by_id([
+        report("slide", "NH-37 Blocked by Landslides", "Continuous rainfall has triggered multiple landslides."),
+        report("bridge", "Paka Bridge Collapses", "Traffic disrupted on the Trans Arunachal Highway."),
+        report("flood", "Assam Flood", "Waterlogging in Guwahati after heavy rain."),
+        report("none", "Tension eases", "Tribal body meets State police."),
+    ])
+    assert items["slide"]["event_type"] == "landslide" and "closure" in items["slide"]["event_types"]
+    assert items["bridge"]["event_type"] == "bridge"
+    assert items["flood"]["event_types"] == ["flood", "weather"]
+    assert items["none"]["event_type"] == "other"

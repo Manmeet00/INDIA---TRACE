@@ -139,6 +139,8 @@ class IncidentOut(BaseModel):
     # Text heuristics for the reviewer; see app/evidence.py.
     mentions: dict[str, list[str]] = Field(default_factory=dict)
     report_signal: str | None = None
+    event_type: str = "other"
+    event_types: list[str] = Field(default_factory=list)
     duplicate_ids: list[str] = Field(default_factory=list)
     related_ids: list[str] = Field(default_factory=list)
     conflict_ids: list[str] = Field(default_factory=list)
