@@ -58,6 +58,6 @@ The pilot succeeds when the acceptance checks in [EVALUATION.md](EVALUATION.md) 
 1. **Open the map** on the pilot corridor (Guwahati → Shillong).
 2. **Show a sourced record.** Open a report, then point out its source link, its source time (for example "≈ 26 Jul 2026 ('3 months ago' at collection)") and its collection time.
 3. **Show duplicate and stale handling.** Filter by **Stale**, then open an NH-306 report flagged *Possible duplicate · not counted as confirmation*.
-4. **Plan a route.** The route card reads "via NH-27 · NH-6" and lists reports that name NH-6, with their location marked unconfirmed.
+4. **Plan a route.** The start fills itself with the laptop's location ("Your location"); for the pilot corridor, type *Guwahati* as the start and pick *Shillong* as the destination (this pair also has the saved offline route). The route card reads "via NH-27 · NH-6" and lists reports that name NH-6, with their location marked unconfirmed.
 5. **Show a precise warning.** Confirm a report with coordinates from its source. Then plan Silchar → Aizawl: the route near it changes to *Consider an alternative*, and the other route is named.
 6. **Explain the uncertainty.** The dispatch banner lists every reason, and the vehicle restrictions are always shown as unchecked.

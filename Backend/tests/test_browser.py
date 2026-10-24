@@ -491,3 +491,39 @@ def test_evidence_desk_shows_the_sources_own_video_and_hides_a_picture_that_will
     page.locator(".evidence-row", has_text="Report photo").click()
     expect(page.locator(".selected-incident h3")).to_have_text("Report photo")
     expect(page.locator(".evidence-media")).to_have_count(0)  # the picture failed to load, so it is left out
+
+
+GEOLOCATION = """Object.defineProperty(navigator, 'geolocation', { value: {
+    getCurrentPosition: (ok, fail) => %s } })"""
+
+
+def test_start_is_your_location_and_destination_is_chosen(dashboard):
+    page = dashboard
+    page.add_init_script(GEOLOCATION % "ok({ coords: { latitude: 26.18, longitude: 91.75 } })")
+    page.open()
+    expect(page.locator("#origin")).to_have_value("Your location")
+    expect(page.locator("#origin")).to_have_class("is-location")
+    expect(page.locator("#destination")).to_have_value("")
+    expect(page.locator("#destination")).to_have_attribute("placeholder", "Choose destination")
+    page.fill("#destination", "Shillong")
+    page.keyboard.press("Escape")
+    page.click(".primary-button")
+    expect(page.locator(".map-heading h2")).to_have_text("Your location to Shillong")
+
+
+def test_refused_location_leaves_the_start_for_the_person_to_type(dashboard):
+    page = dashboard
+    page.add_init_script(GEOLOCATION % "fail({ code: 1, PERMISSION_DENIED: 1 })")
+    page.open()
+    expect(page.locator(".place-note")).to_have_text("Location permission was refused. Type a starting point instead.")
+    expect(page.locator("#origin")).to_have_value("")
+    expect(page.locator("#origin")).to_have_attribute("placeholder", "Choose starting point")
+
+
+def test_a_start_typed_before_the_location_arrives_is_kept(dashboard):
+    page = dashboard
+    page.add_init_script(GEOLOCATION % "setTimeout(() => ok({ coords: { latitude: 26.18, longitude: 91.75 } }), 1500)")
+    page.open()
+    page.fill("#origin", "Silchar")
+    page.wait_for_timeout(2000)
+    expect(page.locator("#origin")).to_have_value("Silchar")

@@ -12,7 +12,7 @@ import SummaryCards from './components/SummaryCards.jsx'
 import { useWorkspace } from './hooks/useWorkspace.js'
 import { useEvidenceFilters } from './hooks/useEvidenceFilters.js'
 import { useSidebar } from './hooks/useSidebar.js'
-import { INACTIVE_STATES, formatDistance, formatDuration, formatTime } from './lib/format.js'
+import { INACTIVE_STATES, formatDistance, formatDuration, formatTime, placeName } from './lib/format.js'
 import * as api from './services/api.js'
 
 // Degraded: the API answered but could not serve data, usually because its database failed.
@@ -58,7 +58,9 @@ function App() {
   const LIVE_CHECK_DAYS = 3
   const checkRouteLive = async (request, payload, token) => {
     const main = Object.entries(payload.routes[0]?.highways || {}).sort((a, b) => b[1] - a[1])[0]?.[0]
-    const towns = [request.origin, request.destination].map((name) => name.split(',')[0].trim()).join(' ').replace(/[^A-Za-z .'-]/g, '').slice(0, 60)
+    // Towns as the route plan names them; a device position ("Your location") is not a searchable place.
+    const towns = [payload.origin, payload.destination].filter((stop) => stop.query !== 'Your location')
+      .map((stop) => placeName(stop)).join(' ').replace(/[^A-Za-z .'-]/g, '').trim().slice(0, 60)
     setLiveCheck({ state: 'running', text: `Checking live reports for this route (last ${LIVE_CHECK_DAYS} days)…` })
     try {
       const job = await api.startCollection({ road: main || null, place: towns || null, window_days: LIVE_CHECK_DAYS })

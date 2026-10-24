@@ -1,12 +1,14 @@
 import { useEffect, useId, useRef, useState } from 'react'
+import { YOUR_LOCATION, locateDevice } from '../lib/location.js'
 import { suggestPlaces } from '../services/api.js'
 
 const SUGGEST_DELAY_MS = 250
-const LOCATION = { label: 'Your location', detail: 'Use this device’s position', source: 'location' }
+const LOCATION = { label: YOUR_LOCATION, detail: 'Use this device’s position', source: 'location' }
 
 // A place field with suggestions as you type, like a maps search box. `value` is { text, query }: text is what
 // the field shows ("Your location"), query is what the route planner is sent ("26.14123, 91.73456").
-export default function PlaceInput({ id, label, value, onChange, placeholder }) {
+// With autoLocate, an empty field fills itself with the device's position when it first appears.
+export default function PlaceInput({ id, label, value, onChange, placeholder, autoLocate = false }) {
   const listId = useId()
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(-1)
@@ -14,6 +16,8 @@ export default function PlaceInput({ id, label, value, onChange, placeholder }) 
   const [locating, setLocating] = useState(false)
   const [note, setNote] = useState('')
   const latest = useRef(0)
+  // autoLocate: 'pending' until the device answers or the person types or picks a place themselves.
+  const [autoState, setAutoState] = useState(autoLocate ? 'pending' : 'done')
 
   const text = value.text
   const typed = text.trim().length >= 2 && text !== LOCATION.label
@@ -30,26 +34,33 @@ export default function PlaceInput({ id, label, value, onChange, placeholder }) 
     return () => clearTimeout(timer)
   }, [open, typed, text])
 
+  const fillFromDevice = () => {
+    setLocating(true)
+    setNote('')
+    locateDevice()
+      .then((place) => onChange(place))
+      .catch((error) => setNote(error.message))
+      .finally(() => setLocating(false))
+  }
+
+  // Fills the empty field with the device's position once; a place typed or picked before it answers is kept.
+  useEffect(() => {
+    if (autoState !== 'pending' || value.text) return undefined
+    let current = true
+    locateDevice()
+      .then((place) => { if (current) onChange(place) })
+      .catch((error) => { if (current) setNote(error.message) })
+      .finally(() => { if (current) setAutoState('done') })
+    return () => { current = false }
+  }, [autoState, value.text, onChange])
+
   const choose = (option) => {
     setOpen(false)
     setActive(-1)
     setNote('')
-    if (option.source !== 'location') {
-      onChange({ text: option.value, query: option.value })
-      return
-    }
-    setLocating(true)
-    navigator.geolocation.getCurrentPosition(
-      ({ coords }) => {
-        setLocating(false)
-        onChange({ text: LOCATION.label, query: `${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}` })
-      },
-      (error) => {
-        setLocating(false)
-        setNote(error.code === error.PERMISSION_DENIED ? 'Location permission was refused. Type a place instead.' : 'Your location is not available. Type a place instead.')
-      },
-      { timeout: 10000, maximumAge: 60000 },
-    )
+    setAutoState('done')
+    if (option.source === 'location') fillFromDevice()
+    else onChange({ text: option.value, query: option.value })
   }
 
   const onKeyDown = (event) => {
@@ -69,11 +80,11 @@ export default function PlaceInput({ id, label, value, onChange, placeholder }) 
   const expanded = open && options.length > 0
   return <div className="place-field">
     <label className="sr-only" htmlFor={id}>{label}</label>
-    <input id={id} value={locating ? 'Finding your location…' : text} placeholder={placeholder} autoComplete="off" spellCheck="false"
+    <input id={id} className={text === YOUR_LOCATION ? 'is-location' : undefined} value={locating ? 'Finding your location…' : text} placeholder={autoState === 'pending' ? 'Finding your location…' : placeholder} autoComplete="off" spellCheck="false"
       role="combobox" aria-autocomplete="list" aria-expanded={expanded} aria-controls={listId}
       aria-activedescendant={expanded && active >= 0 ? `${listId}-${active}` : undefined}
       required minLength="2" readOnly={locating}
-      onChange={(event) => { onChange({ text: event.target.value, query: event.target.value }); setOpen(true); setActive(-1) }}
+      onChange={(event) => { setAutoState('done'); onChange({ text: event.target.value, query: event.target.value }); setOpen(true); setActive(-1) }}
       onFocus={() => setOpen(true)} onBlur={() => setOpen(false)} onKeyDown={onKeyDown}/>
     {expanded && <ul className="place-suggestions" id={listId} role="listbox" aria-label={`${label} suggestions`}>
       {options.map((option, index) => <li key={`${option.source}-${option.value || option.label}`} id={`${listId}-${index}`} role="option"

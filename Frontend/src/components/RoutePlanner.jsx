@@ -16,8 +16,9 @@ const place = (text) => ({ text, query: text })
 // Directions in the style of a maps app: start and destination joined by a line, travel mode and preference as
 // chips. The form owns its inputs and hands a plan request to onPlan; App decides how to fetch it.
 export default function RoutePlanner({ loading, error, isSnapshot, onPlan }) {
-  const [origin, setOrigin] = useState(place('Guwahati, Assam'))
-  const [destination, setDestination] = useState(place('Shillong, Meghalaya'))
+  // The start is the device's position (found when the form opens); the destination is chosen by the person.
+  const [origin, setOrigin] = useState(place(''))
+  const [destination, setDestination] = useState(place(''))
   const [vehicle, setVehicle] = useState('truck')
   const [priority, setPriority] = useState('cautious')
 
@@ -32,7 +33,7 @@ export default function RoutePlanner({ loading, error, isSnapshot, onPlan }) {
       <div className="stops">
         <div className="stop-rail" aria-hidden="true"><span className="stop-origin"/><span className="stop-line"/><Icon name="pin" size={18}/></div>
         <div className="stop-fields">
-          <PlaceInput id="origin" label="Starting point" placeholder="Choose starting point" value={origin} onChange={setOrigin}/>
+          <PlaceInput id="origin" label="Starting point" placeholder="Choose starting point" value={origin} onChange={setOrigin} autoLocate/>
           <PlaceInput id="destination" label="Destination" placeholder="Choose destination" value={destination} onChange={setDestination}/>
         </div>
         <button type="button" className="swap-button" onClick={() => { setOrigin(destination); setDestination(origin) }} aria-label="Swap starting point and destination" title="Swap starting point and destination"><Icon name="swap" size={18}/></button>
