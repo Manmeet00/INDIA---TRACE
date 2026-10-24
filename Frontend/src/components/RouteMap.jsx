@@ -143,10 +143,10 @@ function DashboardMap({ plan, incidents, selectedRoute, selectedIncident, onSele
   const startHere = !plan && inIndia(here)
   const center = plan?.origin ? [plan.origin.latitude, plan.origin.longitude] : startHere ? [here.latitude, here.longitude] : [26.2, 92.4]
   const shown = (item) => !INACTIVE_STATES.includes(item.verification) && !hiddenTypes.includes(mapCategory(item))
-  return <MapContainer key={`${plan?.origin?.latitude || 'default'}-${plan?.destination?.latitude || 'default'}`} center={center} zoom={plan ? 7 : startHere ? HERE_ZOOM : 6} minZoom={4} maxBounds={INDIA_BOUNDS} maxBoundsViscosity={1} zoomControl={false} className="map-canvas">
+  return <MapContainer key={`${plan?.origin?.latitude || 'default'}-${plan?.destination?.latitude || 'default'}`} center={center} zoom={plan ? 7 : startHere ? HERE_ZOOM : 6} minZoom={4} maxBounds={INDIA_BOUNDS} maxBoundsViscosity={1} zoomControl={false} attributionControl={false} className="map-canvas">
     {boundary && <IndiaMask boundary={boundary}/>}
     {route && <MapBounds geometry={route.geometry} />}
-    <TileLayer key={base} url={BASE_LAYERS[base].url} maxZoom={BASE_LAYERS[base].maxZoom} attribution={BASE_LAYERS[base].short} {...TILE_OPTIONS}/>
+    <TileLayer key={base} url={BASE_LAYERS[base].url} maxZoom={BASE_LAYERS[base].maxZoom} {...TILE_OPTIONS}/>
     {BASE_LAYERS[base].roads && <TileLayer key={`${base}-roads`} url={BASE_LAYERS[base].roads} maxZoom={BASE_LAYERS[base].maxZoom} zIndex={4} opacity={0.9} className="hybrid-roads" {...TILE_OPTIONS}/>}
     {BASE_LAYERS[base].labels && <Pane name="place-labels" style={{ zIndex: 380, pointerEvents: 'none' }}><PlaceLabels boundary={boundary}/></Pane>}
     <DetailLayers overlays={overlays} here={here} plan={plan}/>

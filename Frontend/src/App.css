@@ -219,7 +219,6 @@
 .map-canvas .leaflet-bar a { width: 40px; height: 40px; border-bottom-color: #e6e6e6; color: #666; font: 400 22px/40px Roboto, Arial, sans-serif; }
 .map-canvas .leaflet-bar a:hover { color: #333; background: #fff; }
 .map-canvas .leaflet-control-scale-line { border-color: #fff; border-top: 0; color: #fff; background: rgba(0, 0, 0, .35); font: 500 10px/1.4 Roboto, Arial, sans-serif; text-shadow: 0 0 2px #000; }
-.map-canvas .leaflet-control-attribution { font: 400 10px/1.4 Roboto, Arial, sans-serif; color: #444; background: rgba(255, 255, 255, .7); }
 .aqi-pill { display: inline-block; padding: 3px 8px; border: 2px solid #fff; border-radius: 999px; color: #fff; font: 700 11px/1.2 var(--font-data); white-space: nowrap; box-shadow: 0 1px 4px rgba(14, 26, 43, .35); }
 .aqi-pill.good { background: #2e7d32; }
 .aqi-pill.moderate { color: #3b2f00; background: #f9c80e; }
