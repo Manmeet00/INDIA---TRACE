@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from app.road_intelligence import _freshness, parse_published, recommend, route_exposure
+from app.road_intelligence import _freshness, _route_highways, parse_published, recommend, route_exposure
 
 # Two east-west routes about 55 km apart.
 SOUTH = {"coordinates": [[91.0, 26.0], [91.25, 26.0], [91.5, 26.0]]}
@@ -105,3 +105,25 @@ def test_freshness_uses_estimated_publication_time():
     assert _freshness(now + timedelta(hours=5), True) == "fresh"   # date-only value in a timezone ahead of UTC
     assert _freshness(now + timedelta(hours=5), False) == "unknown"
     assert _freshness(None, False) == "unknown"
+
+
+def test_route_highways_sums_distance_and_ignores_short_crossings():
+    route = {"legs": [{"steps": [
+        {"ref": "NH27", "distance": 1500}, {"ref": "NH6;NH27", "distance": 40000},
+        {"ref": "NH 6", "distance": 30000}, {"ref": "MDR32", "distance": 9000}, {"ref": "NH715", "distance": 300},
+    ]}]}
+    assert _route_highways(route) == {"NH-27": 41500, "NH-6": 70000}
+
+
+def test_unlocated_reports_naming_a_route_highway_are_low_confidence_mentions():
+    on_nh6 = {**incident("nh6", freshness="stale"), "mentions": {"highways": ["NH-6"], "places": []}}
+    elsewhere = {**incident("nh37"), "mentions": {"highways": ["NH-37"], "places": []}}
+    located_nh6 = {**incident("located", "unverified", 26.5, 91.2), "mentions": {"highways": ["NH-6"], "places": []}}
+    exposure = route_exposure(SOUTH, [on_nh6, elsewhere, located_nh6], {"NH-6": 70000})
+    assert exposure["highway_mentions"] == {"NH-6": ["nh6"]}
+    assert exposure["highway_mentions_stale"] == 1
+    routes = [{"priority_rank": 1, "duration_s": 60, "exposure": exposure}]
+    code, reasons = recommend(routes[0], routes, NOW)
+    assert code == "verify_before_dispatch"
+    assert reasons[0] == "1 report without a confirmed location mentions NH-6, which this route uses (1 older than 24 hours). Where on the road is not known."
+    assert reasons[1].startswith("1 other report has no reviewer-confirmed location")

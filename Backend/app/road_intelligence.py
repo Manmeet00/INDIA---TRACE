@@ -35,9 +35,49 @@ def _request_json(url: str, headers: dict[str, str] | None = None) -> Any:
         raise HTTPException(status_code=502, detail=f"An external routing or search service is unavailable: {exc}") from exc
 
 
+GEOCODE_CACHE_S = 30 * 86400
+ROUTE_CACHE_S = 86400
+HIGHWAY_REF = re.compile(r"NH\s*-?\s*0*(\d{1,3}[A-Z]?)", re.IGNORECASE)
+MIN_HIGHWAY_M = 2000
+
+
+def _cached_json(url: str, max_age_s: float) -> tuple[Any, str]:
+    """Provider response and when it was fetched; serves an older copy if the provider fails.
+
+    Road geometry and place coordinates change slowly, and the public OSRM and Nominatim
+    services are rate-limited and sometimes slow, so successful responses are kept in SQLite.
+    """
+    with get_connection() as connection:
+        row = connection.execute("SELECT response, fetched_at FROM provider_cache WHERE url = ?", (url,)).fetchone()
+    if row and _age_seconds(row["fetched_at"]) <= max_age_s:
+        return json.loads(row["response"]), row["fetched_at"]
+    try:
+        data = _request_json(url)
+    except HTTPException:
+        if row:
+            return json.loads(row["response"]), row["fetched_at"]
+        raise
+    fetched_at = datetime.now(timezone.utc).isoformat()
+    with get_connection() as connection:
+        connection.execute("INSERT OR REPLACE INTO provider_cache (url, response, fetched_at) VALUES (?, ?, ?)",
+                           (url, json.dumps(data), fetched_at))
+    return data, fetched_at
+
+
+def _route_highways(route: dict[str, Any]) -> dict[str, int]:
+    """National highways the route uses, with metres driven on each (short crossings ignored)."""
+    metres: dict[str, float] = {}
+    for leg in route.get("legs", []):
+        for step in leg.get("steps", []):
+            for number in HIGHWAY_REF.findall(step.get("ref") or ""):
+                key = f"NH-{number.upper()}"
+                metres[key] = metres.get(key, 0) + step.get("distance", 0)
+    return {key: round(value) for key, value in sorted(metres.items()) if value >= MIN_HIGHWAY_M}
+
+
 def _geocode(place: str) -> dict[str, Any]:
     query = urlencode({"q": f"{place}, India", "format": "jsonv2", "limit": 1, "countrycodes": "in"})
-    results = _request_json(f"https://nominatim.openstreetmap.org/search?{query}")
+    results, _ = _cached_json(f"https://nominatim.openstreetmap.org/search?{query}", GEOCODE_CACHE_S)
     if not results:
         raise HTTPException(status_code=422, detail=f"Could not find '{place}' in India. Try a more specific place name.")
     item = results[0]
@@ -47,31 +87,35 @@ def _geocode(place: str) -> dict[str, Any]:
 def plan_route(payload) -> dict[str, Any]:
     origin, destination = _geocode(payload.origin), _geocode(payload.destination)
     coordinates = f"{origin['longitude']},{origin['latitude']};{destination['longitude']},{destination['latitude']}"
-    routes = _request_json(
-        f"https://router.project-osrm.org/route/v1/driving/{coordinates}?{urlencode({'overview':'full','geometries':'geojson','alternatives':'3','steps':'false'})}"
+    routes, routing_fetched_at = _cached_json(
+        f"https://router.project-osrm.org/route/v1/driving/{coordinates}?{urlencode({'overview':'full','geometries':'geojson','alternatives':'3','steps':'true'})}",
+        ROUTE_CACHE_S,
     )
     if routes.get("code") != "Ok" or not routes.get("routes"):
         raise HTTPException(status_code=422, detail="The routing service could not find a drivable route between these places.")
     with get_connection() as connection:
         incident_rows = connection.execute("SELECT * FROM incidents").fetchall()
-    incident_items = [incident_from_row(row) for row in incident_rows]
+    incident_items = annotate([incident_from_row(row) for row in incident_rows])
     candidates = []
     for index, route in enumerate(routes["routes"]):
+        highways = _route_highways(route)
         candidates.append({
             "id": f"route-{index + 1}",
             "distance_m": round(route["distance"]),
             "duration_s": round(route["duration"]),
             "geometry": route["geometry"],
+            "highways": highways,
             "priority_rank": index + 1,
             "vehicle_suitability": "unknown",
-            "exposure": route_exposure(route["geometry"], incident_items),
+            "exposure": route_exposure(route["geometry"], incident_items, highways),
         })
     if payload.priority == "fastest":
         candidates.sort(key=lambda r: r["duration_s"])
     elif payload.priority == "shortest":
         candidates.sort(key=lambda r: r["distance_m"])
     elif payload.priority == "cautious":
-        candidates.sort(key=lambda r: (r["exposure"]["nearby"]["confirmed"], _unconfirmed_nearby(r["exposure"]), r["duration_s"]))
+        candidates.sort(key=lambda r: (r["exposure"]["nearby"]["confirmed"], _unconfirmed_nearby(r["exposure"]),
+                                       len(r["exposure"]["highway_mentions"]), r["duration_s"]))
     for index, route in enumerate(candidates):
         route["priority_rank"] = index + 1
     newest_collection = max((item["collected_at"] for item in incident_items), default=None)
@@ -83,10 +127,11 @@ def plan_route(payload) -> dict[str, Any]:
         "vehicle_type": payload.vehicle_type,
         "priority": payload.priority,
         "provider": "OpenStreetMap Nominatim + OSRM",
+        "routing_fetched_at": routing_fetched_at,
         "routes": candidates,
         "recommendation": candidates[0]["recommendation"],
         "recommendation_reason": " ".join(candidates[0]["recommendation_reasons"]),
-        "data_note": "Distance and duration are live OSRM estimates. They do not include verified disruption or vehicle restriction data.",
+        "data_note": "Distance and duration are OSRM estimates without live traffic. They do not include verified disruption or vehicle restriction data.",
     }
 
 
@@ -237,21 +282,32 @@ EVIDENCE_MAX_AGE_S = 24 * 3600
 VEHICLE_NOTE = "Vehicle restrictions such as weight, height and ghat-road limits are not checked."
 
 
-def route_exposure(route_geometry: dict[str, Any], incidents: list[dict[str, Any]], tolerance_m: float = MATCH_TOLERANCE_M) -> dict[str, Any]:
+def route_exposure(route_geometry: dict[str, Any], incidents: list[dict[str, Any]], highways: dict[str, int] | None = None,
+                   tolerance_m: float = MATCH_TOLERANCE_M) -> dict[str, Any]:
     """Count reviewer-located reports near a route by verification state.
 
-    Reports without coordinates are never matched; they are counted as unlocated so
-    the recommendation can say exposure to them is unknown. Dismissed reports are ignored.
+    Reports without coordinates are never matched by distance. Those that name a national
+    highway the route uses are listed under highway_mentions as low-confidence relevance;
+    the rest only count as unlocated. Dismissed reports are ignored.
     """
     relevant = [item for item in incidents if item["verification"] != "dismissed"]
     located = [item for item in relevant if item.get("latitude") is not None and item.get("longitude") is not None]
+    located_ids = {item["id"] for item in located}
+    unlocated = [item for item in relevant if item["id"] not in located_ids]
+    highway_mentions = {highway: [item["id"] for item in unlocated if highway in item.get("mentions", {}).get("highways", [])]
+                        for highway in highways or {}}
+    highway_mentions = {highway: ids for highway, ids in highway_mentions.items() if ids}
+    mention_ids = list(dict.fromkeys(incident_id for ids in highway_mentions.values() for incident_id in ids))
     exposure: dict[str, Any] = {
         "tolerance_m": tolerance_m,
         "located_reports": len(located),
-        "unlocated_reports": len(relevant) - len(located),
+        "unlocated_reports": len(unlocated),
         "nearby": {"confirmed": 0, "unverified": 0, "conflicting": 0, "unknown": 0},
         "nearby_stale": 0,
         "nearby_ids": [],
+        "highway_mentions": highway_mentions,
+        "highway_mention_ids": mention_ids,
+        "highway_mentions_stale": sum(item["freshness"] == "stale" for item in unlocated if item["id"] in mention_ids),
     }
     line = route_geometry.get("coordinates", [])
     if len(line) < 2 or not located:
@@ -313,8 +369,15 @@ def recommend(route: dict[str, Any], routes: list[dict[str, Any]], newest_collec
     unconfirmed = _unconfirmed_nearby(exposure)
     if unconfirmed:
         reasons.append(f"{_plural(unconfirmed, 'report')} within {km} of this route {'is' if unconfirmed == 1 else 'are'} not confirmed by a reviewer.")
-    if exposure["unlocated_reports"]:
-        reasons.append(f"{_plural(exposure['unlocated_reports'], 'report')} {'has' if exposure['unlocated_reports'] == 1 else 'have'} no reviewer-confirmed location, so exposure to them is unknown.")
+    mentioned = len(exposure["highway_mention_ids"])
+    if mentioned:
+        stale = exposure["highway_mentions_stale"]
+        reasons.append(f"{_plural(mentioned, 'report')} without a confirmed location {'mentions' if mentioned == 1 else 'mention'} "
+                       f"{', '.join(exposure['highway_mentions'])}, which this route uses"
+                       f"{f' ({stale} older than 24 hours)' if stale else ''}. Where on the road is not known.")
+    other_unlocated = exposure["unlocated_reports"] - mentioned
+    if other_unlocated:
+        reasons.append(f"{_plural(other_unlocated, 'other report' if mentioned else 'report')} {'has' if other_unlocated == 1 else 'have'} no reviewer-confirmed location, so exposure to them is unknown.")
     if newest_collection is None:
         reasons.append("No reports have been collected. No reports does not mean the road is clear.")
     elif _age_seconds(newest_collection) > EVIDENCE_MAX_AGE_S:

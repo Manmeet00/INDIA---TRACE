@@ -78,3 +78,22 @@ def test_collection_without_key_does_not_invent_reports(client):
     assert body["status"] == "not_configured"
     assert body["incidents"] == []
     assert client.get("/api/incidents").json() == []
+
+
+def test_provider_responses_are_cached_and_served_when_provider_fails(client, monkeypatch):
+    calls = []
+    def counting(url, headers=None):
+        calls.append(url)
+        return fake_request_json(url, headers)
+    monkeypatch.setattr(road_intelligence, "_request_json", counting)
+    first = client.post("/api/routes/plan", json={"origin": "Guwahati", "destination": "Shillong"}).json()
+    assert len(calls) == 3
+    client.post("/api/routes/plan", json={"origin": "Guwahati", "destination": "Shillong"})
+    assert len(calls) == 3  # geocodes and route served from cache
+
+    def failing(url, headers=None):
+        raise road_intelligence.HTTPException(status_code=502, detail="down")
+    monkeypatch.setattr(road_intelligence, "_request_json", failing)
+    monkeypatch.setattr(road_intelligence, "ROUTE_CACHE_S", -1)  # force a refresh attempt
+    fallback = client.post("/api/routes/plan", json={"origin": "Guwahati", "destination": "Shillong"}).json()
+    assert fallback["routing_fetched_at"] == first["routing_fetched_at"]

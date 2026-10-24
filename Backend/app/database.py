@@ -60,6 +60,11 @@ CREATE TABLE IF NOT EXISTS incidents (
     review_note TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_incidents_collected_at ON incidents(collected_at DESC);
+CREATE TABLE IF NOT EXISTS provider_cache (
+    url TEXT PRIMARY KEY,
+    response TEXT NOT NULL,
+    fetched_at TEXT NOT NULL
+);
 """
 
 
