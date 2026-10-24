@@ -336,6 +336,17 @@
 /* ── Reports that may affect the route ───────────────────── */
 .route-impact { display: grid; gap: 10px; margin-top: 12px; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); box-shadow: var(--shadow); }
 .impact-heading { display: grid; gap: 3px; }
+.route-tolls { display: grid; gap: 10px; margin-top: 12px; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); box-shadow: var(--shadow); }
+.route-tolls .impact-heading b { display: flex; align-items: center; gap: 6px; }
+.toll-list { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.toll-list li { display: grid; grid-template-columns: 64px 1fr auto; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid var(--line); }
+.toll-km { color: var(--muted); font: 600 var(--fs-sm)/1.2 var(--font-data); }
+.toll-copy b { display: block; font-size: var(--fs-base); }
+.toll-copy small { color: var(--muted); font-size: var(--fs-xs); }
+.toll-price { color: var(--faint); font-size: var(--fs-xs); text-align: right; }
+.toll-note { margin: 0; color: var(--muted); font-size: var(--fs-xs); line-height: 1.5; }
+.toll-marker { display: grid; place-items: center; width: 22px; height: 22px; border: 2px solid #fff; border-radius: 6px; color: #fff; background: #7b3fb5; box-shadow: 0 1px 4px rgba(0, 0, 0, .4); }
+.map-legend .legend-toll { width: 10px; height: 10px; border-radius: 3px; background: #7b3fb5; }
 .impact-heading b { font: 700 var(--fs-md) var(--font-display); }
 .impact-heading small, .coverage p, .impact-empty { margin: 0; color: var(--muted); font-size: var(--fs-sm); line-height: 1.5; }
 .coverage { display: grid; gap: 7px; padding: 10px 12px; border-radius: 8px; background: var(--paper); }

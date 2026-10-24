@@ -25,6 +25,7 @@ const PATHS = {
   close: <><path d="m6 6 12 12M18 6 6 18"/></>,
   fullscreen: <><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></>,
   'fullscreen-exit': <><path d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5"/></>,
+  toll: <><path d="M4 21V9h7v12M4 13h7"/><path d="M11 12h9"/><path d="M14 12v-2M17 12v-2"/></>,
   navigate: <><path d="M12 3 5 20l7-4 7 4Z"/></>,
   // Turn arrows for navigation (see lib/navigation.js turnIcon).
   straight: <><path d="M12 21V4M6 10l6-6 6 6"/></>,

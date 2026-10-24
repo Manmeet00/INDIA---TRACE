@@ -27,12 +27,37 @@ function RouteImpact({ route, note, onSelect }) {
   </div>
 }
 
+// "2 toll plazas", or "Tolls unknown" when NHAI's plaza list is not loaded (never "no tolls" without it).
+function tollSummary(tolls) {
+  if (!tolls || tolls.status !== 'listed') return 'Tolls unknown'
+  const count = tolls.plazas.length
+  return count ? `${count} toll plaza${count === 1 ? '' : 's'}` : 'No NHAI toll plaza'
+}
+
+// The NHAI toll plazas on the chosen route, in driving order. NHAI's list has no prices, so none are shown.
+function RouteTolls({ route }) {
+  const tolls = route?.tolls
+  if (!tolls) return null
+  return <div className="route-tolls">
+    <div className="impact-heading"><b><Icon name="toll" size={16}/> Toll plazas on Route {route.priority_rank}</b>
+      {tolls.as_of && <small>{tolls.source}, as of {tolls.as_of}</small>}</div>
+    {tolls.status !== 'listed' ? <p className="impact-empty">{tolls.note}</p>
+      : tolls.plazas.length ? <ol className="toll-list">{tolls.plazas.map((plaza) => <li key={plaza.code || plaza.name}>
+        <span className="toll-km">{plaza.km_from_start} km</span>
+        <span className="toll-copy"><b>{plaza.name}</b><small>{[plaza.state, plaza.type].filter(Boolean).join(' · ')}</small></span>
+        <span className="toll-price">Price not available</span>
+      </li>)}</ol>
+      : <p className="impact-empty">No plaza in NHAI's list lies on this route. State and private tolls are not in the list.</p>}
+    {tolls.status === 'listed' && <p className="toll-note">{tolls.note} NHAI's list covers national highway plazas only.</p>}
+  </div>
+}
+
 function RouteCard({ route, index, plan, selected, onSelect }) {
   const advice = adviceFor(route.recommendation || plan.recommendation)
   const highways = Object.entries(route.highways || {})
   return <button className={`route-card ${selected ? 'selected' : ''}`} onClick={onSelect} aria-pressed={selected}><span className="route-radio"/>
     <span className="route-main"><b>Route {index + 1} · {index === 0 ? 'Top estimate' : 'Alternative'}</b><small>{exposureSummary(route.exposure)} · vehicle fit unknown</small>
-      <span className="route-facts"><span><Icon name="clock" size={14}/>{formatDuration(route.duration_s)}</span><span><Icon name="route" size={14}/>{formatDistance(route.distance_m)}</span>{!highways.length && <span><Icon name="layers" size={14}/>{plan.offline_demo ? 'Historical' : 'OSRM'}</span>}</span>
+      <span className="route-facts"><span><Icon name="clock" size={14}/>{formatDuration(route.duration_s)}</span><span><Icon name="route" size={14}/>{formatDistance(route.distance_m)}</span>{route.tolls && <span><Icon name="toll" size={14}/>{tollSummary(route.tolls)}</span>}{!highways.length && <span><Icon name="layers" size={14}/>{plan.offline_demo ? 'Historical' : 'OSRM'}</span>}</span>
       {highways.length > 0 && <span className="route-roads">{highways.map(([road, metres]) => <Milestone key={road} road={road} detail={`${Math.round(metres / 1000)} km`}/>)}</span>}
     </span>
     <span className={`risk-pill ${advice.tone}`}>{advice.pill}</span>
@@ -48,6 +73,7 @@ export default function RouteComparison({ plan, selectedRoute, onSelectRoute, on
       ? <div className="route-card-list">{plan.routes.map((route, index) => <RouteCard key={route.id} route={route} index={index} plan={plan} selected={selectedRoute === route.id} onSelect={() => onSelectRoute(route.id)}/>)}</div>
       : <div className="route-empty"><div className="route-empty-icon"><Icon name="route" size={19}/></div><div><b>No route comparison yet</b><span>Plan a route to fetch provider distance and time estimates.</span></div></div>}
     {plan && <div className={`action-banner ${advice.tone}`} role="status"><small className="banner-eyebrow">Dispatch guidance{chosenRoute ? ` · Route ${chosenRoute.priority_rank}` : ''}</small><b className="verdict">{advice.label}</b><ul className="reasons">{adviceReasons.map((reason) => <li key={reason}>{reason}</li>)}</ul><p className="official-note">Follow official advisories from the district administration, the state disaster management authority and the road agency (NHIDCL / PWD).</p></div>}
+    {plan && <RouteTolls route={chosenRoute}/>}
     {plan && <RouteImpact key={chosenRoute?.id} route={chosenRoute} note={plan.impact_note} onSelect={onSelectIncident}/>}
   </section>
 }

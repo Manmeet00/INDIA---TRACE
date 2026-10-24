@@ -201,6 +201,30 @@ def test_routes_carry_turn_by_turn_steps_for_navigation(client, providers):
     assert body["routes"][1]["steps"] == []  # OSRM sent no maneuvers for it: nothing is made up
 
 
+TOLL_LIST = """data_as_on,state,toll_plaza_code,toll_plaza_name,toll_plaza_type,project_implementation_unit,regional_office,latitude,longitude
+03-08-2026,Meghalaya,TP2,Umiam,Public Funded,PIU Shillong,RO Shillong,25.75,91.8395
+03-08-2026,Assam,TP1,Jorabat,BOT,PIU Guwahati,RO Guwahati,26.0993,91.7643
+03-08-2026,Assam,TP3,Far Away,BOT,PIU Guwahati,RO Guwahati,26.10,91.95
+03-08-2026,Assam,TP4,No Position,BOT,PIU Guwahati,RO Guwahati,,
+"""
+
+
+def test_routes_list_the_nhai_toll_plazas_they_pass_without_prices(client, providers, tmp_path):
+    body = client.post("/api/routes/plan", json={"origin": "Guwahati", "destination": "Shillong", "priority": "balanced"}).json()
+    assert body["routes"][0]["tolls"]["status"] == "unknown"  # no list: unknown, never "no tolls"
+    assert body["routes"][0]["tolls"]["plazas"] == []
+
+    (tmp_path / "toll_plazas.csv").write_text(TOLL_LIST, encoding="utf-8")
+    body = client.post("/api/routes/plan", json={"origin": "Guwahati", "destination": "Shillong", "priority": "balanced"}).json()
+    tolls = next(route for route in body["routes"] if route["id"] == "route-1")["tolls"]
+    assert tolls["status"] == "listed" and tolls["as_of"] == "03-08-2026"
+    assert [plaza["name"] for plaza in tolls["plazas"]] == ["Jorabat", "Umiam"]  # in driving order; Far Away is 15 km off
+    jorabat = tolls["plazas"][0]
+    assert jorabat["code"] == "TP1" and jorabat["metres_from_route"] <= 400 and 0 < jorabat["km_from_start"] < tolls["plazas"][1]["km_from_start"]
+    assert not any("price" in key or "fee" in key or "rate" in key for plaza in tolls["plazas"] for key in plaza)  # never guessed
+    assert "prices are not in this list" in tolls["note"]
+
+
 def test_suggestions_still_offer_region_towns_when_photon_is_down(client, providers):
     providers["photon.komoot.io"] = TimeoutError("timed out")
     assert [item["label"] for item in client.get("/api/places/suggest?q=Shil").json()] == ["Shillong"]

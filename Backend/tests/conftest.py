@@ -31,6 +31,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("COLLECTION_INTERVAL_MINUTES", "0")
     monkeypatch.setenv("COLLECTION_WINDOW_DAYS", "30")
     monkeypatch.setenv("REGION", "northeast")
+    monkeypatch.setenv("TOLL_PLAZAS_PATH", str(tmp_path / "toll_plazas.csv"))  # no list unless a test writes one
     get_settings.cache_clear()
     from app.main import app
     with TestClient(app) as test_client:

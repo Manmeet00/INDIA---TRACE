@@ -26,6 +26,7 @@ from .database import get_connection
 from .evidence import annotate
 from .media import media_for
 from .monitoring import log_call
+from .tolls import tolls_on_route
 
 
 def _request_json(url: str, headers: dict[str, str] | None = None, body: Any = None, timeout: float = 15) -> Any:
@@ -261,6 +262,7 @@ def plan_route(payload) -> dict[str, Any]:
             "geometry": route["geometry"],
             "highways": highways,
             "steps": _route_steps(route),
+            "tolls": tolls_on_route(route["geometry"], route["distance"]),
             "priority_rank": index + 1,
             "vehicle_suitability": "unknown",
             "exposure": route_exposure(route["geometry"], incident_items, highways),

@@ -641,6 +641,31 @@ def test_start_is_only_for_routes_from_your_location(dashboard, providers):
     expect(page.locator(".map-start")).to_have_count(0)
 
 
+def test_route_cards_list_toll_plazas_on_the_route_without_inventing_prices(dashboard, providers):
+    import os
+    from pathlib import Path
+    from test_live_locations import TOLL_LIST
+    page = dashboard
+    page.add_init_script(DRIVING)
+    page.open()
+    plan(page, "Guwahati", "Shillong")
+    expect(page.locator(".route-card").first).to_contain_text("Tolls unknown")  # no list loaded: unknown, not "no tolls"
+    expect(page.locator(".route-tolls")).to_contain_text("tolls on this route are unknown")
+
+    Path(os.environ["TOLL_PLAZAS_PATH"]).write_text(TOLL_LIST, encoding="utf-8")
+    plan(page, "Guwahati", "Shillong")
+    expect(page.locator(".route-card", has_text="2 toll plazas")).to_have_count(1)
+    page.locator(".route-card", has_text="2 toll plazas").click()
+    rows = page.locator(".toll-list li")
+    expect(rows).to_have_count(2)
+    expect(rows.nth(0)).to_contain_text("Jorabat")
+    expect(rows.nth(1)).to_contain_text("Umiam")
+    expect(rows.nth(0)).to_contain_text("Price not available")
+    expect(page.locator(".route-tolls")).to_contain_text("as of 03-08-2026")
+    expect(page.locator(".route-tolls")).not_to_contain_text("₹")  # no price is ever shown
+    expect(page.locator(".leaflet-marker-pane .toll-marker")).to_have_count(2)
+
+
 def test_refused_location_leaves_the_start_for_the_person_to_type(dashboard):
     page = dashboard
     page.add_init_script(geolocation("fail({ code: 1, PERMISSION_DENIED: 1 })"))

@@ -75,6 +75,7 @@ function FollowHere({ here }) {
   return null
 }
 const NAVIGATION_ZOOM = 16
+const TOLL_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V9h7v12M4 13h7M11 12h9M14 12v-2M17 12v-2"/></svg>'
 
 // Current air quality at your position and at the route's start and end, as small AQI labels.
 function AirQualityLayer({ here, plan }) {
@@ -195,6 +196,9 @@ function DashboardMap({ plan, incidents, selectedRoute, selectedIncident, onSele
     <ScaleControl position="bottomright" imperial={false}/>
     <HereLayer here={here} hasPlan={Boolean(plan)} focusKey={focusKey}/>
     {plan?.routes && [...plan.routes].filter((item) => !navigating || item.id === route?.id).sort((a, b) => (a.id === route?.id) - (b.id === route?.id)).map((item) => <Polyline key={item.id} positions={item.geometry.coordinates.map(([lon, lat]) => [lat, lon])} pathOptions={{ color: item.id === route?.id ? '#0878e8' : '#64748b', opacity: item.id === route?.id ? 0.95 : 0.55, weight: item.id === route?.id ? 5 : 3, dashArray: item.id === route?.id ? undefined : '8 9' }} />)}
+    {route?.tolls?.plazas?.map((plaza) => <Marker key={`toll-${plaza.code || plaza.name}`} position={[plaza.latitude, plaza.longitude]} keyboard={false}
+      icon={L.divIcon({ className: '', html: `<span class="toll-marker">${TOLL_SVG}</span>`, iconSize: [22, 22], iconAnchor: [11, 11] })}>
+      <Tooltip>{plaza.name} toll plaza · {plaza.km_from_start} km from the start · price not available</Tooltip></Marker>)}
     {plan?.origin && !navigating && <CircleMarker center={[plan.origin.latitude, plan.origin.longitude]} radius={8} pathOptions={{ color: '#fff', weight: 3, fillColor: '#079352', fillOpacity: 1 }}><Tooltip>Origin · {plan.origin.name}</Tooltip></CircleMarker>}
     {plan?.destination && <CircleMarker center={[plan.destination.latitude, plan.destination.longitude]} radius={8} pathOptions={{ color: '#fff', weight: 3, fillColor: '#e44a58', fillOpacity: 1 }}><Tooltip>Destination · {plan.destination.name}</Tooltip></CircleMarker>}
     {incidents.filter((item) => shown(item) && item.latitude != null && item.longitude != null).map((item) => <CircleMarker key={item.id} center={[item.latitude, item.longitude]} radius={selectedIncident?.id === item.id ? 9 : 7} eventHandlers={{ click: () => onSelectIncident(item.id) }} pathOptions={{ color: '#fff', weight: 2, fillColor: item.evidence_status === 'confirmed' ? '#df3946' : item.evidence_status === 'stale' ? '#9ba8b8' : '#e99b28', fillOpacity: 0.95 }}><Tooltip>{item.title} · {statusLabel(item)}</Tooltip></CircleMarker>)}
@@ -269,7 +273,7 @@ export default function RouteMap({ plan, mapConfig, here, hereProblem, onRetryHe
       {mapConfig && <LayersPanel base={layers.base} overlays={layers.overlays} onBase={layers.setBase} onToggle={layers.toggleOverlay} mappls={useMappls}/>}
       <button type="button" className="locate-button" onClick={() => (here ? setFocusKey((key) => key + 1) : onRetryHere())} disabled={Boolean(here) && !inIndia(here)} aria-label="Show my location" title={inIndia(here) ? 'Show my location' : here ? hereText : `${hereText} Press to try again.`}><Icon name="locate" size={20}/></button>
       <button type="button" className="fullscreen-button" onClick={fullscreen.toggle} aria-pressed={fullscreen.on} aria-label={fullscreen.on ? 'Exit full screen' : 'Show the map full screen'} title={fullscreen.on ? 'Exit full screen (Esc)' : 'Full screen'}><Icon name={fullscreen.on ? 'fullscreen-exit' : 'fullscreen'} size={20}/></button>
-      {fullscreen.on && <details className="map-credit"><summary aria-label="Map credits" title="Map credits">i</summary><small>{credit}</small></details>}{!navigation && <div className="map-legend"><span><i className="legend-route"/> Selected route</span><span><i className="legend-candidate"/> Other candidates</span><span><i className="legend-incident"/> Geolocated evidence</span><span><i className="legend-here"/> You</span></div>}</div>
+      {fullscreen.on && <details className="map-credit"><summary aria-label="Map credits" title="Map credits">i</summary><small>{credit}</small></details>}{!navigation && <div className="map-legend"><span><i className="legend-route"/> Selected route</span><span><i className="legend-candidate"/> Other candidates</span><span><i className="legend-incident"/> Geolocated evidence</span><span><i className="legend-toll"/> Toll plaza</span><span><i className="legend-here"/> You</span></div>}</div>
     <div className="map-foot"><span><Icon name="pin" size={14}/>{plan ? `${placeName(plan.origin)} → ${placeName(plan.destination)}` : hereText}</span><span>{credit}</span></div>
   </article>
 }

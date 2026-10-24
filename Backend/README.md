@@ -45,7 +45,9 @@ The original shipment trace API remains available at `/health` and `/api/v1/*` (
 
 ## Configuration
 
-Set app name, API prefix, SQLite path, CORS origins, `TINYFISH_API_KEY`, `MAPPLS_STATIC_KEY`, `REGION` and geocoder User-Agent in `.env`. Never put service keys in frontend environment variables. The one key the browser receives is the Mappls map key, which Mappls designs for browser use; restrict it to your domains.
+Set app name, API prefix, SQLite path, CORS origins, `TINYFISH_API_KEY`, `MAPPLS_STATIC_KEY`, `REGION`, `TOLL_PLAZAS_PATH` and geocoder User-Agent in `.env`.
+
+**Toll plazas.** Routes list the NHAI toll plazas they pass (within 400 m of the route line), in driving order with the distance from the start, from NHAI's published list of toll plazas. Download it as CSV from [Dataful](https://dataful.in/datasets/21597/) ("State, Project Implementation Unit (PIU), NHAI Regional Office wise List of NHAI Toll Plazas", republished from NHAI's Rajmargyatra) and save it as `data/toll_plazas.csv`; a newer download is picked up without a restart. The list has no prices, so none are shown, and it covers NHAI plazas only (not state or private tolls). Without the file every route says its tolls are unknown, never that it has none. Never put service keys in frontend environment variables. The one key the browser receives is the Mappls map key, which Mappls designs for browser use; restrict it to your domains.
 
 ## Tests
 
