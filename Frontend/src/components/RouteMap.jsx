@@ -41,7 +41,7 @@ export default function RouteMap({ plan, mapConfig, ...mapProps }) {
     {mapplsProblem && <p className="map-fallback" role="status">{mapplsProblem} Showing OpenStreetMap instead.</p>}
     <div className="map-wrap">{!mapConfig ? <div className="map-canvas"/> : useMappls
       ? <MapplsMap apiKey={mapConfig.mappls_key} plan={plan} {...mapProps} onUnavailable={onUnavailable}/>
-      : <DashboardMap plan={plan} {...mapProps}/>}{!plan && <div className="map-empty"><span className="map-empty-icon"><Icon name="route" size={22}/></span><b>Your route will appear here</b><span>Enter locations to compare candidate driving routes.</span></div>}<div className="map-legend"><span><i className="legend-route"/> Selected route</span><span><i className="legend-candidate"/> Other candidates</span><span><i className="legend-incident"/> Geolocated evidence</span></div></div>
+      : <DashboardMap plan={plan} {...mapProps}/>}<div className="map-legend"><span><i className="legend-route"/> Selected route</span><span><i className="legend-candidate"/> Other candidates</span><span><i className="legend-incident"/> Geolocated evidence</span></div></div>
     <div className="map-foot"><span><Icon name="pin" size={14}/>{plan ? `${placeName(plan.origin)} → ${placeName(plan.destination)}` : 'Assam · Meghalaya · Northeast India'}</span><span>{useMappls ? 'Map © Mappls (MapmyIndia)' : 'Map tiles © OpenStreetMap contributors'}</span></div>
   </article>
 }
