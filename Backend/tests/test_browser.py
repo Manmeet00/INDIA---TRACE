@@ -580,6 +580,8 @@ def test_full_screen_button_fills_the_screen_with_the_map(dashboard):
     box = page.locator(".map-wrap").bounding_box()
     assert box["height"] == page.evaluate("window.innerHeight")
     expect(page.locator(".map-wrap .map-legend")).to_be_visible()  # legend and credits come along
+    search = page.locator(".map-search").bounding_box()
+    assert abs(search["x"] + search["width"] / 2 - page.evaluate("window.innerWidth") / 2) <= 1  # search bar centred
     expect(page.locator(".map-credit small")).to_be_hidden()  # credits fold behind an "i"
     page.locator(".map-credit summary").click()
     expect(page.locator(".map-credit small")).to_contain_text("© OpenStreetMap")
