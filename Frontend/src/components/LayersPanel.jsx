@@ -30,7 +30,7 @@ export default function LayersPanel({ base, overlays, onBase, onToggle, mappls }
       <div className="layers-grid types" role="radiogroup" aria-label="Map type">
         {Object.entries(BASE_LAYERS).map(([key, layer]) => <button type="button" key={key} role="radio" aria-checked={base === key} disabled={mappls}
           className={`layer-tile${base === key ? ' on' : ''}`} onClick={() => onBase(key)}>
-          <span className="layer-thumb"><img src={layer.thumb} alt="" referrerPolicy="no-referrer"/></span>{layer.label}
+          <span className="layer-thumb"><img src={layer.thumb} alt=""/></span>{layer.label}
         </button>)}
       </div>
       <b className="layers-title">Map details</b>

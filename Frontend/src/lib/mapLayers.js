@@ -1,17 +1,18 @@
 // Map types and map details for the OpenStreetMap view, each from a free source checked to cover Northeast India.
 // short: the credit inside the map; credit: the full credit shown under it.
-// thumb: a real tile of the Guwahati area from the same source, used as the picture in the layers panel.
+// thumb: a real tile of the Guwahati area from the same source, saved with the frontend (public/map-thumbs) so the
+// layers panel needs no outside request; OpenStreetMap refuses tile requests without a referrer.
 const GIBS_WMS = 'https://gibs.earthdata.nasa.gov/wms/epsg3857/best/wms.cgi'
 
 export const BASE_LAYERS = {
   default: {
     label: 'Default', url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', maxZoom: 19,
-    short: '© OpenStreetMap', credit: 'Map tiles © OpenStreetMap contributors', thumb: 'https://a.tile.openstreetmap.org/7/95/55.png',
+    short: '© OpenStreetMap', credit: 'Map tiles © OpenStreetMap contributors', thumb: '/map-thumbs/default.png',
   },
   satellite: {
     label: 'Satellite', url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', maxZoom: 19,
-    short: '© Esri, Maxar · © OpenStreetMap', credit: 'Imagery © Esri, Maxar, Earthstar Geographics · Roads © Esri · Place names © OpenStreetMap contributors',
-    thumb: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/7/55/95',
+    short: '© Esri, Maxar · © OpenStreetMap', credit: 'Imagery © Esri, Maxar, Earthstar Geographics · Roads © Esri · Place names © OpenStreetMap contributors via OpenFreeMap',
+    thumb: '/map-thumbs/satellite.jpg',
     // Like a hybrid map: roads with highway numbers drawn over the imagery, and place names (see PlaceLabels).
     // Esri's roads layer has no boundary lines; its boundaries-and-places layer is not used because it draws
     // disputed lines that differ from India's official boundary.
@@ -20,7 +21,7 @@ export const BASE_LAYERS = {
   },
   terrain: {
     label: 'Terrain', url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', maxZoom: 17,
-    short: '© OpenTopoMap · © OpenStreetMap', credit: 'Terrain © OpenTopoMap (CC-BY-SA), SRTM, OpenStreetMap contributors', thumb: 'https://a.tile.opentopomap.org/7/95/55.png',
+    short: '© OpenTopoMap · © OpenStreetMap', credit: 'Terrain © OpenTopoMap (CC-BY-SA), SRTM, OpenStreetMap contributors', thumb: '/map-thumbs/terrain.png',
   },
 }
 

@@ -9,7 +9,8 @@ import { useMapLayers } from '../hooks/useMapLayers.js'
 import { BASE_LAYERS, GIBS, OVERLAYS, aqiTone } from '../lib/mapLayers.js'
 import { INACTIVE_STATES, MAP_CATEGORIES, formatTime, mapCategory, placeName, statusLabel } from '../lib/format.js'
 import { BORDER_COLOR, HERE_COLOR, HERE_ZOOM, INDIA_BOUNDS, MASK_COLOR, inIndia, insideBoundary } from '../lib/mapStyle.js'
-import { getAirQuality, getMapLabels, loadIndiaBoundary } from '../services/api.js'
+import { placeNamesInView } from '../lib/placeNames.js'
+import { getAirQuality, loadIndiaBoundary } from '../services/api.js'
 
 const WORLD = [[-89, -180], [-89, 180], [89, 180], [89, -180]]
 
@@ -23,14 +24,19 @@ function MapBounds({ geometry }) {
   return null
 }
 
-// Covers everything outside India and outlines its boundary, below routes and markers.
+// Covers everything outside India and outlines its boundary, below routes and markers. Drawn on a canvas:
+// the boundary has thousands of points, which SVG redraws slowly on every pan and zoom.
 function IndiaMask({ boundary }) {
   const rings = useMemo(() => boundary.map((ring) => ring.map(([lng, lat]) => [lat, lng])), [boundary])
+  const renderer = useMemo(() => L.canvas({ pane: 'india-mask', padding: 0.5 }), [])
   return <Pane name="india-mask" style={{ zIndex: 350 }}>
-    <Polygon positions={[WORLD, ...rings]} interactive={false} pathOptions={{ stroke: false, fillColor: MASK_COLOR, fillOpacity: 1 }}/>
-    <Polygon positions={rings.map((ring) => [ring])} interactive={false} pathOptions={{ color: BORDER_COLOR, weight: 1.2, opacity: 0.55, fill: false }}/>
+    <Polygon positions={[WORLD, ...rings]} interactive={false} renderer={renderer} pathOptions={{ stroke: false, fillColor: MASK_COLOR, fillOpacity: 1 }}/>
+    <Polygon positions={rings.map((ring) => [ring])} interactive={false} renderer={renderer} pathOptions={{ color: BORDER_COLOR, weight: 1.2, opacity: 0.55, fill: false }}/>
   </Pane>
 }
+
+// Tiles load once zooming stops, not at every intermediate zoom level.
+const TILE_OPTIONS = { updateWhenZooming: false, keepBuffer: 3 }
 
 // The blue dot with its accuracy ring. Without a route the map centres on it once, when the first fix arrives;
 // focusKey changes when the person asks to see their location again.
@@ -84,8 +90,8 @@ function AirQualityLayer({ here, plan }) {
   })
 }
 
-// Place names over satellite imagery, for the area on screen. Labels that would overlap a more important one
-// (cities before towns before villages) are left out, so the map stays readable.
+// Place names over satellite imagery, anywhere in India, for the area on screen (lib/placeNames.js). Labels that
+// would overlap a more important one (cities before towns before villages) are left out, so the map stays readable.
 const LABEL_BOX = { width: 90, height: 18 }
 
 function PlaceLabels({ boundary }) {
@@ -97,7 +103,7 @@ function PlaceLabels({ boundary }) {
     let active = true
     const timer = setTimeout(() => {
       const box = { south: view.bounds.getSouth(), west: view.bounds.getWest(), north: view.bounds.getNorth(), east: view.bounds.getEast() }
-      getMapLabels(box, view.zoom).then((body) => { if (active) setLabels(body.labels) }).catch(() => { if (active) setLabels([]) })
+      placeNamesInView(box, view.zoom).then((names) => { if (active) setLabels(names) }).catch(() => { if (active) setLabels([]) })
     }, 150)
     return () => {
       active = false
@@ -122,7 +128,7 @@ function BaseSwitch({ base, onBase }) {
   const target = base === 'satellite' ? 'default' : 'satellite'
   const name = target === 'satellite' ? 'Satellite' : 'Map'
   return <button type="button" className={`base-switch ${target}`} onClick={() => onBase(target)} aria-label={`Show the ${name.toLowerCase()} view`} title={`Show the ${name.toLowerCase()} view`}>
-    <img src={BASE_LAYERS[target].thumb} alt="" referrerPolicy="no-referrer"/><span>{name}</span>
+    <img src={BASE_LAYERS[target].thumb} alt=""/><span>{name}</span>
   </button>
 }
 
@@ -149,8 +155,8 @@ function DashboardMap({ plan, incidents, selectedRoute, selectedIncident, onSele
   return <MapContainer key={`${plan?.origin?.latitude || 'default'}-${plan?.destination?.latitude || 'default'}`} center={center} zoom={plan ? 7 : startHere ? HERE_ZOOM : 6} minZoom={4} maxBounds={INDIA_BOUNDS} maxBoundsViscosity={1} zoomControl={false} className="map-canvas">
     {boundary && <IndiaMask boundary={boundary}/>}
     {route && <MapBounds geometry={route.geometry} />}
-    <TileLayer key={base} url={BASE_LAYERS[base].url} maxZoom={BASE_LAYERS[base].maxZoom} attribution={BASE_LAYERS[base].short}/>
-    {BASE_LAYERS[base].roads && <TileLayer key={`${base}-roads`} url={BASE_LAYERS[base].roads} maxZoom={BASE_LAYERS[base].maxZoom} zIndex={4} opacity={0.9} className="hybrid-roads"/>}
+    <TileLayer key={base} url={BASE_LAYERS[base].url} maxZoom={BASE_LAYERS[base].maxZoom} attribution={BASE_LAYERS[base].short} {...TILE_OPTIONS}/>
+    {BASE_LAYERS[base].roads && <TileLayer key={`${base}-roads`} url={BASE_LAYERS[base].roads} maxZoom={BASE_LAYERS[base].maxZoom} zIndex={4} opacity={0.9} className="hybrid-roads" {...TILE_OPTIONS}/>}
     {BASE_LAYERS[base].labels && <Pane name="place-labels" style={{ zIndex: 380, pointerEvents: 'none' }}><PlaceLabels boundary={boundary}/></Pane>}
     <DetailLayers overlays={overlays} here={here} plan={plan}/>
     <ZoomControl position="bottomright" />

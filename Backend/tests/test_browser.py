@@ -380,7 +380,7 @@ def test_without_a_mappls_key_the_map_is_openstreetmap_showing_only_india(dashbo
     page = dashboard
     page.open()
     expect(page.locator(".leaflet-container")).to_have_count(1)
-    expect(page.locator(".leaflet-india-mask-pane path")).to_have_count(2)  # the mask and India's outline
+    expect(page.locator(".leaflet-india-mask-pane canvas")).to_have_count(1)  # the mask and India's outline, drawn on a canvas
     expect(page.locator(".map-foot")).to_contain_text("India boundary: Survey of India")
     expect(page.locator(".map-fallback")).to_have_count(0)
 
@@ -584,24 +584,58 @@ def test_map_layers_change_the_map_and_are_remembered(dashboard):
     expect(page.locator(".layer-tile", has_text="Wildfires")).to_have_attribute("aria-pressed", "true")
 
 
-def test_satellite_view_names_places_inside_india_only(dashboard, client, providers):
-    providers["overpass-api.de"] = {"elements": [
-        {"lat": 26.18, "lon": 91.75, "tags": {"place": "city", "name": "Guwahati"}},
-        {"lat": 25.57, "lon": 91.88, "tags": {"place": "city", "name": "Shillong"}},
-        {"lat": 24.90, "lon": 91.87, "tags": {"place": "city", "name": "Sylhet"}},  # Bangladesh: never named on the map
-    ]}
-    from app.labels import refresh_labels
-    with get_connection() as connection:
-        refresh_labels(connection)
+def _varint(value):
+    out = bytearray()
+    while True:
+        byte, value = value & 0x7F, value >> 7
+        out.append(byte | (0x80 if value else 0))
+        if not value:
+            return bytes(out)
+
+
+def _field(number, wire, payload):
+    return _varint(number << 3 | wire) + (_varint(len(payload)) + payload if wire == 2 else payload)
+
+
+def place_tile(places, z, x, y):
+    """A minimal Mapbox vector tile with a "place" layer of points: [(name, class, latitude, longitude)]."""
+    import math
+    extent = 4096
+    keys = ["name", "class"]
+    values = list(dict.fromkeys(value for name, kind, *_ in places for value in (name, kind)))
+    features = b""
+    for name, kind, latitude, longitude in places:
+        px = ((longitude + 180) / 360 * 2 ** z - x) * extent
+        radians = math.radians(latitude)
+        py = ((1 - math.asinh(math.tan(radians)) / math.pi) / 2 * 2 ** z - y) * extent
+        zig = lambda n: (n << 1) ^ (n >> 31)
+        geometry = b"".join(_varint(v) for v in (1 | 1 << 3, zig(round(px)), zig(round(py))))
+        tags = b"".join(_varint(v) for v in (0, values.index(name), 1, values.index(kind)))
+        features += _field(2, 2, _field(2, 2, tags) + _field(3, 0, _varint(1)) + _field(4, 2, geometry))
+    layer = (_field(15, 0, _varint(2)) + _field(1, 2, b"place") + features
+             + b"".join(_field(3, 2, key.encode()) for key in keys)
+             + b"".join(_field(4, 2, _field(1, 2, value.encode())) for value in values) + _field(5, 0, _varint(extent)))
+    return _field(3, 2, layer)
+
+
+def test_satellite_view_names_places_inside_india_only(dashboard):
+    places = [("Guwahati", "city", 26.18, 91.75), ("Shillong", "city", 25.57, 91.88),
+              ("Sylhet", "city", 24.90, 91.87)]  # Bangladesh: never named on the map
     page = dashboard
+
+    def tile(route):
+        z, x, y = (int(part.split(".")[0]) for part in route.request.url.rsplit("/", 3)[1:])
+        route.fulfill(status=200, body=place_tile(places, z, x, y), headers={"content-type": "application/x-protobuf"})
+    page.route("https://tiles.openfreemap.org/planet", lambda route: route.fulfill(
+        status=200, body='{"tiles": ["https://tiles.openfreemap.org/planet/test/{z}/{x}/{y}.pbf"]}', headers={"content-type": "application/json"}))
+    page.route("https://tiles.openfreemap.org/planet/test/**", tile)
     page.add_init_script("localStorage.setItem('india-trace.map-layers', JSON.stringify({ base: 'satellite', overlays: [] }))")
     page.open()
-    expect(page.locator(".map-label.city")).to_have_count(2)
     expect(page.locator(".map-label", has_text="Guwahati")).to_have_count(1)
+    expect(page.locator(".map-label", has_text="Shillong")).to_have_count(1)
     expect(page.locator(".map-label", has_text="Sylhet")).to_have_count(0)
     expect(page.locator(".leaflet-tile-pane img[src*='World_Transportation']").first).to_be_attached()  # roads over the imagery
-    expect(page.locator(".map-foot")).to_contain_text("Place names © OpenStreetMap contributors")
-
+    expect(page.locator(".map-foot")).to_contain_text("Place names © OpenStreetMap contributors via OpenFreeMap")
 
 def test_corner_thumbnail_switches_between_map_and_satellite(dashboard):
     page = dashboard

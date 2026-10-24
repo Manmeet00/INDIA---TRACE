@@ -31,7 +31,6 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("COLLECTION_INTERVAL_MINUTES", "0")
     monkeypatch.setenv("COLLECTION_WINDOW_DAYS", "30")
     monkeypatch.setenv("REGION", "northeast")
-    monkeypatch.setenv("MAP_LABELS_REFRESH", "0")
     get_settings.cache_clear()
     from app.main import app
     with TestClient(app) as test_client:
@@ -103,7 +102,6 @@ def providers(monkeypatch):
     Requests to a host with no answer fail the test.
     """
     answers = {"nominatim.openstreetmap.org": nominatim, "router.project-osrm.org": osrm, "photon.komoot.io": {"features": []},
-               "overpass-api.de": {"elements": []},
                "air-quality-api.open-meteo.com": {"current": {"time": "2026-10-24T12:00", "us_aqi": 97, "pm2_5": 26.8, "pm10": 28.2}}}
     calls = []
 

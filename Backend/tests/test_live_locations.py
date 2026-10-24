@@ -158,25 +158,3 @@ def test_air_quality_at_a_point_is_banded_and_cached(client, providers):
     providers["air-quality-api.open-meteo.com"] = {"current": {"us_aqi": None}}
     missing = client.get("/api/air-quality?lat=25.57&lon=91.88")
     assert missing.status_code == 502 and "no air quality value" in missing.json()["detail"]
-
-
-def test_map_place_names_are_stored_and_served_by_zoom(client, providers):
-    providers["overpass-api.de"] = {"elements": [
-        {"lat": 26.18, "lon": 91.75, "tags": {"place": "city", "name": "Guwahati"}},
-        {"lat": 26.14, "lon": 91.79, "tags": {"place": "suburb", "name": "দিছপুৰ", "name:en": "Dispur"}},
-        {"lat": 26.13, "lon": 91.74, "tags": {"place": "village", "name": "Jyotikuchi"}},
-        {"lat": 26.12, "lon": 91.73, "tags": {"place": "hamlet", "name": "Not a listed kind"}},
-        {"lat": "x", "lon": 91.7, "tags": {"place": "town", "name": "Bad point"}},
-    ]}
-    from app.labels import refresh_labels
-    from app.database import get_connection as connect
-    view = "/api/map-labels?south=26.0&west=91.6&north=26.3&east=91.9&zoom="
-    assert client.get(view + "12").json()["status"] == "unavailable"
-    with connect() as connection:
-        assert refresh_labels(connection) == {"status": "ready", "labels": 3}
-    names = lambda zoom: [label["name"] for label in client.get(view + str(zoom)).json()["labels"]]
-    assert names(6) == ["Guwahati"]                          # zoomed out: cities only
-    assert names(11) == ["Guwahati", "Dispur"]               # English name preferred
-    assert names(12) == ["Guwahati", "Dispur", "Jyotikuchi"]
-    query = next(request.full_url for host, request in providers["calls"] if host == "overpass-api.de")
-    assert "21.9%2C88.0%2C29.5%2C97.5" in query               # the region's area only

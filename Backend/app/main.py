@@ -8,11 +8,11 @@ import sqlite3
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
 from . import jobs
 from .air_quality import air_quality
-from .labels import labels_in_view, refresh_in_background, refresh_labels
 from .collection import (NOT_CONFIGURED, collect_candidates, collection_run, collection_runs, default_searches, locate_places,
                          recheck_reports, targeted_searches)
 from .config import get_settings
@@ -75,8 +75,6 @@ async def _collect_periodically(interval_minutes: int, first_delay_s: float) -> 
 async def lifespan(_: FastAPI):
     try:
         initialize_database()
-        if get_settings().map_labels_refresh:
-            refresh_in_background()
     except sqlite3.Error:
         # Start anyway so /api/health can report the problem; data endpoints answer 503 until it is fixed.
         logger.exception("Could not initialise the database at %s", settings.database_path)
@@ -94,6 +92,8 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title=settings.app_name, version="1.0.0", lifespan=lifespan)
+# Compresses larger answers (the report list is several hundred kilobytes of text).
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -327,21 +327,6 @@ def collect_media():
 def get_air_quality(lat: float = Query(ge=-90, le=90), lon: float = Query(ge=-180, le=180)):
     """Current US AQI, PM2.5 and PM10 at a point in India (Open-Meteo, cached 30 minutes), for the map's air layer."""
     return air_quality(lat, lon)
-
-
-@app.get("/api/map-labels")
-def map_labels(south: float = Query(ge=-90, le=90), west: float = Query(ge=-180, le=180), north: float = Query(ge=-90, le=90),
-               east: float = Query(ge=-180, le=180), zoom: int = Query(ge=0, le=22)):
-    """Place names (OpenStreetMap) for the satellite map's view: cities first, villages and neighbourhoods when zoomed in."""
-    with get_connection() as connection:
-        return labels_in_view(connection, south, west, north, east, zoom)
-
-
-@app.post("/api/map-labels/refresh")
-def refresh_map_labels():
-    """Downloads the region's place names again from OpenStreetMap (Overpass); this takes up to a few minutes."""
-    with get_connection() as connection:
-        return refresh_labels(connection)
 
 
 @app.get("/api/map-config")
