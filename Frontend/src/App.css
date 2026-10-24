@@ -177,6 +177,9 @@
 .map-search { position: absolute; z-index: 465; top: 10px; left: 10px; width: min(340px, calc(100% - 150px)); display: flex; align-items: center; height: 40px; padding-left: 12px; border-radius: 20px; color: #5f6368; background: #fff; box-shadow: 0 2px 6px rgba(0, 0, 0, .3); }
 .map-wrap.fullscreen .map-search { left: 50%; width: min(420px, calc(100% - 220px)); transform: translateX(-50%); }
 .map-search .place-field { flex: 1; }
+.map-search-status { position: absolute; top: calc(100% + 6px); left: 0; right: 0; margin: 0; padding: 7px 12px; border-radius: 10px; color: #3c4043; background: #fff; box-shadow: 0 2px 6px rgba(0, 0, 0, .3); font: 400 13px/1.35 Roboto, Arial, sans-serif; }
+.map-search-status.error { color: var(--danger); }
+.map-search:has(.place-suggestions) .map-search-status { display: none; } /* the suggestions take its place */
 .map-search .place-field input { height: 40px; padding: 0 14px 0 8px; border: 0; border-radius: 0 20px 20px 0; background: transparent; font: 400 15px/1 Roboto, Arial, sans-serif; }
 .map-search .place-field input:focus { box-shadow: none; background: transparent; }
 .map-search .place-suggestions { left: -30px; right: 0; top: calc(100% + 8px); }

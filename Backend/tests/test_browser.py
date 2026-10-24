@@ -538,6 +538,28 @@ def test_map_search_bar_fills_the_destination_when_the_start_is_unknown(dashboar
     page.keyboard.press("Enter")
     expect(page.locator("#destination")).to_have_value("Shillong")
     expect(page.locator(".map-heading h2")).to_have_text("Regional road intelligence")  # nothing planned without a start
+    expect(page.locator(".map-search-status")).to_have_text("Destination set. Choose a starting point in the route planner.")
+
+
+def test_map_search_bar_shows_progress_and_errors_under_the_bar(dashboard):
+    page = dashboard
+    page.add_init_script(geolocation("ok({ coords: { latitude: 26.18, longitude: 91.75, accuracy: 50 } })"))
+    replies = []
+
+    def plan(route):  # the routing service fails, slowly enough to see the progress note
+        replies.append(route.request.url)
+        page.wait_for_timeout(500)
+        route.fulfill(status=502, json={"detail": "Routing service unavailable (router.project-osrm.org)."})
+    page.open()
+    expect(page.locator("#origin")).to_have_value("Your location")
+    page.route("**/api/routes/plan", plan)
+    page.locator(".fullscreen-button").click()  # the route planner is out of sight
+    page.locator(".map-search input").fill("Shillong")
+    page.keyboard.press("Escape")
+    page.keyboard.press("Enter")
+    expect(page.locator(".map-search-status")).to_have_text("Finding routes…")
+    expect(page.locator(".map-search-status.error")).to_have_text("Routing service unavailable (router.project-osrm.org).")
+    assert len(replies) == 1
 
 
 def test_refused_location_leaves_the_start_for_the_person_to_type(dashboard):
