@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from app.road_intelligence import recommend, route_exposure
+from app.road_intelligence import _freshness, parse_published, recommend, route_exposure
 
 # Two east-west routes about 55 km apart.
 SOUTH = {"coordinates": [[91.0, 26.0], [91.25, 26.0], [91.5, 26.0]]}
@@ -84,3 +84,24 @@ def test_proceed_cautiously_never_claims_road_is_clear():
     code, reasons = recommend(routes[0], routes, NOW)
     assert code == "proceed_cautiously"
     assert any("not confirmation that the road is clear" in reason for reason in reasons)
+
+
+def test_parse_published_handles_search_result_formats():
+    collected = "2026-10-24T12:00:00+00:00"
+    exact, approximate = parse_published("2026-10-24T08:30:00Z", collected)
+    assert exact == datetime(2026, 10, 24, 8, 30, tzinfo=timezone.utc) and not approximate
+    assert parse_published("3 months ago", collected) == (datetime(2026, 7, 26, 12, tzinfo=timezone.utc), True)
+    assert parse_published("an hour ago", collected)[0] == datetime(2026, 10, 24, 11, tzinfo=timezone.utc)
+    assert parse_published("Jul 3, 2023", collected) == (datetime(2023, 7, 3, tzinfo=timezone.utc), True)
+    assert parse_published("2024-05-29", collected) == (datetime(2024, 5, 29, tzinfo=timezone.utc), True)
+    assert parse_published("sometime last monsoon", collected) == (None, False)
+    assert parse_published(None, collected) == (None, False)
+
+
+def test_freshness_uses_estimated_publication_time():
+    now = datetime.now(timezone.utc)
+    assert _freshness(now - timedelta(hours=2), False) == "fresh"
+    assert _freshness(now - timedelta(days=90), True) == "stale"
+    assert _freshness(now + timedelta(hours=5), True) == "fresh"   # date-only value in a timezone ahead of UTC
+    assert _freshness(now + timedelta(hours=5), False) == "unknown"
+    assert _freshness(None, False) == "unknown"

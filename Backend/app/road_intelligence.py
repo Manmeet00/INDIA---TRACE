@@ -5,10 +5,11 @@ left unknown unless a structured coordinate is available from a trusted source.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import json
 import math
+import re
 import sqlite3
 import ssl
 from typing import Any
@@ -88,29 +89,63 @@ def plan_route(payload) -> dict[str, Any]:
     }
 
 
-def _freshness(published_at: str | None) -> str:
-    if not published_at:
-        return "unknown"
+RELATIVE_TIME = re.compile(r"^(\d+|an?|one)\s+(minute|hour|day|week|month|year)s?\s+ago$", re.IGNORECASE)
+UNIT_SECONDS = {"minute": 60, "hour": 3600, "day": 86400, "week": 7 * 86400, "month": 30 * 86400, "year": 365 * 86400}
+DATE_FORMATS = ("%b %d, %Y", "%B %d, %Y", "%d %b %Y", "%d %B %Y")
+
+
+def _as_utc(value: datetime) -> datetime:
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+
+
+def parse_published(text: str | None, collected_at: str) -> tuple[datetime | None, bool]:
+    """Estimate when a source was published, and whether that estimate is approximate.
+
+    Search results give ISO times, dates such as "Jul 3, 2023", or relative text such as
+    "3 months ago", which is counted back from when the result was collected.
+    """
+    if not text:
+        return None, False
+    value = text.strip()
     try:
-        value = datetime.fromisoformat(published_at.replace("Z", "+00:00"))
-        if value.tzinfo is None:
-            value = value.replace(tzinfo=timezone.utc)
-        age_seconds = (datetime.now(timezone.utc) - value).total_seconds()
-        if age_seconds < 0:
-            return "unknown"
-        return "fresh" if age_seconds <= 24 * 3600 else "stale"
-    except (ValueError, TypeError):
+        return _as_utc(datetime.fromisoformat(value.replace("Z", "+00:00"))), len(value) <= 10
+    except ValueError:
+        pass
+    match = RELATIVE_TIME.match(value)
+    if match:
+        amount = int(match[1]) if match[1].isdigit() else 1
+        collected = _as_utc(datetime.fromisoformat(collected_at))
+        return collected - timedelta(seconds=amount * UNIT_SECONDS[match[2].lower()]), True
+    for date_format in DATE_FORMATS:
+        try:
+            return datetime.strptime(value, date_format).replace(tzinfo=timezone.utc), True
+        except ValueError:
+            continue
+    return None, False
+
+
+def _freshness(published: datetime | None, approximate: bool) -> str:
+    if published is None:
         return "unknown"
+    age_seconds = (datetime.now(timezone.utc) - published).total_seconds()
+    if age_seconds < 0:
+        # A date-only value can be up to a day ahead of UTC (for example a date in IST).
+        if not approximate or age_seconds < -86400:
+            return "unknown"
+        age_seconds = 0
+    return "fresh" if age_seconds <= EVIDENCE_MAX_AGE_S else "stale"
 
 
 def incident_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    published, approximate = parse_published(row["published_at"], row["collected_at"])
     return {
         "id": row["id"], "title": row["title"], "summary": row["summary"],
         "source_name": row["source_name"], "source_url": row["source_url"],
         "published_at": row["published_at"], "collected_at": row["collected_at"],
+        "published_estimate": published, "published_approximate": approximate,
         "latitude": row["latitude"], "longitude": row["longitude"],
         "location_text": row["location_text"], "verification": row["verification"],
-        "freshness": _freshness(row["published_at"]), "reviewed_at": row["reviewed_at"],
+        "freshness": _freshness(published, approximate), "reviewed_at": row["reviewed_at"],
         "review_note": row["review_note"],
     }
 
@@ -288,7 +323,4 @@ def recommend(route: dict[str, Any], routes: list[dict[str, Any]], newest_collec
 
 
 def _age_seconds(timestamp: str) -> float:
-    value = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
-    return (datetime.now(timezone.utc) - value).total_seconds()
+    return (datetime.now(timezone.utc) - _as_utc(datetime.fromisoformat(timestamp.replace("Z", "+00:00")))).total_seconds()

@@ -126,6 +126,8 @@ class IncidentOut(BaseModel):
     source_name: str
     source_url: str
     published_at: str | None
+    published_estimate: datetime | None = None
+    published_approximate: bool = False
     collected_at: datetime
     latitude: float | None
     longitude: float | None
