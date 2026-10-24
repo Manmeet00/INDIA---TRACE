@@ -160,11 +160,37 @@ function DashboardMap({ plan, incidents, selectedRoute, selectedIncident, onSele
   </MapContainer>
 }
 
+// The map alone filling the screen, with its controls and legend. Uses the browser's full screen where it has one
+// (not iPhone Safari), otherwise a full-window view; Esc leaves either. The map is told to redraw at its new size.
+function useFullscreen(element) {
+  const [on, setOn] = useState(false)
+  const native = typeof document !== 'undefined' && document.fullscreenEnabled
+  useEffect(() => {
+    const sync = () => setOn(Boolean(element.current) && document.fullscreenElement === element.current)
+    document.addEventListener('fullscreenchange', sync)
+    return () => document.removeEventListener('fullscreenchange', sync)
+  }, [element])
+  useEffect(() => {
+    window.dispatchEvent(new Event('resize'))
+    if (!on || native) return undefined
+    const leave = (event) => { if (event.key === 'Escape') setOn(false) }
+    document.addEventListener('keydown', leave)
+    return () => document.removeEventListener('keydown', leave)
+  }, [on, native])
+  const toggle = () => {
+    if (!native) setOn((value) => !value)
+    else if (document.fullscreenElement) document.exitFullscreen()
+    else element.current?.requestFullscreen().catch(() => setOn(true))
+  }
+  return { on, toggle }
+}
+
 // Mappls when the API has a Mappls key, OpenStreetMap otherwise. If Mappls cannot load (no internet, a rejected
 // key) the map falls back to OpenStreetMap and says so, so the dashboard never loses its map.
 export default function RouteMap({ plan, mapConfig, here, hereProblem, ...mapProps }) {
   const [focusKey, setFocusKey] = useState(0)
   const layers = useMapLayers()
+  const wrap = useRef(null)
   const hereText = !here ? (hereProblem ? `${hereProblem} Showing Northeast India.` : 'Finding your location…')
     : inIndia(here) ? `Your location · accurate to about ${Math.max(1, Math.round(here.accuracy || 0))} m` : 'Your location is outside India. Showing Northeast India.'
   const [mapplsProblem, setMapplsProblem] = useState('')
@@ -176,16 +202,20 @@ export default function RouteMap({ plan, mapConfig, here, hereProblem, ...mapPro
     return () => { active = false }
   }, [])
   const onUnavailable = useCallback((reason) => setMapplsProblem(reason || 'The Mappls map could not load.'), [])
+  const fullscreen = useFullscreen(wrap)
   const useMappls = mapConfig?.provider === 'mappls' && !mapplsProblem
+  const credit = `${useMappls ? 'Map © Mappls (MapmyIndia)' : [BASE_LAYERS[layers.base].credit, ...layers.overlays.map((key) => OVERLAYS[key].credit)].join(' · ')} · India boundary: Survey of India`
   const status = plan?.offline_demo ? 'Historical snapshot' : plan ? `Routing fetched ${formatTime(plan.routing_fetched_at)}` : 'Map ready'
   return <article className="panel map-panel"><div className="map-heading"><div><span className="section-kicker">NORTHEAST INDIA · NETWORK VIEW</span><h2>{plan ? `${placeName(plan.origin)} to ${placeName(plan.destination)}` : 'Regional road intelligence'}</h2></div><span className={`map-status ${plan?.offline_demo ? 'demo' : ''}`}><i/>{status}</span></div>
     {mapplsProblem && <p className="map-fallback" role="status">{mapplsProblem} Showing OpenStreetMap instead.</p>}
-    <div className="map-wrap">{!mapConfig ? <div className="map-canvas"/> : useMappls
+    <div className={`map-wrap${fullscreen.on ? ' fullscreen' : ''}`} ref={wrap}>{!mapConfig ? <div className="map-canvas"/> : useMappls
       ? <MapplsMap apiKey={mapConfig.mappls_key} plan={plan} boundary={boundary} here={here} focusKey={focusKey} {...mapProps} onUnavailable={onUnavailable}/>
       : <DashboardMap plan={plan} boundary={boundary} here={here} focusKey={focusKey} base={layers.base} overlays={layers.overlays} {...mapProps}/>}
       {mapConfig && <LayersPanel base={layers.base} overlays={layers.overlays} onBase={layers.setBase} onToggle={layers.toggleOverlay} mappls={useMappls}/>}
-      <button type="button" className="locate-button" onClick={() => setFocusKey((key) => key + 1)} disabled={!inIndia(here)} aria-label="Show my location" title={inIndia(here) ? 'Show my location' : hereText}><Icon name="locate" size={20}/></button><div className="map-legend"><span><i className="legend-route"/> Selected route</span><span><i className="legend-candidate"/> Other candidates</span><span><i className="legend-incident"/> Geolocated evidence</span><span><i className="legend-here"/> You</span></div></div>
-    <div className="map-foot"><span><Icon name="pin" size={14}/>{plan ? `${placeName(plan.origin)} → ${placeName(plan.destination)}` : hereText}</span><span>{useMappls ? 'Map © Mappls (MapmyIndia)' : [BASE_LAYERS[layers.base].credit, ...layers.overlays.map((key) => OVERLAYS[key].credit)].join(' · ')} · India boundary: Survey of India</span></div>
+      <button type="button" className="locate-button" onClick={() => setFocusKey((key) => key + 1)} disabled={!inIndia(here)} aria-label="Show my location" title={inIndia(here) ? 'Show my location' : hereText}><Icon name="locate" size={20}/></button>
+      <button type="button" className="fullscreen-button" onClick={fullscreen.toggle} aria-pressed={fullscreen.on} aria-label={fullscreen.on ? 'Exit full screen' : 'Show the map full screen'} title={fullscreen.on ? 'Exit full screen (Esc)' : 'Full screen'}><Icon name={fullscreen.on ? 'fullscreen-exit' : 'fullscreen'} size={20}/></button>
+      {fullscreen.on && <small className="map-credit">{credit}</small>}<div className="map-legend"><span><i className="legend-route"/> Selected route</span><span><i className="legend-candidate"/> Other candidates</span><span><i className="legend-incident"/> Geolocated evidence</span><span><i className="legend-here"/> You</span></div></div>
+    <div className="map-foot"><span><Icon name="pin" size={14}/>{plan ? `${placeName(plan.origin)} → ${placeName(plan.destination)}` : hereText}</span><span>{credit}</span></div>
   </article>
 }
 

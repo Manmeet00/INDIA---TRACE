@@ -23,6 +23,8 @@ const PATHS = {
   air: <><path d="M3 8h11a3 3 0 1 0-3-3M3 12h15a3 3 0 1 1-3 3M3 16h7"/></>,
   truck: <><path d="M3 6h11v11H3zM14 10h4l3 3v4h-7z"/><circle cx="7.5" cy="18" r="1.5"/><circle cx="17.5" cy="18" r="1.5"/></>,
   close: <><path d="m6 6 12 12M18 6 6 18"/></>,
+  fullscreen: <><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></>,
+  'fullscreen-exit': <><path d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5"/></>,
   mountain: <><path d="m3 20 6.5-12 4 7 2.5-4L21 20Z"/></>,
   water: <><path d="M3 8c2 0 2-1.5 4.5-1.5S9.5 8 12 8s2-1.5 4.5-1.5S19 8 21 8M3 13c2 0 2-1.5 4.5-1.5S9.5 13 12 13s2-1.5 4.5-1.5S19 13 21 13M3 18c2 0 2-1.5 4.5-1.5S9.5 18 12 18s2-1.5 4.5-1.5S19 18 21 18"/></>,
 }

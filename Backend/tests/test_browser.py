@@ -540,6 +540,34 @@ def test_map_opens_on_your_location_and_the_button_returns_to_it(dashboard):
     page.locator(".locate-button").click()  # recentres without errors
 
 
+def test_full_screen_button_fills_the_screen_with_the_map(dashboard):
+    page = dashboard
+    page.open()
+    button = page.locator(".fullscreen-button")
+    expect(button).to_have_attribute("aria-pressed", "false")
+    button.click()
+    expect(button).to_have_attribute("aria-pressed", "true")
+    assert page.evaluate("document.fullscreenElement?.classList.contains('map-wrap')")
+    box = page.locator(".map-wrap").bounding_box()
+    assert box["height"] == page.evaluate("window.innerHeight")
+    expect(page.locator(".map-wrap .map-legend")).to_be_visible()  # legend and credits come along
+    expect(page.locator(".map-credit")).to_contain_text("© OpenStreetMap")
+    button.click()
+    expect(button).to_have_attribute("aria-pressed", "false")
+    expect(page.locator(".map-credit")).to_have_count(0)
+
+
+def test_full_screen_falls_back_to_the_window_without_browser_support(dashboard):
+    page = dashboard
+    page.add_init_script("Object.defineProperty(Document.prototype, 'fullscreenEnabled', { get: () => false })")  # like iPhone Safari
+    page.open()
+    page.locator(".fullscreen-button").click()
+    expect(page.locator(".map-wrap.fullscreen")).to_have_count(1)
+    assert page.locator(".map-wrap").bounding_box()["height"] == page.evaluate("window.innerHeight")
+    page.keyboard.press("Escape")
+    expect(page.locator(".map-wrap.fullscreen")).to_have_count(0)
+
+
 def test_map_stays_on_the_region_when_location_is_refused(dashboard):
     page = dashboard
     page.add_init_script(geolocation("fail({ code: 1, PERMISSION_DENIED: 1 })"))
