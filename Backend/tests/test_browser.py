@@ -591,41 +591,97 @@ def osrm_with_steps(request):
     return answer
 
 
-def test_start_follows_the_route_turn_by_turn_until_arrival(dashboard, providers):
-    providers["router.project-osrm.org"] = osrm_with_steps
-    page = dashboard
+SPEECH = """window.said = []
+Object.defineProperty(window, 'speechSynthesis', { value: { speak: (utterance) => window.said.push(utterance.text), cancel: () => {} } })"""
+
+
+def start_navigation(page):
     page.add_init_script(DRIVING)
+    page.add_init_script(SPEECH)
     page.open()
     expect(page.locator("#origin")).to_have_value("Your location")
-    expect(page.locator(".start-button")).to_have_count(0)  # nothing to start before a route is found
     page.fill("#destination", "Shillong")
     page.keyboard.press("Escape")
     page.click(".primary-button")
     expect(page.locator(".route-card")).to_have_count(2)
-
     page.locator(".start-button").click()
+
+
+def test_start_follows_the_route_turn_by_turn_until_arrival(dashboard, providers):
+    providers["router.project-osrm.org"] = osrm_with_steps
+    page = dashboard
+    start_navigation(page)
     banner = page.locator(".nav-banner")
-    expect(banner).to_contain_text("Turn left onto GS Road (NH6)")
-    expect(banner).to_contain_text("50 km")
+    # Laid out like Google Maps: the turn and its distance, the action above the road name.
+    expect(banner.locator(".nav-turn")).to_have_text("50 km")
+    expect(banner.locator(".nav-road span")).to_have_text("Turn left")
+    expect(banner.locator(".nav-road b")).to_have_text("GS Road (NH6)")
     expect(page.locator(".map-wrap.fullscreen")).to_have_count(1)  # navigation fills the screen
     expect(page.locator(".map-search")).to_have_count(0)
-    expect(page.locator(".nav-bar")).to_contain_text("arrive")
-    expect(page.locator(".leaflet-overlay-pane path.leaflet-interactive[stroke-dasharray]")).to_have_count(0)  # only the followed route
+    expect(page.locator(".nav-sheet .nav-eta")).to_contain_text("min")
+    expect(page.locator(".nav-sheet .nav-eta")).to_contain_text("km")
+    expect(page.locator(".leaflet-marker-pane .nav-arrow")).to_have_count(1)  # an arrow, not the dot
+    expect(page.locator(".locate-button")).to_be_hidden()  # the dashboard's own controls step aside
+    page.wait_for_function("window.said.length > 0")
+    assert page.evaluate("window.said[0]") == "In 50 kilometres, turn left onto GS Road (NH 6)"
 
     page.evaluate("driveTo(26.05, 92.45)")  # well away from both routes
     expect(page.locator(".nav-off-route")).to_contain_text("You are off the route")
     page.locator(".nav-off-route button").click()
-    expect(banner).to_contain_text("Turn left onto GS Road (NH6)")  # a new route from here, still navigating
+    expect(banner.locator(".nav-road b")).to_have_text("GS Road (NH6)")  # a new route from here, still navigating
     plans = [request for host, request in providers["calls"] if host == "router.project-osrm.org"]
     assert "92.45,26.05" in plans[-1].full_url
 
     page.evaluate("driveTo(25.58, 91.88)")
     expect(banner).to_contain_text("You have arrived")
     expect(banner).to_contain_text("Shillong")
-    page.locator(".nav-exit", has_text="Done").click()
+    page.wait_for_function("window.said.includes('You have arrived at Shillong')")
+    page.get_by_role("button", name="Done").click()
     expect(page.locator(".navigation")).to_have_count(0)
     expect(page.locator(".map-wrap.fullscreen")).to_have_count(0)  # the dashboard is back
     expect(page.locator(".map-start")).to_be_visible()  # the route can be started again from the map
+
+
+def test_navigation_recentres_shows_the_overview_mutes_and_reroutes_on_its_own(dashboard, providers):
+    providers["router.project-osrm.org"] = osrm_with_steps
+    page = dashboard
+    start_navigation(page)
+    expect(page.locator(".nav-banner .nav-road b")).to_have_text("GS Road (NH6)")
+
+    box = page.locator(".map-canvas").bounding_box()
+    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(box["x"] + box["width"] / 2 + 150, box["y"] + box["height"] / 2 + 80, steps=8)
+    page.mouse.up()
+    recentre = page.locator(".nav-recentre")
+    expect(recentre).to_be_visible()  # looking around stops the map following
+    recentre.click()
+    expect(recentre).to_have_count(0)
+
+    overview = page.get_by_role("button", name="Route overview")
+    overview.click()
+    expect(overview).to_have_attribute("aria-pressed", "true")
+    expect(page.locator(".nav-recentre")).to_be_visible()
+    overview.click()
+    expect(overview).to_have_attribute("aria-pressed", "false")
+
+    mute = page.get_by_role("button", name="Mute voice directions")
+    mute.click()
+    expect(page.get_by_role("button", name="Turn on voice directions")).to_have_attribute("aria-pressed", "false")
+    assert page.evaluate("localStorage.getItem('india-trace.voice')") == "off"
+
+    before = sum(host == "router.project-osrm.org" for host, _ in providers["calls"])
+    page.evaluate("driveTo(26.05, 92.45)")
+    expect(page.locator(".nav-off-route")).to_be_visible()  # one position off the route: only a warning
+    assert sum(host == "router.project-osrm.org" for host, _ in providers["calls"]) == before
+    page.evaluate("driveTo(26.051, 92.451)")  # still off the route at the next position: a new route on its own
+    for _ in range(50):  # the new route is requested without pressing anything
+        if sum(host == "router.project-osrm.org" for host, _ in providers["calls"]) > before:
+            break
+        page.wait_for_timeout(100)
+    plans = [request for host, request in providers["calls"] if host == "router.project-osrm.org"]
+    assert len(plans) == before + 1 and "92.451,26.051" in plans[-1].full_url
+    expect(page.locator(".nav-banner .nav-road b")).to_have_text("GS Road (NH6)")
 
 
 def test_start_is_only_for_routes_from_your_location(dashboard, providers):

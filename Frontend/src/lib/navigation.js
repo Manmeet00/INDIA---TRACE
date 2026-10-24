@@ -7,7 +7,7 @@ export const ARRIVED_M = 40
 const COMPASS = ['north', 'northeast', 'east', 'southeast', 'south', 'southwest', 'west', 'northwest']
 const ORDINAL = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth']
 
-function road(step) {
+export function road(step) {
   const ref = step.ref ? step.ref.split(';')[0].trim() : ''
   if (step.name && ref && !step.name.includes(ref)) return `${step.name} (${ref})`
   return step.name || ref
@@ -36,6 +36,21 @@ export function instruction(step) {
     case 'exit rotary': return `Exit the roundabout${onto}`
     default: return way ? `Continue ${way}${onto}` : `Continue${onto || ' on the road'}`
   }
+}
+
+/** A step as Google Maps shows it: the road in large type, the action ("Turn left") above it. */
+export function instructionParts(step) {
+  const name = road(step)
+  if (!name || step.type === 'arrive') return { headline: instruction(step), action: '' }
+  return { headline: name, action: instruction({ ...step, name: '', ref: '' }).replace(/ on the road$/, '') }
+}
+
+/** What the voice says: "In 400 metres, turn left onto GS Road", or just the instruction when it is close. */
+export function spoken(step, metres) {
+  const words = instruction(step).replace(/\((NH|SH|NE)[-\s]?(\w+)\)/g, '($1 $2)')
+  if (metres == null || metres < 150) return words
+  const distance = metres < 1000 ? `${Math.round(metres / 50) * 50} metres` : `${(metres / 1000).toFixed(metres < 10000 ? 1 : 0)} kilometres`
+  return `In ${distance}, ${words.charAt(0).toLowerCase()}${words.slice(1)}`
 }
 
 /** The arrow for a step: left, right, slight-left, uturn, straight, roundabout or arrive. */
@@ -79,7 +94,7 @@ export function prepareRoute(route) {
  */
 export function progress(prepared, { latitude, longitude, accuracy = 0 }) {
   const point = [longitude, latitude]
-  let best = { gap: Infinity, travelled: 0 }
+  let best = { gap: Infinity, travelled: 0, segment: 1, point: [longitude, latitude] }
   const { line, along } = prepared
   for (let index = 1; index < line.length; index += 1) {
     const a = line[index - 1]
@@ -90,13 +105,18 @@ export function progress(prepared, { latitude, longitude, accuracy = 0 }) {
       / ((b[0] - a[0]) ** 2 * Math.cos((a[1] * Math.PI) / 180) ** 2 + (b[1] - a[1]) ** 2))) : 0
     const closest = [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])]
     const gap = metres(point, closest)
-    if (gap < best.gap) best = { gap, travelled: along[index - 1] + t * (along[index] - along[index - 1]) }
+    if (gap < best.gap) best = { gap, travelled: along[index - 1] + t * (along[index] - along[index - 1]), segment: index, point: closest }
   }
   const remaining = Math.max(0, prepared.distance - best.travelled)
   let step = prepared.stepsAt.findIndex((at) => at > best.travelled + 5)
   if (step === -1) step = prepared.steps.length - 1
+  const [a, b] = [line[best.segment - 1], line[best.segment]]
+  const bearing = (Math.atan2((b[0] - a[0]) * Math.cos((a[1] * Math.PI) / 180), b[1] - a[1]) * 180) / Math.PI
   return {
     travelled: best.travelled,
+    segment: best.segment, // the route line continues from this point index
+    snapped: best.point, // [longitude, latitude] on the route, where the arrow is drawn while on it
+    bearing: (bearing + 360) % 360, // direction of travel along the route, degrees from north
     remaining,
     remainingTime: prepared.distance ? (prepared.duration * remaining) / prepared.distance : 0,
     offRoute: best.gap > Math.max(OFF_ROUTE_M, accuracy),

@@ -13,6 +13,7 @@ import { INACTIVE_STATES, MAP_CATEGORIES, formatTime, mapCategory, placeName, st
 import { BORDER_COLOR, HERE_COLOR, HERE_ZOOM, INDIA_BOUNDS, MASK_COLOR, inIndia, insideBoundary } from '../lib/mapStyle.js'
 import { placeNamesInView } from '../lib/placeNames.js'
 import { drawRoadTile } from '../lib/hybridRoads.js'
+import { prepareRoute, progress } from '../lib/navigation.js'
 import { getAirQuality, loadIndiaBoundary } from '../services/api.js'
 
 const WORLD = [[-89, -180], [-89, 180], [89, 180], [89, -180]]
@@ -66,15 +67,39 @@ function HereLayer({ here, hasPlan, focusKey }) {
   </>
 }
 
-// While navigating, the map stays on the device, close in, as each new position arrives.
-function FollowHere({ here }) {
+// The followed route as Google Maps draws it while navigating: the part already driven in grey, the rest in blue
+// with a darker edge, and a blue arrow pointing along the route (on it while on the route, at the device when
+// off it). Following keeps the map on the arrow; dragging the map stops that until Re-centre. Overview fits the
+// rest of the route.
+function NavigationLayer({ line, now, here, following, overview, onUserMove }) {
   const map = useMap()
+  useMapEvents({ dragstart: onUserMove })
+  const position = now && !now.offRoute ? [now.snapped[1], now.snapped[0]] : inIndia(here) ? [here.latitude, here.longitude] : null
+  const latitude = position?.[0]
+  const longitude = position?.[1]
   useEffect(() => {
-    if (inIndia(here)) map.setView([here.latitude, here.longitude], Math.max(map.getZoom(), NAVIGATION_ZOOM), { animate: false })
-  }, [here, map])
-  return null
+    if (following && latitude != null) map.setView([latitude, longitude], Math.max(map.getZoom(), NAVIGATION_ZOOM), { animate: false })
+  }, [following, latitude, longitude, map])
+  const ahead = useMemo(() => {
+    const rest = line.slice(now ? now.segment : 0).map(([lon, lat]) => [lat, lon])
+    return now && !now.offRoute ? [[now.snapped[1], now.snapped[0]], ...rest] : rest
+  }, [line, now])
+  const behind = useMemo(() => (now && !now.offRoute
+    ? [...line.slice(0, now.segment).map(([lon, lat]) => [lat, lon]), [now.snapped[1], now.snapped[0]]] : []), [line, now])
+  useEffect(() => {
+    // Room for the banner at the top and the sheet at the bottom.
+    if (overview && ahead.length > 1) map.fitBounds(ahead, { paddingTopLeft: [40, 150], paddingBottomRight: [40, 120], animate: false })
+  }, [overview, ahead, map])
+  return <>
+    {behind.length > 1 && <Polyline positions={behind} interactive={false} pathOptions={{ color: '#9aa0a6', weight: 7, opacity: 0.95 }}/>}
+    <Polyline positions={ahead} interactive={false} pathOptions={{ color: '#1967d2', weight: 10, opacity: 1 }}/>
+    <Polyline positions={ahead} interactive={false} pathOptions={{ color: '#4285f4', weight: 6, opacity: 1 }}/>
+    {position && <Marker position={position} interactive={false} keyboard={false} zIndexOffset={1000}
+      icon={L.divIcon({ className: '', html: `<span class="nav-arrow" style="transform: rotate(${Math.round(now?.bearing || 0)}deg)">${ARROW_SVG}</span>`, iconSize: [40, 40], iconAnchor: [20, 20] })}/>}
+  </>
 }
-const NAVIGATION_ZOOM = 16
+const NAVIGATION_ZOOM = 17
+const ARROW_SVG = '<svg width="40" height="40" viewBox="0 0 40 40"><path d="M20 4 33 34 20 27 7 34Z" fill="#1a73e8" stroke="#fff" stroke-width="3" stroke-linejoin="round"/></svg>'
 const TOLL_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V9h7v12M4 13h7M11 12h9M14 12v-2M17 12v-2"/></svg>'
 
 // Current air quality at your position and at the route's start and end, as small AQI labels.
@@ -179,7 +204,9 @@ function DetailLayers({ overlays, here, plan }) {
 
 // Only reports with reviewer-confirmed coordinates are drawn; text mentions never become map points.
 // navigating: only the followed route is drawn and the map follows the device instead of fitting the route.
-function DashboardMap({ plan, incidents, selectedRoute, selectedIncident, onSelectIncident, hiddenTypes, boundary, here, focusKey, base, overlays, navigating }) {
+// navigation: { now, following, overview, onUserMove } while a route is followed (see NavigationLayer).
+function DashboardMap({ plan, incidents, selectedRoute, selectedIncident, onSelectIncident, hiddenTypes, boundary, here, focusKey, base, overlays, navigation }) {
+  const navigating = Boolean(navigation)
   const route = plan?.routes?.find((item) => item.id === selectedRoute) || plan?.routes?.[0]
   const startHere = !plan && inIndia(here)
   const center = plan?.origin ? [plan.origin.latitude, plan.origin.longitude] : startHere ? [here.latitude, here.longitude] : [26.2, 92.4]
@@ -187,15 +214,15 @@ function DashboardMap({ plan, incidents, selectedRoute, selectedIncident, onSele
   return <MapContainer center={center} zoom={plan ? 7 : startHere ? HERE_ZOOM : 6} minZoom={4} maxBounds={INDIA_BOUNDS} maxBoundsViscosity={1} zoomControl={false} attributionControl={false} className="map-canvas">
     {boundary && <IndiaMask boundary={boundary}/>}
     {route && !navigating && <MapBounds geometry={route.geometry} />}
-    {navigating && <FollowHere here={here}/>}
     <TileLayer key={base} url={BASE_LAYERS[base].url} maxZoom={BASE_LAYERS[base].maxZoom} {...(BASE_LAYERS[base].subdomains && { subdomains: BASE_LAYERS[base].subdomains })} {...TILE_OPTIONS}/>
     {BASE_LAYERS[base].roads && <HybridRoads key={`${base}-roads`} maxZoom={BASE_LAYERS[base].maxZoom}/>}
     {BASE_LAYERS[base].labels && <Pane name="place-labels" style={{ zIndex: 380, pointerEvents: 'none' }}><PlaceLabels boundary={boundary}/></Pane>}
     <DetailLayers overlays={overlays} here={here} plan={plan}/>
     <ZoomControl position="bottomright" />
     <ScaleControl position="bottomright" imperial={false}/>
-    <HereLayer here={here} hasPlan={Boolean(plan)} focusKey={focusKey}/>
-    {plan?.routes && [...plan.routes].filter((item) => !navigating || item.id === route?.id).sort((a, b) => (a.id === route?.id) - (b.id === route?.id)).map((item) => <Polyline key={item.id} positions={item.geometry.coordinates.map(([lon, lat]) => [lat, lon])} pathOptions={{ color: item.id === route?.id ? '#0878e8' : '#64748b', opacity: item.id === route?.id ? 0.95 : 0.55, weight: item.id === route?.id ? 5 : 3, dashArray: item.id === route?.id ? undefined : '8 9' }} />)}
+    {!navigating && <HereLayer here={here} hasPlan={Boolean(plan)} focusKey={focusKey}/>}
+    {navigating && route && <NavigationLayer line={route.geometry.coordinates} here={here} {...navigation}/>}
+    {plan?.routes && [...plan.routes].filter(() => !navigating).sort((a, b) => (a.id === route?.id) - (b.id === route?.id)).map((item) => <Polyline key={item.id} positions={item.geometry.coordinates.map(([lon, lat]) => [lat, lon])} pathOptions={{ color: item.id === route?.id ? '#0878e8' : '#64748b', opacity: item.id === route?.id ? 0.95 : 0.55, weight: item.id === route?.id ? 5 : 3, dashArray: item.id === route?.id ? undefined : '8 9' }} />)}
     {route?.tolls?.plazas?.map((plaza) => <Marker key={`toll-${plaza.code || plaza.name}`} position={[plaza.latitude, plaza.longitude]} keyboard={false}
       icon={L.divIcon({ className: '', html: `<span class="toll-marker">${TOLL_SVG}</span>`, iconSize: [22, 22], iconAnchor: [11, 11] })}>
       <Tooltip>{plaza.name} toll plaza · {plaza.km_from_start} km from the start · price not available</Tooltip></Marker>)}
@@ -260,15 +287,30 @@ export default function RouteMap({ plan, mapConfig, here, hereProblem, onRetryHe
     enter()
     return exit
   }, [navigating, enter, exit])
+  // Where the device is along the followed route, shared by the guidance panel and the map.
+  const followed = navigation?.route
+  const prepared = useMemo(() => (followed?.steps?.length ? prepareRoute(followed) : null), [followed])
+  const now = navigating && prepared && inIndia(here) ? progress(prepared, here) : null
+  // Following the arrow, or looking around (after a drag) or at the whole route (overview); reset at each start.
+  const [view, setView] = useState({ following: true, overview: false })
+  const [viewFor, setViewFor] = useState(navigating)
+  if (viewFor !== navigating) {
+    setViewFor(navigating)
+    setView({ following: true, overview: false })
+  }
+  const onUserMove = useCallback(() => setView({ following: false, overview: false }), [])
+  const recentre = () => setView({ following: true, overview: false })
+  const toggleOverview = () => setView((current) => (current.overview ? { following: true, overview: false } : { following: false, overview: true }))
   const useMappls = mapConfig?.provider === 'mappls' && !mapplsProblem
   const credit = `${useMappls ? 'Map © Mappls (MapmyIndia)' : [BASE_LAYERS[layers.base].credit, ...layers.overlays.map((key) => OVERLAYS[key].credit)].join(' · ')} · India boundary: Survey of India`
   const status = plan?.offline_demo ? 'Historical snapshot' : plan ? `Routing fetched ${formatTime(plan.routing_fetched_at)}` : 'Map ready'
   return <article className="panel map-panel"><div className="map-heading"><div><span className="section-kicker">NORTHEAST INDIA · NETWORK VIEW</span><h2>{plan ? `${placeName(plan.origin)} to ${placeName(plan.destination)}` : 'Regional road intelligence'}</h2></div><span className={`map-status ${plan?.offline_demo ? 'demo' : ''}`}><i/>{status}</span></div>
     {mapplsProblem && <p className="map-fallback" role="status">{mapplsProblem} Showing OpenStreetMap instead.</p>}
-    <div className={`map-wrap${fullscreen.on ? ' fullscreen' : ''}`} ref={wrap}>{!mapConfig ? <div className="map-canvas"/> : useMappls
+    <div className={`map-wrap${fullscreen.on ? ' fullscreen' : ''}${navigating ? ' navigating' : ''}`} ref={wrap}>{!mapConfig ? <div className="map-canvas"/> : useMappls
       ? <MapplsMap apiKey={mapConfig.mappls_key} plan={plan} boundary={boundary} here={here} focusKey={focusKey} {...mapProps} onUnavailable={onUnavailable}/>
-      : <DashboardMap plan={plan} boundary={boundary} here={here} focusKey={focusKey} base={layers.base} overlays={layers.overlays} navigating={navigating} {...mapProps}/>}
-      {navigation ? <NavigationPanel {...navigation} here={here}/> : <MapSearch onSearch={onSearch} status={searchStatus}/>}
+      : <DashboardMap plan={plan} boundary={boundary} here={here} focusKey={focusKey} base={layers.base} overlays={layers.overlays} navigation={navigating ? { now, ...view, onUserMove } : null} {...mapProps}/>}
+      {navigation ? <NavigationPanel {...navigation} prepared={prepared} now={now} here={here} following={view.following}
+        onRecentre={recentre} overview={view.overview} onOverview={toggleOverview}/> : <MapSearch onSearch={onSearch} status={searchStatus}/>}
       {plan && onStart && !navigation && <button type="button" className="map-start" onClick={onStart}><Icon name="navigate" size={18}/> Start</button>}
       {mapConfig && <LayersPanel base={layers.base} overlays={layers.overlays} onBase={layers.setBase} onToggle={layers.toggleOverlay} mappls={useMappls}/>}
       <button type="button" className="locate-button" onClick={() => (here ? setFocusKey((key) => key + 1) : onRetryHere())} disabled={Boolean(here) && !inIndia(here)} aria-label="Show my location" title={inIndia(here) ? 'Show my location' : here ? hereText : `${hereText} Press to try again.`}><Icon name="locate" size={20}/></button>
