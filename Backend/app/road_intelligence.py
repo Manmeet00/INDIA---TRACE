@@ -23,6 +23,7 @@ from fastapi import HTTPException
 from .config import get_settings
 from .database import get_connection
 from .evidence import annotate
+from .media import media_for
 from .monitoring import log_call
 
 
@@ -240,7 +241,7 @@ def parse_published(text: str | None, collected_at: str) -> tuple[datetime | Non
 
 def incident_from_row(row: sqlite3.Row) -> dict[str, Any]:
     published, approximate = parse_published(row["published_at"], row["collected_at"])
-    return {
+    item = {
         "id": row["id"], "title": row["title"], "summary": row["summary"],
         "source_name": row["source_name"], "source_url": row["source_url"],
         "published_at": row["published_at"], "collected_at": row["collected_at"],
@@ -253,8 +254,10 @@ def incident_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "collection_run_id": row["collection_run_id"],
         # Provenance: which TinyFish search found the report, and what TinyFish Fetch read from its page.
         **{key: row[key] for key in ("publisher", "search_query", "search_kind", "last_seen_at", "published_source",
-                                     "page_description", "page_excerpt", "page_author", "fetched_at", "fetch_error")},
+                                     "page_description", "page_excerpt", "page_author", "fetched_at", "fetch_error", "page_image")},
     }
+    item["media"] = media_for(item)  # the source's own video, post or preview picture, if it has one
+    return item
 
 
 def load_incidents(connection: sqlite3.Connection, limit: int = 500) -> list[dict[str, Any]]:

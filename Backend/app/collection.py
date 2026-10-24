@@ -25,6 +25,7 @@ from fastapi import HTTPException
 from .config import get_settings
 from .evidence import normalize_source_url, source_category
 from .monitoring import log_call
+from .media import collect_preview_images
 from .places import geocode_places, pending_places
 from .regions import active_region
 from .road_intelligence import _request_json, load_incidents
@@ -258,6 +259,9 @@ def collect_candidates(connection: sqlite3.Connection, searches: list[dict[str, 
                     filtered=filtered, failed_searches=failed_searches, phase="searching" if done < len(searches) else "reading pages")
     fetched, fetch_failed = _fetch_pages(connection, new_ids, key, run_id)
     located = locate_places(connection, run_id)
+    if new_ids:
+        _update_run(connection, run_id, phase="reading preview images")
+        collect_preview_images(connection, new_ids)
     status = "failed" if failed_searches == len(searches) else "partial" if failed_searches else "complete"
     if status == "failed":
         message = "TinyFish could not return search results. Try again later."

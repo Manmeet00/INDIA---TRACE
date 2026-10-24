@@ -182,6 +182,8 @@ class IncidentOut(BaseModel):
     location_confidence: str = "none"
     # The town a report names, at its real coordinates; approximate, never the exact spot (app/places.py).
     approximate_location: dict[str, str | float] | None = None
+    # The source's own video, post or preview picture (app/media.py): kind is youtube, instagram, facebook or image.
+    media: dict[str, str] | None = None
     event_types: list[str] = Field(default_factory=list)
     duplicate_ids: list[str] = Field(default_factory=list)
     related_ids: list[str] = Field(default_factory=list)

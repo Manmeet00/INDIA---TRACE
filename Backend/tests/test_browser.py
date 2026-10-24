@@ -18,6 +18,7 @@ from urllib.parse import urlsplit
 import pytest
 
 from app.config import get_settings
+from app.database import get_connection
 from app.main import DATABASE_UNAVAILABLE
 from conftest import SEARCH
 
@@ -465,3 +466,28 @@ def test_route_form_suggests_places_and_uses_your_location(dashboard, providers)
     page.click(".primary-button")
     expect(page.locator(".route-card")).to_have_count(2)
     expect(page.locator(".map-heading h2")).to_have_text("Your location to Shillong")
+
+
+def test_evidence_desk_shows_the_sources_own_video_and_hides_a_picture_that_will_not_load(dashboard, add_incident):
+    add_incident("video", summary="Video of the NH-6 landslide", source_url="https://www.youtube.com/watch?v=bh1TVzezZWs")
+    add_incident("photo", summary="Landslide photo on NH-6", source_url="https://news.example.org/nh6")
+    with get_connection() as connection:  # a picture whose host the test blocks, as a publisher might
+        connection.execute("UPDATE incidents SET page_image = 'https://img.example.org/slide.jpg' WHERE id = 'photo'")
+    page = dashboard
+    frames = []
+    page.route("https://www.youtube-nocookie.com/**", lambda route: (frames.append(route.request.url), route.fulfill(status=200, body="<p>player</p>", headers={"content-type": "text/html"})))
+    page.open()
+    expect(page.locator(".evidence-row", has_text="Report video")).to_contain_text("· video")
+    expect(page.locator(".evidence-row", has_text="Report photo")).to_contain_text("· photo")
+
+    page.locator(".evidence-row", has_text="Report video").click()
+    expect(page.locator(".embed-load")).to_contain_text("Show the YouTube video")
+    expect(page.locator(".evidence-media figcaption")).to_have_text("Nothing loads from YouTube until you choose to.")
+    assert frames == []  # nothing from YouTube before the click
+    page.locator(".embed-load").click()
+    expect(page.locator(".evidence-media iframe")).to_have_attribute("src", "https://www.youtube-nocookie.com/embed/bh1TVzezZWs")
+    expect(page.locator(".evidence-media")).to_have_count(1)
+
+    page.locator(".evidence-row", has_text="Report photo").click()
+    expect(page.locator(".selected-incident h3")).to_have_text("Report photo")
+    expect(page.locator(".evidence-media")).to_have_count(0)  # the picture failed to load, so it is left out

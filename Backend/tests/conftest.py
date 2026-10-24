@@ -17,6 +17,9 @@ def no_network(monkeypatch):
         raise AssertionError(f"Test tried to reach the network: {request.full_url}")
     monkeypatch.setattr(road_intelligence, "urlopen", refuse)
 
+    # Pages have no preview image unless a test says so (test_media.py tests the real reader with fake pages).
+    monkeypatch.setattr("app.media.preview_image", lambda url: None)
+
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):

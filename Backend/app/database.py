@@ -146,7 +146,8 @@ CREATE TABLE IF NOT EXISTS provider_cache (
 ADDED_COLUMNS = {
     "incidents": dict.fromkeys(("reviewed_at", "review_note", "publisher", "search_query", "search_kind", "last_seen_at",
                                 "published_source", "page_description", "page_excerpt", "page_author", "fetched_at",
-                                "fetch_error", "collection_run_id", "last_checked_at", "page_hash"), "TEXT"),
+                                "fetch_error", "collection_run_id", "last_checked_at", "page_hash", "page_image",
+                                "page_image_checked_at"), "TEXT"),
     "collection_runs": {"searches_done": "INTEGER NOT NULL DEFAULT 0", "filtered": "INTEGER NOT NULL DEFAULT 0",
                         "phase": "TEXT", "message": "TEXT"},
 }

@@ -16,6 +16,7 @@ from .collection import (NOT_CONFIGURED, collect_candidates, collection_run, col
 from .config import get_settings
 from .database import get_connection, initialize_database
 from .monitoring import log_route_plan, metrics
+from .media import collect_preview_images
 from .places import suggest_places
 from .regions import active_region, coverage_by_state
 from .repository import add_event, create_trace, event_from_row, trace_from_row, update_trace
@@ -308,6 +309,14 @@ def locate_named_places():
     a second). Collection does this for new reports; this fills in reports collected before."""
     with jobs.exclusive(), get_connection() as connection:
         return locate_places(connection)
+
+
+@app.post("/api/media/collect")
+def collect_media():
+    """Reads the link-preview picture of news and web reports not checked yet (collection does this for
+    new reports). Video and social posts need no reading: their embed comes from the source URL."""
+    with jobs.exclusive(), get_connection() as connection:
+        return collect_preview_images(connection)
 
 
 @app.get("/api/map-config")
