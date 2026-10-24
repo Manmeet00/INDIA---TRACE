@@ -123,8 +123,11 @@ def plan_route(payload) -> dict[str, Any]:
     for index, route in enumerate(candidates):
         route["priority_rank"] = index + 1
     newest_collection = max((item["collected_at"] for item in incident_items), default=None)
+    incidents_by_id = {item["id"]: item for item in incident_items}
     for route in candidates:
         route["recommendation"], route["recommendation_reasons"] = recommend(route, candidates, newest_collection)
+        route["impact_reports"] = impact_reports(route["exposure"], incidents_by_id)
+        route["coverage"] = route_coverage(route["highways"], incident_items)
     return {
         "origin": origin,
         "destination": destination,
@@ -136,6 +139,7 @@ def plan_route(payload) -> dict[str, Any]:
         "recommendation": candidates[0]["recommendation"],
         "recommendation_reason": " ".join(candidates[0]["recommendation_reasons"]),
         "data_note": "Distance and duration are OSRM estimates without live traffic. They do not include verified disruption or vehicle restriction data.",
+        "impact_note": IMPACT_NOTE,
     }
 
 
@@ -174,18 +178,6 @@ def parse_published(text: str | None, collected_at: str) -> tuple[datetime | Non
     return None, False
 
 
-def _freshness(published: datetime | None, approximate: bool) -> str:
-    if published is None:
-        return "unknown"
-    age_seconds = (datetime.now(timezone.utc) - published).total_seconds()
-    if age_seconds < 0:
-        # A date-only value can be up to a day ahead of UTC (for example a date in IST).
-        if not approximate or age_seconds < -86400:
-            return "unknown"
-        age_seconds = 0
-    return "fresh" if age_seconds <= EVIDENCE_MAX_AGE_S else "stale"
-
-
 def incident_from_row(row: sqlite3.Row) -> dict[str, Any]:
     published, approximate = parse_published(row["published_at"], row["collected_at"])
     return {
@@ -195,7 +187,7 @@ def incident_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "published_estimate": published, "published_approximate": approximate,
         "latitude": row["latitude"], "longitude": row["longitude"],
         "location_text": row["location_text"], "verification": row["verification"],
-        "freshness": _freshness(published, approximate), "reviewed_at": row["reviewed_at"],
+        "reviewed_at": row["reviewed_at"],
         "review_note": row["review_note"],
         # Provenance: which TinyFish search found the report, and what TinyFish Fetch read from its page.
         **{key: row[key] for key in ("publisher", "search_query", "search_kind", "last_seen_at", "published_source",
@@ -212,13 +204,19 @@ def load_incidents(connection: sqlite3.Connection, limit: int = 500) -> list[dic
         history.setdefault(review["incident_id"], []).append({
             key: review[key] for key in ("previous_verification", "verification", "review_note", "location_changed",
                                          "location_text", "latitude", "longitude", "reviewed_at")})
+    flags: dict[str, list[dict[str, Any]]] = {}
+    for flag in connection.execute("SELECT * FROM incident_flags WHERE resolved_at IS NULL ORDER BY created_at DESC").fetchall():
+        flags.setdefault(flag["incident_id"], []).append({key: flag[key] for key in ("reason", "note", "created_at")})
     for incident in incidents:
         incident["review_history"] = history.get(incident["id"], [])
+        incident["open_flags"] = flags.get(incident["id"], [])
     return annotate(incidents)
 
 
 MATCH_TOLERANCE_M = 3000
 EVIDENCE_MAX_AGE_S = 24 * 3600
+# Reports a reviewer has dismissed as irrelevant or marked resolved by an authoritative update.
+INACTIVE_STATES = {"dismissed", "resolved"}
 VEHICLE_NOTE = "Vehicle restrictions such as weight, height and ghat-road limits are not checked."
 
 
@@ -230,7 +228,7 @@ def route_exposure(route_geometry: dict[str, Any], incidents: list[dict[str, Any
     highway the route uses are listed under highway_mentions as low-confidence relevance;
     the rest only count as unlocated. Dismissed reports are ignored.
     """
-    relevant = [item for item in incidents if item["verification"] != "dismissed"]
+    relevant = [item for item in incidents if item["verification"] not in INACTIVE_STATES]
     located = [item for item in relevant if item.get("latitude") is not None and item.get("longitude") is not None]
     located_ids = {item["id"] for item in located}
     unlocated = [item for item in relevant if item["id"] not in located_ids]
@@ -246,6 +244,7 @@ def route_exposure(route_geometry: dict[str, Any], incidents: list[dict[str, Any
         "nearby_stale": 0,
         "nearby_confirmed_stale": 0,
         "nearby_ids": [],
+        "nearby_distances": {},
         "highway_mentions": highway_mentions,
         "highway_mention_ids": mention_ids,
         "highway_mentions_stale": sum(item["freshness"] == "stale" for item in unlocated if item["id"] in mention_ids),
@@ -263,14 +262,78 @@ def route_exposure(route_geometry: dict[str, Any], incidents: list[dict[str, Any
         px, py = incident["longitude"] * sx, incident["latitude"] * sy
         if not (min_x <= px <= max_x and min_y <= py <= max_y):
             continue
-        if _distance_to_line(px, py, xy) > tolerance_m:
+        distance = _distance_to_line(px, py, xy)
+        if distance > tolerance_m:
             continue
+        exposure["nearby_distances"][incident["id"]] = round(distance)
         state = incident["verification"]
         exposure["nearby"][state] = exposure["nearby"].get(state, 0) + 1
         exposure["nearby_stale"] += incident["freshness"] == "stale"
         exposure["nearby_confirmed_stale"] += state == "confirmed" and incident["freshness"] == "stale"
         exposure["nearby_ids"].append(incident["id"])
     return exposure
+
+
+IMPACT_NOTE = ("The relevance score orders reports for review: location up to 50, freshness 20, evidence 20, "
+               "event severity 10. It is not a probability that the road is blocked.")
+SEVERITY_POINTS = {"closure": 10, "landslide": 10, "bridge": 10, "flood": 8, "accident": 6, "construction": 4, "weather": 3}
+
+
+def impact_reports(exposure: dict[str, Any], incidents_by_id: dict[str, dict[str, Any]], limit: int = 10) -> list[dict[str, Any]]:
+    """Reports that may affect a route, each with a relevance score and the reasons behind it (report 6.6)."""
+    matches = [(incident_id, "precise") for incident_id in exposure["nearby_ids"]]
+    matches += [(incident_id, "road") for incident_id in exposure["highway_mention_ids"]]
+    scored = []
+    for incident_id, match in matches:
+        item = incidents_by_id[incident_id]
+        if match == "precise":
+            distance = exposure["nearby_distances"][incident_id]
+            location = 30 + round(20 * (1 - distance / exposure["tolerance_m"]))
+            where = f"{distance / 1000:.1f} km from the route (reviewer-confirmed location)"
+        else:
+            distance, location = None, 12
+            roads = ", ".join(road for road, ids in exposure["highway_mentions"].items() if incident_id in ids)
+            where = f"Names {roads}, which this route uses; where on the road is not known"
+        window = item["freshness_window_h"]
+        timing, fresh_points = {
+            "fresh": (f"Published within the {window} h window for {item['event_type']} reports", 20),
+            "stale": (f"Published more than {window} h ago ({item['event_type']} window); may be outdated", 0),
+        }.get(item["freshness"], ("Publication time unknown", 8))
+        if item["verification"] == "confirmed":
+            evidence = 20
+        elif item["corroborating_ids"]:
+            evidence = 15
+        elif item["verification"] == "conflicting" or item["conflict_ids"]:
+            evidence = 8
+        else:
+            evidence = 3 if item["verification"] == "unknown" else 5
+        scored.append({
+            "id": incident_id, "title": item["title"], "source_name": item["source_name"], "source_url": item["source_url"],
+            "published_at": item["published_at"], "evidence_status": item["evidence_status"], "event_type": item["event_type"],
+            "match": match, "distance_m": distance,
+            "score": location + fresh_points + evidence + SEVERITY_POINTS.get(item["event_type"], 2),
+            "factors": [where, timing, f"Evidence: {item['evidence_status']}", f"Event type: {item['event_type']}"],
+        })
+    return sorted(scored, key=lambda report: -report["score"])[:limit]
+
+
+def route_coverage(highways: dict[str, int], incidents: list[dict[str, Any]]) -> dict[str, Any]:
+    """Per-highway report counts, so missing reports show as a coverage gap rather than a clear road."""
+    active = [item for item in incidents if item["verification"] not in INACTIVE_STATES]
+    rows = []
+    for highway, metres in highways.items():
+        reports = [item for item in active if highway in item["mentions"]["highways"]]
+        rows.append({"highway": highway, "km": round(metres / 1000), "reports": len(reports),
+                     "fresh": sum(item["freshness"] == "fresh" for item in reports)})
+    gaps = [row for row in rows if not row["fresh"]]
+    if not rows:
+        note = "The routing service named no national highways on this route, so highway coverage is unknown."
+    elif gaps:
+        note = ("No reports within their freshness window for " + ", ".join(f"{row['highway']} ({row['km']} km)" for row in gaps)
+                + ". This is a coverage gap, not evidence that the road is clear.")
+    else:
+        note = "Every national highway on this route has at least one recent report; review them before dispatch."
+    return {"highways": rows, "note": note}
 
 
 def _distance_to_line(px: float, py: float, xy: list[tuple[float, float]]) -> float:

@@ -119,6 +119,15 @@ class RoutePlanRequest(BaseModel):
     priority: str = Field(default="balanced", pattern=r"^(balanced|fastest|shortest|cautious)$")
 
 
+class IncidentFlag(BaseModel):
+    reason: str = Field(pattern=r"^(wrong_location|outdated|duplicate|not_relevant|other)$")
+    note: str | None = Field(default=None, max_length=500)
+
+
+class FlagEntry(IncidentFlag):
+    created_at: datetime
+
+
 class ReviewEntry(BaseModel):
     previous_verification: str | None
     verification: str
@@ -161,6 +170,9 @@ class IncidentOut(BaseModel):
     mentions: dict[str, list[str]] = Field(default_factory=dict)
     report_signal: str | None = None
     event_type: str = "other"
+    freshness_window_h: int = 24
+    regions: list[str] = Field(default_factory=list)
+    location_confidence: str = "none"
     event_types: list[str] = Field(default_factory=list)
     duplicate_ids: list[str] = Field(default_factory=list)
     related_ids: list[str] = Field(default_factory=list)
@@ -168,6 +180,7 @@ class IncidentOut(BaseModel):
     corroborating_ids: list[str] = Field(default_factory=list)
     evidence_status: str = "unverified"
     review_history: list[ReviewEntry] = Field(default_factory=list)
+    open_flags: list[FlagEntry] = Field(default_factory=list)
 
 
 class CollectionRequest(BaseModel):
@@ -210,7 +223,7 @@ class CollectionResult(BaseModel):
 
 class IncidentReview(BaseModel):
     """Location fields left out of the request are kept; fields sent as null are cleared."""
-    verification: str = Field(pattern=r"^(confirmed|conflicting|unknown|unverified|dismissed)$")
+    verification: str = Field(pattern=r"^(confirmed|conflicting|unknown|unverified|dismissed|resolved)$")
     review_note: str = Field(min_length=3, max_length=1000)
     location_text: str | None = Field(default=None, max_length=300)
     latitude: float | None = Field(default=None, ge=-90, le=90)

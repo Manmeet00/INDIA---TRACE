@@ -108,3 +108,31 @@ def test_review_history_keeps_every_status_change(client, add_incident):
     assert [(entry["previous_verification"], entry["verification"]) for entry in history] == [("confirmed", "conflicting"), ("unverified", "confirmed")]
     assert [entry["location_changed"] for entry in history] == [False, True]
     assert body["evidence_status"] == "conflicting"
+
+
+def test_plan_lists_reports_that_may_affect_each_route(client, monkeypatch, add_incident):
+    add_incident("slide", "confirmed", 25.90, 91.80)
+    body = plan(client, monkeypatch, "fastest")
+    impact = body["routes"][0]["impact_reports"]
+    assert [report["id"] for report in impact] == ["slide"] and impact[0]["match"] == "precise"
+    assert body["routes"][1]["impact_reports"] == []
+    assert "not a probability" in body["impact_note"]
+    assert body["routes"][0]["coverage"]["note"].startswith("The routing service named no national highways")
+
+
+def test_review_accepts_resolved(client, add_incident):
+    add_incident("r4", "confirmed")
+    body = client.patch("/api/incidents/r4/review", json={"verification": "resolved", "review_note": "District order says reopened"}).json()
+    assert body["evidence_status"] == "resolved"
+
+
+def test_correction_flags_stay_open_until_a_review_and_never_change_status(client, add_incident):
+    add_incident("f1")
+    flagged = client.post("/api/incidents/f1/flags", json={"reason": "outdated", "note": "Road reopened last week"})
+    assert flagged.status_code == 201
+    body = flagged.json()
+    assert [flag["reason"] for flag in body["open_flags"]] == ["outdated"] and body["verification"] == "unverified"
+    assert client.post("/api/incidents/f1/flags", json={"reason": "made_up"}).status_code == 422
+    assert client.post("/api/incidents/missing/flags", json={"reason": "other"}).status_code == 404
+    reviewed = client.patch("/api/incidents/f1/review", json={"verification": "resolved", "review_note": "Checked: reopened"}).json()
+    assert reviewed["open_flags"] == []

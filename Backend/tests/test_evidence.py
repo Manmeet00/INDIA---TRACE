@@ -98,3 +98,21 @@ def test_stale_outranks_confirmed_and_dismissed_outranks_everything():
         sourced("gone", "https://c.example/1", "Unrelated.", None, "dismissed", "stale"),
     ])
     assert (items["old"]["evidence_status"], items["current"]["evidence_status"], items["gone"]["evidence_status"]) == ("stale", "confirmed", "dismissed")
+
+
+def test_freshness_window_depends_on_event_type():
+    from datetime import datetime, timedelta, timezone
+    fifty_hours_ago = (datetime.now(timezone.utc) - timedelta(hours=50)).isoformat()
+    items = by_id([report("slide", "Landslide on NH-6", "Landslide near Sonapur.", fifty_hours_ago),
+                   report("crash", "Accident on NH-6", "Truck accident near Jorabat.", fifty_hours_ago)])
+    assert (items["slide"]["freshness_window_h"], items["slide"]["freshness"]) == (72, "fresh")
+    assert (items["crash"]["freshness_window_h"], items["crash"]["freshness"]) == (12, "stale")
+
+
+def test_regions_and_location_confidence():
+    items = by_id([report("road", "NH-6 blocked", "NH-6 blocked near Lum Shnong, Meghalaya and Silchar."),
+                   report("place", "Rain in Aizawl", "Heavy rain in Aizawl."),
+                   report("none", "Landslide", "A landslide was reported.")])
+    assert items["road"]["regions"] == ["Assam", "Meghalaya"]
+    assert [items[key]["location_confidence"] for key in ("road", "place", "none")] == ["road_mentioned", "place_mentioned", "none"]
+    assert items["place"]["regions"] == ["Mizoram"]

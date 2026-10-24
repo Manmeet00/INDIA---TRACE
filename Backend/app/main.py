@@ -13,8 +13,8 @@ from .config import get_settings
 from .database import get_connection, initialize_database
 from .repository import add_event, create_trace, event_from_row, trace_from_row, update_trace
 from .road_intelligence import load_incidents, plan_route
-from .schemas import (CollectionRequest, CollectionResult, CollectionRun, DashboardSummary, EventCreate, EventOut, IncidentOut,
-                      IncidentReview, RoutePlanRequest, TraceCreate, TraceDetail, TracePage, TraceStatus, TraceUpdate)
+from .schemas import (CollectionRequest, CollectionResult, CollectionRun, DashboardSummary, EventCreate, EventOut, IncidentFlag,
+                      IncidentOut, IncidentReview, RoutePlanRequest, TraceCreate, TraceDetail, TracePage, TraceStatus, TraceUpdate)
 
 settings = get_settings()
 logger = logging.getLogger("indiatrace")
@@ -118,6 +118,23 @@ def review_incident(incident_id: str, payload: IncidentReview):
             location_changed, location_text, latitude, longitude, reviewed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (f"rv_{uuid4().hex}", incident_id, row["verification"], payload.verification, payload.review_note, bool(location),
              location.get("location_text"), location.get("latitude"), location.get("longitude"), reviewed_at),
+        )
+        # A review answers any open correction flags.
+        connection.execute("UPDATE incident_flags SET resolved_at = ? WHERE incident_id = ? AND resolved_at IS NULL",
+                           (reviewed_at, incident_id))
+        return find_incident(connection, incident_id)
+
+
+@app.post("/api/incidents/{incident_id}/flags", response_model=IncidentOut, status_code=status.HTTP_201_CREATED)
+def flag_incident(incident_id: str, payload: IncidentFlag):
+    """User correction (report section 5): flags a record for review without changing its status."""
+    with get_connection() as connection:
+        if connection.execute("SELECT 1 FROM incidents WHERE id = ?", (incident_id,)).fetchone() is None:
+            raise HTTPException(status_code=404, detail="Incident evidence not found")
+        connection.execute(
+            "INSERT INTO incident_flags (id, incident_id, reason, note, created_at) VALUES (?, ?, ?, ?, ?)",
+            (f"fl_{uuid4().hex}", incident_id, payload.reason, (payload.note or "").strip() or None,
+             datetime.now(timezone.utc).isoformat()),
         )
         return find_incident(connection, incident_id)
 

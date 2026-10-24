@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
-from app.road_intelligence import _freshness, _route_highways, parse_published, recommend, route_exposure
+from app.evidence import freshness
+from app.road_intelligence import _route_highways, impact_reports, parse_published, recommend, route_coverage, route_exposure
 
 # Two east-west routes about 55 km apart.
 SOUTH = {"coordinates": [[91.0, 26.0], [91.25, 26.0], [91.5, 26.0]]}
@@ -100,11 +101,11 @@ def test_parse_published_handles_search_result_formats():
 
 def test_freshness_uses_estimated_publication_time():
     now = datetime.now(timezone.utc)
-    assert _freshness(now - timedelta(hours=2), False) == "fresh"
-    assert _freshness(now - timedelta(days=90), True) == "stale"
-    assert _freshness(now + timedelta(hours=5), True) == "fresh"   # date-only value in a timezone ahead of UTC
-    assert _freshness(now + timedelta(hours=5), False) == "unknown"
-    assert _freshness(None, False) == "unknown"
+    assert freshness(now - timedelta(hours=2), False) == "fresh"
+    assert freshness(now - timedelta(days=90), True) == "stale"
+    assert freshness(now + timedelta(hours=5), True) == "fresh"   # date-only value in a timezone ahead of UTC
+    assert freshness(now + timedelta(hours=5), False) == "unknown"
+    assert freshness(None, False) == "unknown"
 
 
 def test_route_highways_sums_distance_and_ignores_short_crossings():
@@ -127,3 +128,33 @@ def test_unlocated_reports_naming_a_route_highway_are_low_confidence_mentions():
     assert code == "verify_before_dispatch"
     assert reasons[0] == "1 report without a confirmed location mentions NH-6, which this route uses (1 older than 24 hours). Where on the road is not known."
     assert reasons[1].startswith("1 other report has no reviewer-confirmed location")
+
+
+def test_impact_reports_rank_precise_recent_confirmed_above_road_mentions():
+    near = {**incident("near", "confirmed", 26.005, 91.2, "fresh"), "event_type": "landslide", "freshness_window_h": 72,
+            "corroborating_ids": [], "conflict_ids": [], "evidence_status": "confirmed", "title": "Slide", "source_name": "A",
+            "source_url": "https://a.example", "published_at": None, "mentions": {"highways": [], "places": []}}
+    named = {**incident("named", freshness="stale"), "event_type": "closure", "freshness_window_h": 48, "corroborating_ids": [],
+             "conflict_ids": [], "evidence_status": "stale", "title": "NH-6 closed", "source_name": "B",
+             "source_url": "https://b.example", "published_at": "2 years ago", "mentions": {"highways": ["NH-6"], "places": []}}
+    exposure = route_exposure(SOUTH, [near, named], {"NH-6": 50000})
+    reports = impact_reports(exposure, {"near": near, "named": named})
+    assert [report["id"] for report in reports] == ["near", "named"]
+    assert reports[0]["match"] == "precise" and reports[0]["factors"][0].endswith("(reviewer-confirmed location)")
+    assert reports[1]["factors"][0] == "Names NH-6, which this route uses; where on the road is not known"
+    assert reports[1]["factors"][1].startswith("Published more than 48 h ago")
+    assert reports[0]["score"] > reports[1]["score"]
+
+
+def test_coverage_marks_highways_without_recent_reports_as_gaps():
+    reports = [{"verification": "unverified", "freshness": "stale", "mentions": {"highways": ["NH-6"]}},
+               {"verification": "dismissed", "freshness": "fresh", "mentions": {"highways": ["NH-27"]}}]
+    coverage = route_coverage({"NH-27": 6000, "NH-6": 80000}, reports)
+    assert coverage["highways"] == [{"highway": "NH-27", "km": 6, "reports": 0, "fresh": 0}, {"highway": "NH-6", "km": 80, "reports": 1, "fresh": 0}]
+    assert coverage["note"].startswith("No reports within their freshness window for NH-27 (6 km), NH-6 (80 km)")
+    assert "not evidence that the road is clear" in coverage["note"]
+
+
+def test_resolved_reports_no_longer_count_against_a_route():
+    exposure = route_exposure(SOUTH, [incident("reopened", "resolved", 26.0, 91.2)])
+    assert exposure["nearby"]["confirmed"] == 0 and exposure["located_reports"] == 0
