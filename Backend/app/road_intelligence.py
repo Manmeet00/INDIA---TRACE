@@ -364,7 +364,7 @@ def recommend(route: dict[str, Any], routes: list[dict[str, Any]], newest_collec
     if confirmed:
         old = exposure["nearby_confirmed_stale"]
         reasons = [f"{_plural(confirmed, 'reviewer-confirmed report')} within {km} of this route"
-                   f"{f' ({old} published over 24 hours ago; check it is still current)' if old else ''}."]
+                   f"{f' ({old} past the freshness window for its event type; check it is still current)' if old else ''}."]
         alternatives = [other for other in routes if other is not route and other["exposure"]["nearby"]["confirmed"] == 0]
         if alternatives:
             best = min(alternatives, key=lambda other: (_unconfirmed_nearby(other["exposure"]), other["duration_s"]))
@@ -381,7 +381,7 @@ def recommend(route: dict[str, Any], routes: list[dict[str, Any]], newest_collec
         stale = exposure["highway_mentions_stale"]
         reasons.append(f"{_plural(mentioned, 'report')} without a confirmed location {'mentions' if mentioned == 1 else 'mention'} "
                        f"{', '.join(exposure['highway_mentions'])}, which this route uses"
-                       f"{f' ({stale} older than 24 hours)' if stale else ''}. Where on the road is not known.")
+                       f"{f' ({stale} past their freshness window)' if stale else ''}. Where on the road is not known.")
     other_unlocated = exposure["unlocated_reports"] - mentioned
     if other_unlocated:
         reasons.append(f"{_plural(other_unlocated, 'other report' if mentioned else 'report')} {'has' if other_unlocated == 1 else 'have'} no reviewer-confirmed location, so exposure to them is unknown.")

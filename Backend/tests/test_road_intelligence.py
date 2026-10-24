@@ -126,7 +126,7 @@ def test_unlocated_reports_naming_a_route_highway_are_low_confidence_mentions():
     routes = [{"priority_rank": 1, "duration_s": 60, "exposure": exposure}]
     code, reasons = recommend(routes[0], routes, NOW)
     assert code == "verify_before_dispatch"
-    assert reasons[0] == "1 report without a confirmed location mentions NH-6, which this route uses (1 older than 24 hours). Where on the road is not known."
+    assert reasons[0] == "1 report without a confirmed location mentions NH-6, which this route uses (1 past their freshness window). Where on the road is not known."
     assert reasons[1].startswith("1 other report has no reviewer-confirmed location")
 
 

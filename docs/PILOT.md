@@ -23,13 +23,20 @@ Silchar → Aizawl is the segment that demonstrates route comparison; OSRM retur
 
 ## Source policy
 
-- **Ingestion path:** TinyFish Search, called only from the backend with `TINYFISH_API_KEY`. Four queries run per collection (in `PILOT_QUERIES`, [road_intelligence.py](../Backend/app/road_intelligence.py)):
-  1. `NH-6 Guwahati Shillong road closure landslide update`
-  2. `NH-6 Shillong Silchar Sonapur Ratacherra landslide traffic`
-  3. `NH-306 Silchar Aizawl road blocked landslide`
-  4. `Meghalaya Mizoram Barak Valley highway closure latest`
-- **Stored per result:** title, snippet, source URL (normalised), source name, the source's own date text, and our collection time. Nothing else is inferred.
-- **Not done:** pages are not fetched or scraped; coordinates are never inferred from text; no sample or seeded incidents are inserted.
+- **Ingestion path:** TinyFish **Search** and **Fetch**, called only from the backend with `TINYFISH_API_KEY`. Both are free within TinyFish's daily limits (12,000 searches and 1,000 fetched URLs per day). Six searches run per collection (`PILOT_SEARCHES` in [collection.py](../Backend/app/collection.py)):
+  1. web: `NH-6 Guwahati Shillong road closure landslide update`
+  2. web: `NH-6 Shillong Silchar Sonapur Ratacherra landslide traffic`
+  3. web: `NH-306 Silchar Aizawl road blocked landslide`
+  4. web: `Meghalaya Mizoram Barak Valley highway closure latest`
+  5. news: `Meghalaya landslide highway`
+  6. news: `Mizoram Barak Valley road landslide`
+
+  News searches return a publisher and a date. Narrow highway queries return nothing on news search, which is why those two stay broad. A search window (24 hours to 1 year, default 30 days) limits results by recency. Reviewers can also run a **targeted search** for a road, place or event type.
+- **Fetch:** each new result's page is read with TinyFish Fetch, 10 URLs per request. The app keeps the page description, an excerpt, the author and the page's `published_date`; a page date fills in a missing search date and is labelled "from the page". Only the page description feeds the automatic hints, because full page text includes navigation and unrelated stories.
+- **Stored per result:** title, snippet, source URL (normalised), publisher or site, the source's own date text, the query and search type that found it, when we collected it, and when a later search last saw it again.
+- **Every run is logged** (`GET /api/collection/runs`): searches, results, new reports, re-seen reports, pages read, failures and duration. Each failed search is retried once.
+- **Scheduled collection** is off by default. Set `COLLECTION_INTERVAL_MINUTES` in `Backend/.env` to turn it on.
+- **Not done:** coordinates are never inferred from text, and no sample or seeded incidents are inserted.
 - **Sources observed** in the 24 Oct 2026 pilot collection (search results, not a curated or endorsed list): facebook.com (14), instagram.com (5), timesofindia.indiatimes.com (2), barakbulletin.com (2), indiatodayne.in (2), youtube.com (2), morungexpress.com, sentinelassam.com, assamtribune.com, hindustantimes.com, reddit.com, en.wikipedia.org (1 each). Social posts dominate, which is why reviewer checks and the dismiss action matter.
 
 ## Before the demo

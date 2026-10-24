@@ -17,6 +17,12 @@ Each case runs automatically (`cd Backend && pytest`) and can also be shown in t
 | 7 | **No reports.** | `verify_before_dispatch` with "No reports does not mean the road is clear." | `test_no_reports_is_not_treated_as_clear`, `test_plan_without_reports_requires_verification` |
 | 8 | **Confirmed report on a route.** | That route gets `consider_alternative` naming the cleaner route. `cautious` priority ranks the cleaner route first. | `test_confirmed_report_suggests_clean_alternative`, `test_cautious_plan_ranks_route_without_confirmed_reports_first` |
 | 9 | **Review history.** | Every status change is kept with its reason; nothing is overwritten. | `test_review_history_keeps_every_status_change` |
+| 10 | **Freshness depends on event type.** A report 50 hours old. | A landslide (72 h window) is still fresh; an accident (12 h window) is stale. | `test_freshness_window_depends_on_event_type` |
+| 11 | **Route impact explanation.** | Each route lists the reports that may affect it with a score and reasons. A precise nearby report outranks one that only names the highway. | `test_impact_reports_rank_precise_recent_confirmed_above_road_mentions`, `test_plan_lists_reports_that_may_affect_each_route` |
+| 12 | **Coverage gap.** A highway on the route has no recent reports. | Shown as a coverage gap, explicitly "not evidence that the road is clear". | `test_coverage_marks_highways_without_recent_reports_as_gaps` |
+| 13 | **User correction.** Someone flags a record as outdated. | The flag is visible but does not change the status; the next review closes it. | `test_correction_flags_stay_open_until_a_review_and_never_change_status` |
+| 14 | **Resolved disruption.** A reviewer records an authoritative reopening. | Status `resolved`; the report no longer counts against routes. | `test_resolved_reports_no_longer_count_against_a_route`, `test_review_accepts_resolved` |
+| 15 | **Collection provenance and failures.** | The query, search type, page fetch result and dates are kept. A repeat collection updates "last seen" instead of duplicating; a failed search is retried once; a run where every search fails is still logged. | `test_targeted_collection_searches_web_and_news_then_fetches_pages`, `test_repeat_collection_records_recheck_instead_of_duplicating`, `test_failed_search_is_retried_once`, `test_all_searches_failing_is_logged_and_reported` |
 
 ## Pilot acceptance checks (report section 13)
 
@@ -38,6 +44,7 @@ Both runs on 24 Oct 2026, live TinyFish Search.
 |---|---|---|---|---|---|
 | 1 | 3 general Northeast queries (before the pilot) | 30 | 0 | 19 stale, 11 unknown, 0 fresh | Off-topic hits included a Uttarakhand video and a border-tension story; this led to the dismiss state. |
 | 2 | 4 pilot-corridor queries | 34 | 1 | 27 stale, 7 unknown, 0 fresh | 19 mention NH-6 and 7 mention NH-306. One syndicated NH-306 pair was grouped as duplicates, and one independent NH-6 (Sonapur, May 2022) pair was corroborated. |
+| 3 | Targeted: NH-6 landslide, last 30 days, web + news, then Fetch | 10 | 0 | — | All 10 pages read by Fetch in 15.1 s with no errors; 4 gained an exact publication time from the page. The search engine also matched NH-10 (Sikkim) reports, which a reviewer would dismiss. |
 
 ## Metrics still to measure manually (report section 13)
 
@@ -53,6 +60,8 @@ Fill these in after the team reviews a sample by hand. Until then they are **not
 ## Limitations
 
 - **Coverage.** One corridor, four search queries, and only what TinyFish Search returns. Many results are social posts. No reports does not mean the road is clear.
+- **Freshness windows** (accident 12 h, weather 24 h, flood and closure 48 h, landslide 72 h, bridge 14 days, construction 30 days) are reasonable defaults, not measured values.
+- **Relevance score** (location 50, freshness 20, evidence 20, severity 10) orders reports for review. It is not a probability that a road is blocked.
 - **Location.** Coordinates come only from a reviewer. Highway mentions show that a report may be relevant, but not where on the road it is.
 - **Text heuristics.** Event types, duplicates, conflicts and corroboration are keyword and similarity rules, shown as hints. They can miss or misjudge reports, and they never change a reviewer's decision.
 - **Routing.** The public OSRM car profile: no live traffic and no truck restrictions, so vehicle suitability is always "unknown". The public server can be slow or rate-limited; cached routes are labelled with their fetch time.
