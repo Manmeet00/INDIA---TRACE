@@ -77,12 +77,12 @@ def review_incident(incident_id: str, payload: IncidentReview):
         row = connection.execute("SELECT id FROM incidents WHERE id = ?", (incident_id,)).fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail="Incident evidence not found")
+        values = {"verification": payload.verification, "reviewed_at": reviewed_at, "review_note": payload.review_note}
+        values.update({field: getattr(payload, field) for field in ("location_text", "latitude", "longitude")
+                       if field in payload.model_fields_set})
         connection.execute(
-            """UPDATE incidents SET verification = ?, reviewed_at = ?, review_note = ?,
-            location_text = COALESCE(?, location_text), latitude = COALESCE(?, latitude),
-            longitude = COALESCE(?, longitude) WHERE id = ?""",
-            (payload.verification, reviewed_at, payload.review_note, payload.location_text,
-             payload.latitude, payload.longitude, incident_id),
+            "UPDATE incidents SET " + ", ".join(f"{column} = ?" for column in values) + " WHERE id = ?",
+            (*values.values(), incident_id),
         )
         updated = connection.execute("SELECT * FROM incidents WHERE id = ?", (incident_id,)).fetchone()
     return incident_from_row(updated)

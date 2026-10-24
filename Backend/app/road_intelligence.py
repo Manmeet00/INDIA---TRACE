@@ -55,7 +55,6 @@ def plan_route(payload) -> dict[str, Any]:
     incident_items = [incident_from_row(row) for row in incident_rows]
     candidates = []
     for index, route in enumerate(routes["routes"]):
-        candidate_matches = route_exposure(route["geometry"], incident_items)
         candidates.append({
             "id": f"route-{index + 1}",
             "distance_m": round(route["distance"]),
@@ -63,17 +62,19 @@ def plan_route(payload) -> dict[str, Any]:
             "geometry": route["geometry"],
             "priority_rank": index + 1,
             "vehicle_suitability": "unknown",
-            "disruption_exposure": "unknown" if candidate_matches is None else "unverified_candidate_reports",
-            "candidate_report_matches": candidate_matches,
+            "exposure": route_exposure(route["geometry"], incident_items),
         })
     if payload.priority == "fastest":
         candidates.sort(key=lambda r: r["duration_s"])
     elif payload.priority == "shortest":
         candidates.sort(key=lambda r: r["distance_m"])
-    elif payload.priority == "cautious" and all(route["candidate_report_matches"] is not None for route in candidates):
-        candidates.sort(key=lambda r: r["candidate_report_matches"])
+    elif payload.priority == "cautious":
+        candidates.sort(key=lambda r: (r["exposure"]["nearby"]["confirmed"], _unconfirmed_nearby(r["exposure"]), r["duration_s"]))
     for index, route in enumerate(candidates):
         route["priority_rank"] = index + 1
+    newest_collection = max((item["collected_at"] for item in incident_items), default=None)
+    for route in candidates:
+        route["recommendation"], route["recommendation_reasons"] = recommend(route, candidates, newest_collection)
     return {
         "origin": origin,
         "destination": destination,
@@ -81,8 +82,8 @@ def plan_route(payload) -> dict[str, Any]:
         "priority": payload.priority,
         "provider": "OpenStreetMap Nominatim + OSRM",
         "routes": candidates,
-        "recommendation": "verify_before_dispatch",
-        "recommendation_reason": "Search results are unverified and may have unknown locations; vehicle restrictions are not checked. Verify locally before dispatch.",
+        "recommendation": candidates[0]["recommendation"],
+        "recommendation_reason": " ".join(candidates[0]["recommendation_reasons"]),
         "data_note": "Distance and duration are live OSRM estimates. They do not include verified disruption or vehicle restriction data.",
     }
 
@@ -189,24 +190,105 @@ def collect_candidates(connection: sqlite3.Connection) -> dict[str, Any]:
             "incidents": [incident_from_row(row) for row in rows]}
 
 
-def route_exposure(route_geometry: dict[str, Any], incidents: list[dict[str, Any]], tolerance_m: float = 3000) -> int | None:
-    """Return a count only when every candidate has coordinates; null means unknown."""
-    if not incidents or any(item.get("latitude") is None or item.get("longitude") is None for item in incidents):
-        return None
+MATCH_TOLERANCE_M = 3000
+EVIDENCE_MAX_AGE_S = 24 * 3600
+VEHICLE_NOTE = "Vehicle restrictions such as weight, height and ghat-road limits are not checked."
+
+
+def route_exposure(route_geometry: dict[str, Any], incidents: list[dict[str, Any]], tolerance_m: float = MATCH_TOLERANCE_M) -> dict[str, Any]:
+    """Count reviewer-located reports near a route by verification state.
+
+    Reports without coordinates are never matched; they are counted as unlocated so
+    the recommendation can say exposure to them is unknown. Dismissed reports are ignored.
+    """
+    relevant = [item for item in incidents if item["verification"] != "dismissed"]
+    located = [item for item in relevant if item.get("latitude") is not None and item.get("longitude") is not None]
+    exposure: dict[str, Any] = {
+        "tolerance_m": tolerance_m,
+        "located_reports": len(located),
+        "unlocated_reports": len(relevant) - len(located),
+        "nearby": {"confirmed": 0, "unverified": 0, "conflicting": 0, "unknown": 0},
+        "nearby_stale": 0,
+        "nearby_ids": [],
+    }
     line = route_geometry.get("coordinates", [])
-    if len(line) < 2:
-        return None
-    # Great-circle approximation around the route midpoint for short segment matching.
+    if len(line) < 2 or not located:
+        return exposure
+    # Equirectangular projection around the route's mean latitude; accurate enough at a few km.
     mean_lat = math.radians(sum(point[1] for point in line) / len(line))
     sx, sy = 111320 * math.cos(mean_lat), 111320
-    count = 0
     xy = [(point[0] * sx, point[1] * sy) for point in line]
-    for incident in incidents:
+    min_x, max_x = min(x for x, _ in xy) - tolerance_m, max(x for x, _ in xy) + tolerance_m
+    min_y, max_y = min(y for _, y in xy) - tolerance_m, max(y for _, y in xy) + tolerance_m
+    for incident in located:
         px, py = incident["longitude"] * sx, incident["latitude"] * sy
-        nearest = float("inf")
-        for (ax, ay), (bx, by) in zip(xy, xy[1:]):
-            dx, dy = bx - ax, by - ay
-            fraction = max(0.0, min(1.0, ((px-ax)*dx + (py-ay)*dy) / max(dx*dx + dy*dy, 1e-9)))
-            nearest = min(nearest, math.hypot(px - (ax + fraction*dx), py - (ay + fraction*dy)))
-        count += nearest <= tolerance_m
-    return count
+        if not (min_x <= px <= max_x and min_y <= py <= max_y):
+            continue
+        if _distance_to_line(px, py, xy) > tolerance_m:
+            continue
+        state = incident["verification"]
+        exposure["nearby"][state] = exposure["nearby"].get(state, 0) + 1
+        exposure["nearby_stale"] += incident["freshness"] == "stale"
+        exposure["nearby_ids"].append(incident["id"])
+    return exposure
+
+
+def _distance_to_line(px: float, py: float, xy: list[tuple[float, float]]) -> float:
+    nearest = float("inf")
+    for (ax, ay), (bx, by) in zip(xy, xy[1:]):
+        dx, dy = bx - ax, by - ay
+        fraction = max(0.0, min(1.0, ((px-ax)*dx + (py-ay)*dy) / max(dx*dx + dy*dy, 1e-9)))
+        nearest = min(nearest, math.hypot(px - (ax + fraction*dx), py - (ay + fraction*dy)))
+    return nearest
+
+
+def _unconfirmed_nearby(exposure: dict[str, Any]) -> int:
+    return sum(count for state, count in exposure["nearby"].items() if state != "confirmed")
+
+
+def _plural(count: int, word: str) -> str:
+    return f"{count} {word}{'' if count == 1 else 's'}"
+
+
+def recommend(route: dict[str, Any], routes: list[dict[str, Any]], newest_collection: str | None) -> tuple[str, list[str]]:
+    """Explain one of: consider_alternative, verify_before_dispatch, proceed_cautiously.
+
+    Never claims a road is clear; proceed_cautiously requires every relevant report to be located.
+    """
+    exposure = route["exposure"]
+    km = f"{exposure['tolerance_m'] / 1000:g} km"
+    confirmed = exposure["nearby"]["confirmed"]
+    if confirmed:
+        reasons = [f"{_plural(confirmed, 'reviewer-confirmed report')} within {km} of this route."]
+        alternatives = [other for other in routes if other is not route and other["exposure"]["nearby"]["confirmed"] == 0]
+        if alternatives:
+            best = min(alternatives, key=lambda other: (_unconfirmed_nearby(other["exposure"]), other["duration_s"]))
+            reasons.append(f"Route {best['priority_rank']} has no confirmed reports within {km}; check it before dispatch.")
+            return "consider_alternative", reasons + [VEHICLE_NOTE]
+        reasons.append("Every candidate route has confirmed reports nearby. Verify locally or delay dispatch.")
+        return "verify_before_dispatch", reasons + [VEHICLE_NOTE]
+    reasons = []
+    unconfirmed = _unconfirmed_nearby(exposure)
+    if unconfirmed:
+        reasons.append(f"{_plural(unconfirmed, 'report')} within {km} of this route {'is' if unconfirmed == 1 else 'are'} not confirmed by a reviewer.")
+    if exposure["unlocated_reports"]:
+        reasons.append(f"{_plural(exposure['unlocated_reports'], 'report')} {'has' if exposure['unlocated_reports'] == 1 else 'have'} no reviewer-confirmed location, so exposure to them is unknown.")
+    if newest_collection is None:
+        reasons.append("No reports have been collected. No reports does not mean the road is clear.")
+    elif _age_seconds(newest_collection) > EVIDENCE_MAX_AGE_S:
+        reasons.append("The newest collected evidence is more than 24 hours old. Run collection again.")
+    if reasons:
+        return "verify_before_dispatch", reasons + [VEHICLE_NOTE]
+    return "proceed_cautiously", [
+        f"None of the {_plural(exposure['located_reports'], 'located report')} is within {km} of this route, and no relevant report lacks a location."
+        if exposure["located_reports"] else "A reviewer dismissed every collected report as not relevant.",
+        "This is not confirmation that the road is clear; reports can be missing or late.",
+        VEHICLE_NOTE,
+    ]
+
+
+def _age_seconds(timestamp: str) -> float:
+    value = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - value).total_seconds()

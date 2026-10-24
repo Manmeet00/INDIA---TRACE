@@ -44,6 +44,34 @@ function freshnessLabel(value) {
   return value === 'fresh' ? 'Recent source time' : value === 'stale' ? 'Older source time' : 'Source time unknown'
 }
 
+const RECOMMENDATIONS = {
+  proceed_cautiously: { label: 'Proceed cautiously', pill: 'Proceed with care', tone: 'proceed' },
+  consider_alternative: { label: 'Consider an alternative', pill: 'Alternative advised', tone: 'alternative' },
+  verify_before_dispatch: { label: 'Verify before dispatch', pill: 'Verify first', tone: 'verify' },
+}
+
+function adviceFor(code) {
+  return RECOMMENDATIONS[code] || RECOMMENDATIONS.verify_before_dispatch
+}
+
+function exposureSummary(exposure) {
+  if (!exposure) return 'Disruption exposure not assessed'
+  const km = `${exposure.tolerance_m / 1000} km`
+  const nearby = Object.values(exposure.nearby).reduce((total, count) => total + count, 0)
+  const parts = [nearby ? `${nearby} report${nearby === 1 ? '' : 's'} within ${km}${exposure.nearby.confirmed ? ` (${exposure.nearby.confirmed} confirmed)` : ''}` : `No located reports within ${km}`]
+  if (exposure.unlocated_reports) parts.push(`${exposure.unlocated_reports} unlocated`)
+  return parts.join(' · ')
+}
+
+// FastAPI returns validation errors as a list of objects, and some failures are not JSON at all.
+async function readJson(response, fallback) {
+  const payload = await response.json().catch(() => null)
+  if (response.ok && payload) return payload
+  const detail = payload?.detail
+  const message = Array.isArray(detail) ? detail.map((item) => String(item.msg || '').replace(/^Value error, /, '')).join(' ') : detail
+  throw new Error(message || `${fallback} (HTTP ${response.status})`)
+}
+
 function DashboardMap({ plan, incidents, selectedRoute, selectedIncident, onSelectIncident, showEvidence }) {
   const route = plan?.routes?.find((item) => item.id === selectedRoute) || plan?.routes?.[0]
   const center = plan?.origin ? [plan.origin.latitude, plan.origin.longitude] : [26.2, 92.4]
@@ -51,10 +79,10 @@ function DashboardMap({ plan, incidents, selectedRoute, selectedIncident, onSele
     {route && <MapBounds geometry={route.geometry} />}
     <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
     <ZoomControl position="bottomright" />
-    {plan?.routes?.map((item) => <Polyline key={item.id} positions={item.geometry.coordinates.map(([lon, lat]) => [lat, lon])} pathOptions={{ color: item.id === route?.id ? '#0878e8' : '#64748b', opacity: item.id === route?.id ? 0.95 : 0.55, weight: item.id === route?.id ? 5 : 3, dashArray: item.id === route?.id ? undefined : '8 9' }} />)}
+    {plan?.routes && [...plan.routes].sort((a, b) => (a.id === route?.id) - (b.id === route?.id)).map((item) => <Polyline key={item.id} positions={item.geometry.coordinates.map(([lon, lat]) => [lat, lon])} pathOptions={{ color: item.id === route?.id ? '#0878e8' : '#64748b', opacity: item.id === route?.id ? 0.95 : 0.55, weight: item.id === route?.id ? 5 : 3, dashArray: item.id === route?.id ? undefined : '8 9' }} />)}
     {plan?.origin && <CircleMarker center={[plan.origin.latitude, plan.origin.longitude]} radius={8} pathOptions={{ color: '#fff', weight: 3, fillColor: '#079352', fillOpacity: 1 }}><Tooltip>Origin · {plan.origin.name}</Tooltip></CircleMarker>}
     {plan?.destination && <CircleMarker center={[plan.destination.latitude, plan.destination.longitude]} radius={8} pathOptions={{ color: '#fff', weight: 3, fillColor: '#e44a58', fillOpacity: 1 }}><Tooltip>Destination · {plan.destination.name}</Tooltip></CircleMarker>}
-    {showEvidence && incidents.filter((item) => item.latitude != null && item.longitude != null).map((item) => <CircleMarker key={item.id} center={[item.latitude, item.longitude]} radius={selectedIncident?.id === item.id ? 9 : 7} eventHandlers={{ click: () => onSelectIncident(item.id) }} pathOptions={{ color: '#fff', weight: 2, fillColor: item.verification === 'confirmed' ? '#df3946' : '#e99b28', fillOpacity: 0.95 }}><Tooltip>{item.title} · {item.verification}</Tooltip></CircleMarker>)}
+    {showEvidence && incidents.filter((item) => item.verification !== 'dismissed' && item.latitude != null && item.longitude != null).map((item) => <CircleMarker key={item.id} center={[item.latitude, item.longitude]} radius={selectedIncident?.id === item.id ? 9 : 7} eventHandlers={{ click: () => onSelectIncident(item.id) }} pathOptions={{ color: '#fff', weight: 2, fillColor: item.verification === 'confirmed' ? '#df3946' : '#e99b28', fillOpacity: 0.95 }}><Tooltip>{item.title} · {item.verification}</Tooltip></CircleMarker>)}
   </MapContainer>
 }
 
@@ -121,8 +149,7 @@ function App() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ origin, destination, vehicle_type: vehicle, priority }),
       })
-      const payload = await response.json()
-      if (!response.ok) throw new Error(payload.detail || 'Could not plan this route.')
+      const payload = await readJson(response, 'Could not plan this route.')
       setPlan(payload)
       setSelectedRoute(payload.routes[0]?.id || null)
     } catch (error) {
@@ -147,8 +174,7 @@ function App() {
     setCollectionMessage('')
     try {
       const response = await fetch(`${API}/api/collection/run`, { method: 'POST' })
-      const payload = await response.json()
-      if (!response.ok) throw new Error(payload.detail || 'Collection could not run.')
+      const payload = await readJson(response, 'Collection could not run.')
       setCollectionMessage(payload.message)
       await refreshWorkspace()
     } catch (error) { setCollectionMessage(error.message || 'Collection failed.') }
@@ -173,22 +199,24 @@ function App() {
     }
     setReviewBusyId(incident.id)
     try {
+      // Send only the location fields the reviewer touched: omitted fields are kept, empty ones are cleared.
       const location = reviewLocations[incident.id] || {}
+      const body = { verification: reviewStatuses[incident.id] || incident.verification, review_note: note }
+      if ('name' in location) body.location_text = location.name
+      if ('latitude' in location || 'longitude' in location) {
+        const latitude = location.latitude ?? incident.latitude ?? ''
+        const longitude = location.longitude ?? incident.longitude ?? ''
+        body.latitude = latitude === '' ? null : Number(latitude)
+        body.longitude = longitude === '' ? null : Number(longitude)
+      }
       const response = await fetch(`${API}/api/incidents/${incident.id}/review`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          verification: reviewStatuses[incident.id] || incident.verification,
-          review_note: note,
-          location_text: location.name || null,
-          latitude: location.latitude === '' || location.latitude == null ? null : Number(location.latitude),
-          longitude: location.longitude === '' || location.longitude == null ? null : Number(location.longitude),
-        }),
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
       })
-      const payload = await response.json()
-      if (!response.ok) throw new Error(payload.detail || 'Could not save evidence review.')
+      await readJson(response, 'Could not save evidence review.')
       setCollectionMessage('Evidence review saved.')
       await refreshWorkspace()
       setReviewNotes((notes) => ({ ...notes, [incident.id]: '' }))
+      setReviewLocations((locations) => ({ ...locations, [incident.id]: {} }))
     } catch (error) { setCollectionMessage(error.message || 'Could not save evidence review.') }
     finally { setReviewBusyId(null) }
   }
@@ -196,9 +224,11 @@ function App() {
   const visibleIncidents = useMemo(() => incidents.filter((item) => `${item.title} ${item.summary} ${item.source_name}`.toLowerCase().includes(search.trim().toLowerCase())), [incidents, search])
   const activeIncident = visibleIncidents.find((item) => item.id === selectedIncidentId) || visibleIncidents[0] || null
   const verifiedCount = incidents.filter((item) => item.verification === 'confirmed').length
-  const unknownLocationCount = incidents.filter((item) => item.latitude == null || item.longitude == null).length
+  const unknownLocationCount = incidents.filter((item) => item.verification !== 'dismissed' && (item.latitude == null || item.longitude == null)).length
   const sourceCount = new Set(incidents.map((item) => item.source_name)).size
   const chosenRoute = plan?.routes?.find((item) => item.id === selectedRoute)
+  const advice = adviceFor(chosenRoute?.recommendation || plan?.recommendation)
+  const adviceReasons = chosenRoute?.recommendation_reasons || (plan ? [plan.recommendation_reason] : [])
 
   return <div className="app-shell">
     <aside className="sidebar">
@@ -250,8 +280,8 @@ function App() {
             <article className="panel map-panel"><div className="map-heading"><div><span className="section-kicker">NORTHEAST INDIA · NETWORK VIEW</span><h2>{plan ? `${plan.origin.name.split(',')[0]} to ${plan.destination.name.split(',')[0]}` : 'Regional road intelligence'}</h2></div><span className={`map-status ${plan?.offline_demo ? 'demo' : ''}`}><i/>{plan?.offline_demo ? 'Historical snapshot' : plan ? 'Live routing estimate' : 'Map ready'}</span></div><div className="map-wrap"><DashboardMap plan={plan} incidents={incidents} selectedRoute={selectedRoute} selectedIncident={activeIncident} onSelectIncident={setSelectedIncidentId} showEvidence={showEvidence}/>{!plan && <div className="map-empty"><span className="map-empty-icon"><Icon name="route" size={22}/></span><b>Your route will appear here</b><span>Enter locations to compare candidate driving routes.</span></div>}<div className="map-legend"><span><i className="legend-route"/> Selected route</span><span><i className="legend-candidate"/> Other candidates</span><span><i className="legend-incident"/> Geolocated evidence</span></div></div><div className="map-foot"><span><Icon name="pin" size={14}/>{plan ? `${plan.origin.name.split(',')[0]} → ${plan.destination.name.split(',')[0]}` : 'Assam · Meghalaya · Northeast India'}</span><span>Map tiles © OpenStreetMap contributors</span></div></article>
 
             <section className="route-results"><div className="results-heading"><div><span className="section-kicker">ROUTE COMPARISON</span><h2>{plan ? `${plan.routes.length} candidate route${plan.routes.length === 1 ? '' : 's'}` : 'Compare your options'}</h2></div>{plan && <span className="results-provider">{plan.offline_demo ? 'Saved demo' : 'OSRM estimates'}</span>}</div>
-              {plan?.routes?.length ? <div className="route-card-list">{plan.routes.map((route, index) => <button className={`route-card ${selectedRoute === route.id ? 'selected' : ''}`} key={route.id} onClick={() => setSelectedRoute(route.id)} aria-pressed={selectedRoute === route.id}><span className="route-radio"/><span className="route-main"><b>Route {index + 1} · {index === 0 ? 'Top estimate' : 'Alternative'}</b><small>{route.disruption_exposure === 'unknown' ? 'Disruption exposure unknown' : 'Unverified report matches'} · vehicle fit unknown</small><span className="route-facts"><span><Icon name="clock" size={14}/>{formatDuration(route.duration_s)}</span><span><Icon name="route" size={14}/>{formatDistance(route.distance_m)}</span><span><Icon name="layers" size={14}/>{plan.offline_demo ? 'Historical' : 'OSRM'}</span></span></span><span className={`risk-pill ${route.disruption_exposure === 'unknown' ? 'risk-unknown' : 'risk-caution'}`}>{route.disruption_exposure === 'unknown' ? 'Unknown risk' : 'Needs review'}</span></button>)}</div> : <div className="route-empty"><div className="route-empty-icon"><Icon name="route" size={19}/></div><div><b>No route comparison yet</b><span>Plan a route to fetch provider distance and time estimates.</span></div></div>}
-              {plan && <div className="action-banner"><span className="action-symbol">!</span><div><b>Verify before dispatch</b><span>{plan.recommendation_reason}</span></div><small>SAFETY GUIDANCE</small></div>}
+              {plan?.routes?.length ? <div className="route-card-list">{plan.routes.map((route, index) => <button className={`route-card ${selectedRoute === route.id ? 'selected' : ''}`} key={route.id} onClick={() => setSelectedRoute(route.id)} aria-pressed={selectedRoute === route.id}><span className="route-radio"/><span className="route-main"><b>Route {index + 1} · {index === 0 ? 'Top estimate' : 'Alternative'}</b><small>{exposureSummary(route.exposure)} · vehicle fit unknown</small><span className="route-facts"><span><Icon name="clock" size={14}/>{formatDuration(route.duration_s)}</span><span><Icon name="route" size={14}/>{formatDistance(route.distance_m)}</span><span><Icon name="layers" size={14}/>{plan.offline_demo ? 'Historical' : 'OSRM'}</span></span></span><span className={`risk-pill ${adviceFor(route.recommendation || plan.recommendation).tone}`}>{adviceFor(route.recommendation || plan.recommendation).pill}</span></button>)}</div> : <div className="route-empty"><div className="route-empty-icon"><Icon name="route" size={19}/></div><div><b>No route comparison yet</b><span>Plan a route to fetch provider distance and time estimates.</span></div></div>}
+              {plan && <div className={`action-banner ${advice.tone}`} role="status"><span className="action-symbol">!</span><div><b>{advice.label}{chosenRoute ? ` · Route ${chosenRoute.priority_rank}` : ''}</b>{adviceReasons.map((reason) => <span key={reason}>{reason}</span>)}</div><small>DISPATCH GUIDANCE</small></div>}
             </section>
           </div>
 
@@ -259,8 +289,8 @@ function App() {
             <article className="panel incident-panel"><div className="incident-panel-heading"><div><span className="section-kicker">ROAD DISRUPTION MONITOR</span><h2>Evidence desk <span className="evidence-count">{visibleIncidents.length}</span></h2></div><button className="icon-button" onClick={refresh} disabled={refreshing} aria-label="Refresh evidence and API status"><Icon name="refresh" size={17}/></button></div>
               {collectionMessage && <div className="collection-message" role="status">{collectionMessage}</div>}
               {activeIncident ? <><div className="selected-incident"><div className="incident-top"><span className={`verification-badge ${activeIncident.verification}`}>{activeIncident.verification}</span><span className={`freshness-badge ${activeIncident.freshness}`}>{freshnessLabel(activeIncident.freshness)}</span></div><h3>{activeIncident.title}</h3><div className="incident-meta"><span><Icon name="pin" size={15}/>{activeIncident.location_text || 'Location unknown'}</span><span><Icon name="clock" size={15}/>{formatTime(activeIncident.published_at)}</span></div><p className="incident-summary">{activeIncident.summary || 'No source summary provided.'}</p><div className="source-link"><span className="source-avatar">{activeIncident.source_name.slice(0, 1).toUpperCase()}</span><span><b>{activeIncident.source_name}</b><small>Collected {formatTime(activeIncident.collected_at)}</small></span><a href={activeIncident.source_url} target="_blank" rel="noreferrer" aria-label={`Open source: ${activeIncident.source_name}`}><Icon name="arrow" size={16}/></a></div><div className="safety-callout"><span>!</span><p>The report is evidence to review. Current road status and impact are not confirmed.</p></div>
-                <details className="verified-location"><summary>Add reviewer-confirmed map location</summary><input aria-label={`Location name for ${activeIncident.title}`} placeholder="Location from source" value={reviewLocations[activeIncident.id]?.name || activeIncident.location_text || ''} onChange={(event) => setReviewLocations((locations) => ({ ...locations, [activeIncident.id]: { ...locations[activeIncident.id], name: event.target.value } }))}/><div><input aria-label={`Latitude for ${activeIncident.title}`} type="number" min="-90" max="90" step="any" placeholder="Latitude" value={reviewLocations[activeIncident.id]?.latitude ?? (activeIncident.latitude ?? '')} onChange={(event) => setReviewLocations((locations) => ({ ...locations, [activeIncident.id]: { ...locations[activeIncident.id], latitude: event.target.value } }))}/><input aria-label={`Longitude for ${activeIncident.title}`} type="number" min="-180" max="180" step="any" placeholder="Longitude" value={reviewLocations[activeIncident.id]?.longitude ?? (activeIncident.longitude ?? '')} onChange={(event) => setReviewLocations((locations) => ({ ...locations, [activeIncident.id]: { ...locations[activeIncident.id], longitude: event.target.value } }))}/></div><small>Only enter coordinates you checked in the linked source.</small></details>
-                <div className="review-controls"><label className="sr-only" htmlFor={`review-status-${activeIncident.id}`}>Review status</label><select id={`review-status-${activeIncident.id}`} value={reviewStatuses[activeIncident.id] || activeIncident.verification} onChange={(event) => setReviewStatuses((statuses) => ({ ...statuses, [activeIncident.id]: event.target.value }))}><option value="unverified">Unverified</option><option value="confirmed">Confirmed</option><option value="conflicting">Conflicting</option><option value="unknown">Unknown</option></select><label className="sr-only" htmlFor={`review-note-${activeIncident.id}`}>Review note</label><input id={`review-note-${activeIncident.id}`} placeholder="Review note (required)" value={reviewNotes[activeIncident.id] || ''} onChange={(event) => setReviewNotes((notes) => ({ ...notes, [activeIncident.id]: event.target.value }))}/><button disabled={reviewBusyId === activeIncident.id || (reviewNotes[activeIncident.id] || '').trim().length < 3} onClick={() => reviewIncident(activeIncident)}>{reviewBusyId === activeIncident.id ? 'Saving…' : 'Save review'}</button></div>
+                <details className="verified-location"><summary>Add reviewer-confirmed map location</summary><input aria-label={`Location name for ${activeIncident.title}`} placeholder="Location from source" value={reviewLocations[activeIncident.id]?.name ?? (activeIncident.location_text || '')} onChange={(event) => setReviewLocations((locations) => ({ ...locations, [activeIncident.id]: { ...locations[activeIncident.id], name: event.target.value } }))}/><div><input aria-label={`Latitude for ${activeIncident.title}`} type="number" min="-90" max="90" step="any" placeholder="Latitude" value={reviewLocations[activeIncident.id]?.latitude ?? (activeIncident.latitude ?? '')} onChange={(event) => setReviewLocations((locations) => ({ ...locations, [activeIncident.id]: { ...locations[activeIncident.id], latitude: event.target.value } }))}/><input aria-label={`Longitude for ${activeIncident.title}`} type="number" min="-180" max="180" step="any" placeholder="Longitude" value={reviewLocations[activeIncident.id]?.longitude ?? (activeIncident.longitude ?? '')} onChange={(event) => setReviewLocations((locations) => ({ ...locations, [activeIncident.id]: { ...locations[activeIncident.id], longitude: event.target.value } }))}/></div><small>Only enter coordinates you checked in the linked source. Empty both fields and save to remove a wrong location.</small></details>
+                <div className="review-controls"><label className="sr-only" htmlFor={`review-status-${activeIncident.id}`}>Review status</label><select id={`review-status-${activeIncident.id}`} value={reviewStatuses[activeIncident.id] || activeIncident.verification} onChange={(event) => setReviewStatuses((statuses) => ({ ...statuses, [activeIncident.id]: event.target.value }))}><option value="unverified">Unverified</option><option value="confirmed">Confirmed</option><option value="conflicting">Conflicting</option><option value="unknown">Unknown</option><option value="dismissed">Dismissed (not relevant)</option></select><label className="sr-only" htmlFor={`review-note-${activeIncident.id}`}>Review note</label><input id={`review-note-${activeIncident.id}`} placeholder="Review note (required)" value={reviewNotes[activeIncident.id] || ''} onChange={(event) => setReviewNotes((notes) => ({ ...notes, [activeIncident.id]: event.target.value }))}/><button disabled={reviewBusyId === activeIncident.id || (reviewNotes[activeIncident.id] || '').trim().length < 3} onClick={() => reviewIncident(activeIncident)}>{reviewBusyId === activeIncident.id ? 'Saving…' : 'Save review'}</button></div>
                 {activeIncident.review_note && <div className="review-history"><b>Last review · {formatTime(activeIncident.reviewed_at)}</b><span>{activeIncident.review_note}</span></div>}
                 </div></> : <div className="evidence-empty"><span className="empty-illustration"><Icon name="layers" size={24}/></span><b>{incidents.length ? 'No matching evidence' : 'No evidence collected yet'}</b><p>{incidents.length ? 'Try another search term.' : 'No reports does not mean a road is clear.'}</p></div>}
             </article>

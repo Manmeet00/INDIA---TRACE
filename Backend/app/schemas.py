@@ -145,19 +145,21 @@ class CollectionResult(BaseModel):
 
 
 class IncidentReview(BaseModel):
-    verification: str = Field(pattern=r"^(confirmed|conflicting|unknown|unverified)$")
+    """Location fields left out of the request are kept; fields sent as null are cleared."""
+    verification: str = Field(pattern=r"^(confirmed|conflicting|unknown|unverified|dismissed)$")
     review_note: str = Field(min_length=3, max_length=1000)
     location_text: str | None = Field(default=None, max_length=300)
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
 
-    @field_validator("review_note", mode="before")
+    @field_validator("review_note", "location_text", mode="before")
     @classmethod
-    def trim_review_note(cls, value):
-        return value.strip() if isinstance(value, str) else value
+    def trim_text(cls, value):
+        return (value.strip() or None) if isinstance(value, str) else value
 
     @model_validator(mode="after")
     def coordinates_are_a_pair(self):
-        if (self.latitude is None) != (self.longitude is None):
+        sent_together = ("latitude" in self.model_fields_set) == ("longitude" in self.model_fields_set)
+        if not sent_together or (self.latitude is None) != (self.longitude is None):
             raise ValueError("latitude and longitude must be provided together")
         return self
