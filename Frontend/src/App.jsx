@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import './App.css'
 import Icon from './components/Icon.jsx'
 import RoutePlanner from './components/RoutePlanner.jsx'
@@ -8,6 +8,7 @@ import EvidenceDesk from './components/EvidenceDesk.jsx'
 import EvidenceList from './components/EvidenceList.jsx'
 import Monitoring from './components/Monitoring.jsx'
 import RegionCoverage from './components/RegionCoverage.jsx'
+import SummaryCards from './components/SummaryCards.jsx'
 import { useWorkspace } from './hooks/useWorkspace.js'
 import { useEvidenceFilters } from './hooks/useEvidenceFilters.js'
 import { useSidebar } from './hooks/useSidebar.js'
@@ -44,19 +45,53 @@ function App() {
   const [runProgress, setRunProgress] = useState(null)
   const [refreshing, setRefreshing] = useState(false)
   const [message, setMessage] = useState('')
+  const [liveCheck, setLiveCheck] = useState(null)
+  const planToken = useRef(0)
 
   const showPlan = (payload) => {
     setPlan(payload)
     setSelectedRoute(payload.routes[0]?.id || null)
   }
 
+  // A live check for the planned route: a TinyFish search of the last 3 days for its main highway and its two
+  // towns. When it finishes, the route is planned again so its reports, cards and advice include what was found.
+  const LIVE_CHECK_DAYS = 3
+  const checkRouteLive = async (request, payload, token) => {
+    const main = Object.entries(payload.routes[0]?.highways || {}).sort((a, b) => b[1] - a[1])[0]?.[0]
+    const towns = [request.origin, request.destination].map((name) => name.split(',')[0].trim()).join(' ').replace(/[^A-Za-z .'-]/g, '').slice(0, 60)
+    setLiveCheck({ state: 'running', text: `Checking live reports for this route (last ${LIVE_CHECK_DAYS} days)…` })
+    try {
+      const job = await api.startCollection({ road: main || null, place: towns || null, window_days: LIVE_CHECK_DAYS })
+      if (job.status !== 'running') {
+        if (token === planToken.current) setLiveCheck({ state: 'skipped', text: job.message })
+        return
+      }
+      const run = await api.followRun(job.run_id, () => {})
+      await refreshWorkspace()
+      const updated = await api.planRoute(request)
+      if (token !== planToken.current) return // another route was planned meanwhile
+      setPlan(updated)
+      setSelectedRoute((current) => updated.routes.some((item) => item.id === current) ? current : updated.routes[0]?.id || null)
+      const time = new Intl.DateTimeFormat('en-IN', { timeStyle: 'short' }).format(new Date())
+      setLiveCheck({ state: 'done', text: run.stored
+        ? `Live check ${time}: ${run.stored} new report${run.stored === 1 ? '' : 's'} from the route search`
+        : `Live check ${time}: no new reports in the last ${LIVE_CHECK_DAYS} days. No reports does not mean the road is clear.` })
+    } catch (error) {
+      if (token === planToken.current) setLiveCheck({ state: 'skipped', text: `Live check not run: ${error.message}` })
+    }
+  }
+
   const planRoute = async (request) => {
+    const token = ++planToken.current
     setRouteLoading(true)
     setRouteError('')
     setPlan(null)
     setSelectedRoute(null)
+    setLiveCheck(null)
     try {
-      showPlan(await api.planRoute(request))
+      const payload = await api.planRoute(request)
+      showPlan(payload)
+      checkRouteLive(request, payload, token)
     } catch (error) {
       if (api.hasOfflineRoute(request)) {
         try {
@@ -133,13 +168,6 @@ function App() {
 
   const activeIncident = visibleIncidents.find((item) => item.id === selectedIncidentId) || visibleIncidents[0] || null
   const relevantIncidents = incidents.filter((item) => !INACTIVE_STATES.includes(item.verification))
-  const typeSummary = (type) => {
-    const matching = relevantIncidents.filter((item) => item.event_types?.includes(type))
-    return `${matching.filter((item) => item.verification === 'confirmed').length} confirmed · ${matching.filter((item) => item.freshness === 'fresh').length} recent`
-  }
-  const typeCount = (type) => relevantIncidents.filter((item) => item.event_types?.includes(type)).length
-  const unknownLocationCount = relevantIncidents.filter((item) => item.latitude == null && !item.approximate_location).length
-  const sourceCount = new Set(incidents.map((item) => item.source_name)).size
   const chosenRoute = plan?.routes?.find((item) => item.id === selectedRoute)
 
   return <div className={`app-shell${sidebar.hidden ? ' sidebar-hidden' : ''}`}>
@@ -163,13 +191,7 @@ function App() {
       <header className="topbar"><button type="button" className="sidebar-toggle" onClick={sidebar.toggle} aria-controls="sidebar" aria-expanded={!sidebar.hidden} aria-label={sidebar.hidden ? 'Show sidebar' : 'Hide sidebar'} title={sidebar.hidden ? 'Show sidebar' : 'Hide sidebar'}><Icon name="sidebar" size={20}/></button><div className="topbar-brand"><span className="brand-mark small"><span /><span /><span /></span><span><b>INDIA-TRACE</b><small>Road risk dashboard</small></span></div><label className="global-search"><Icon name="search" size={19}/><input aria-label="Search evidence" placeholder="Search locations, roads, sources or reports…" value={search} onChange={(event) => setSearch(event.target.value)}/></label><div className="top-actions"><span className={`connection-label ${apiStatus}`} title={scheduleNote}><i/>{liveLabel}</span><div className="profile-avatar">TT</div><span className="profile-name">Tech Titans</span></div></header>
 
       <div className="page-content">
-        <section className="summary-grid" aria-label="Workspace summary">
-          <article className="summary-card red"><span className="summary-icon"><Icon name="alert" size={20}/></span><div><b>{typeCount('closure')}</b><span>Closure reports</span><small>{typeSummary('closure')}</small></div></article>
-          <article className="summary-card amber"><span className="summary-icon"><Icon name="mountain" size={20}/></span><div><b>{typeCount('landslide')}</b><span>Landslide reports</span><small>{typeSummary('landslide')}</small></div></article>
-          <article className="summary-card blue"><span className="summary-icon"><Icon name="water" size={20}/></span><div><b>{typeCount('flood')}</b><span>Flood / waterlogging</span><small>{typeSummary('flood')}</small></div></article>
-          <article className="summary-card violet"><span className="summary-icon"><Icon name="pin" size={20}/></span><div><b>{unknownLocationCount}</b><span>Location unresolved</span><small>Not on the map yet</small></div></article>
-          <article className="summary-card green"><span className="summary-icon"><Icon name="check" size={20}/></span><div><b>{incidents.length}</b><span>Reports processed</span><small>{sourceCount} sources · {relevantIncidents.filter((item) => item.freshness === 'fresh').length} recent</small></div></article>
-        </section>
+        <SummaryCards incidents={incidents} plan={plan} route={chosenRoute} liveCheck={liveCheck}/>
 
         <section className="workspace-grid">
           <div className="left-column">

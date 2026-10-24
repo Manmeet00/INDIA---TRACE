@@ -410,3 +410,26 @@ def test_town_pin_lists_the_reports_that_name_the_town_and_live_refresh_announce
     page.locator(".town-filter button").click()
     expect(page.locator(".town-filter")).to_have_count(0)
     expect(page.locator(".collection-message")).to_contain_text("1 new report arrived at")
+
+
+def test_planning_a_route_scopes_the_cards_and_runs_a_live_check_for_it(dashboard, tinyfish_network):
+    searched = []
+
+    def search(request):
+        searched.append(request.full_url)
+        return {"results": [{"url": "https://example.org/live-nh6", "title": "Landslide blocks NH-6",
+                             "snippet": "A landslide blocked NH-6 this morning; traffic is held.", "date": "1 hour ago"}]}
+    tinyfish_network[SEARCH] = search
+    page = dashboard
+    page.open()
+    expect(page.locator(".summary-scope")).to_contain_text("Across the region")
+    expect(page.locator(".summary-card.green b")).to_have_text("0")
+
+    plan(page, "Guwahati, Assam", "Shillong, Meghalaya")
+    expect(page.locator(".summary-scope")).to_contain_text("Route 1: Guwahati → Shillong")
+    expect(page.locator(".live-check")).to_contain_text("Live check")
+    expect(page.locator(".live-check")).to_contain_text("1 new report from the route search")
+    expect(page.locator(".summary-card.amber b")).to_have_text("1")   # the new landslide names NH-6, which the route uses
+    expect(page.locator(".summary-card.green")).to_contain_text("Reports for this route")
+    expect(page.locator(".action-banner")).to_contain_text("NH-6")    # the advice was recalculated with it
+    assert all("query=NH-6+Guwahati+Shillong" in url and "recency_minutes=4320" in url for url in searched)
