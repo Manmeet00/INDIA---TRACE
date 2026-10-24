@@ -124,7 +124,7 @@ def test_collect_review_locate_and_replan(dashboard, tinyfish_network):
     expect(page.locator(".collection-message")).to_contain_text("2 new reports")
     expect(page.locator(".evidence-row")).to_have_count(2)  # web and news both return them; malformed ones are dropped
     # "closed near Shillong" is placed at Shillong (approximate); the Sonapur report is not, as Sonapur is in two states.
-    expect(page.locator(".summary-card.violet b")).to_have_text("1")
+    expect(page.locator(".summary-card.green b")).to_have_text("0")  # no route planned yet: the cards wait for one
     expect(page.locator(".evidence-row", has_text="Sonapur")).to_contain_text("Sonapur")
 
     page.locator(".evidence-row", has_text="closed for repairs").click()
@@ -414,7 +414,7 @@ def test_planning_a_route_scopes_the_cards_and_runs_a_live_check_for_it(dashboar
     tinyfish_network[SEARCH] = search
     page = dashboard
     page.open()
-    expect(page.locator(".summary-scope")).to_contain_text("Across the region")
+    expect(page.locator(".summary-scope")).to_contain_text("No route planned yet")
     expect(page.locator(".summary-card.green b")).to_have_text("0")
 
     plan(page, "Guwahati, Assam", "Shillong, Meghalaya")
