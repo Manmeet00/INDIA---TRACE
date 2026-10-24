@@ -5,6 +5,7 @@ import 'leaflet/dist/leaflet.css'
 import Icon from './Icon.jsx'
 import LayersPanel from './LayersPanel.jsx'
 import MapSearch from './MapSearch.jsx'
+import NavigationPanel from './NavigationPanel.jsx'
 import MapplsMap from './MapplsMap.jsx'
 import { useMapLayers } from '../hooks/useMapLayers.js'
 import { BASE_LAYERS, GIBS, OVERLAYS, aqiTone } from '../lib/mapLayers.js'
@@ -22,7 +23,8 @@ function MapBounds({ geometry }) {
     const points = geometry.coordinates.map(([longitude, latitude]) => [latitude, longitude])
     // The same map moves to each new route (it is never rebuilt, so loaded imagery, roads and names are kept).
     // No animation: a route chosen mid-zoom would otherwise throw in Leaflet (_leaflet_pos).
-    if (points.length > 1) map.fitBounds(points, { padding: [36, 36], maxZoom: 10, animate: false })
+    // Room at the top for the search bar and at the bottom for the Start button, so neither covers the route.
+    if (points.length > 1) map.fitBounds(points, { paddingTopLeft: [36, 72], paddingBottomRight: [64, 96], maxZoom: 10, animate: false })
   }, [geometry, map])
   return null
 }
@@ -63,6 +65,16 @@ function HereLayer({ here, hasPlan, focusKey }) {
     <CircleMarker center={[here.latitude, here.longitude]} radius={7} pathOptions={{ color: '#fff', weight: 3, fillColor: HERE_COLOR, fillOpacity: 1 }}><Tooltip>Your location</Tooltip></CircleMarker>
   </>
 }
+
+// While navigating, the map stays on the device, close in, as each new position arrives.
+function FollowHere({ here }) {
+  const map = useMap()
+  useEffect(() => {
+    if (inIndia(here)) map.setView([here.latitude, here.longitude], Math.max(map.getZoom(), NAVIGATION_ZOOM), { animate: false })
+  }, [here, map])
+  return null
+}
+const NAVIGATION_ZOOM = 16
 
 // Current air quality at your position and at the route's start and end, as small AQI labels.
 function AirQualityLayer({ here, plan }) {
@@ -165,14 +177,16 @@ function DetailLayers({ overlays, here, plan }) {
 }
 
 // Only reports with reviewer-confirmed coordinates are drawn; text mentions never become map points.
-function DashboardMap({ plan, incidents, selectedRoute, selectedIncident, onSelectIncident, hiddenTypes, boundary, here, focusKey, base, overlays }) {
+// navigating: only the followed route is drawn and the map follows the device instead of fitting the route.
+function DashboardMap({ plan, incidents, selectedRoute, selectedIncident, onSelectIncident, hiddenTypes, boundary, here, focusKey, base, overlays, navigating }) {
   const route = plan?.routes?.find((item) => item.id === selectedRoute) || plan?.routes?.[0]
   const startHere = !plan && inIndia(here)
   const center = plan?.origin ? [plan.origin.latitude, plan.origin.longitude] : startHere ? [here.latitude, here.longitude] : [26.2, 92.4]
   const shown = (item) => !INACTIVE_STATES.includes(item.verification) && !hiddenTypes.includes(mapCategory(item))
   return <MapContainer center={center} zoom={plan ? 7 : startHere ? HERE_ZOOM : 6} minZoom={4} maxBounds={INDIA_BOUNDS} maxBoundsViscosity={1} zoomControl={false} attributionControl={false} className="map-canvas">
     {boundary && <IndiaMask boundary={boundary}/>}
-    {route && <MapBounds geometry={route.geometry} />}
+    {route && !navigating && <MapBounds geometry={route.geometry} />}
+    {navigating && <FollowHere here={here}/>}
     <TileLayer key={base} url={BASE_LAYERS[base].url} maxZoom={BASE_LAYERS[base].maxZoom} {...(BASE_LAYERS[base].subdomains && { subdomains: BASE_LAYERS[base].subdomains })} {...TILE_OPTIONS}/>
     {BASE_LAYERS[base].roads && <HybridRoads key={`${base}-roads`} maxZoom={BASE_LAYERS[base].maxZoom}/>}
     {BASE_LAYERS[base].labels && <Pane name="place-labels" style={{ zIndex: 380, pointerEvents: 'none' }}><PlaceLabels boundary={boundary}/></Pane>}
@@ -180,8 +194,8 @@ function DashboardMap({ plan, incidents, selectedRoute, selectedIncident, onSele
     <ZoomControl position="bottomright" />
     <ScaleControl position="bottomright" imperial={false}/>
     <HereLayer here={here} hasPlan={Boolean(plan)} focusKey={focusKey}/>
-    {plan?.routes && [...plan.routes].sort((a, b) => (a.id === route?.id) - (b.id === route?.id)).map((item) => <Polyline key={item.id} positions={item.geometry.coordinates.map(([lon, lat]) => [lat, lon])} pathOptions={{ color: item.id === route?.id ? '#0878e8' : '#64748b', opacity: item.id === route?.id ? 0.95 : 0.55, weight: item.id === route?.id ? 5 : 3, dashArray: item.id === route?.id ? undefined : '8 9' }} />)}
-    {plan?.origin && <CircleMarker center={[plan.origin.latitude, plan.origin.longitude]} radius={8} pathOptions={{ color: '#fff', weight: 3, fillColor: '#079352', fillOpacity: 1 }}><Tooltip>Origin · {plan.origin.name}</Tooltip></CircleMarker>}
+    {plan?.routes && [...plan.routes].filter((item) => !navigating || item.id === route?.id).sort((a, b) => (a.id === route?.id) - (b.id === route?.id)).map((item) => <Polyline key={item.id} positions={item.geometry.coordinates.map(([lon, lat]) => [lat, lon])} pathOptions={{ color: item.id === route?.id ? '#0878e8' : '#64748b', opacity: item.id === route?.id ? 0.95 : 0.55, weight: item.id === route?.id ? 5 : 3, dashArray: item.id === route?.id ? undefined : '8 9' }} />)}
+    {plan?.origin && !navigating && <CircleMarker center={[plan.origin.latitude, plan.origin.longitude]} radius={8} pathOptions={{ color: '#fff', weight: 3, fillColor: '#079352', fillOpacity: 1 }}><Tooltip>Origin · {plan.origin.name}</Tooltip></CircleMarker>}
     {plan?.destination && <CircleMarker center={[plan.destination.latitude, plan.destination.longitude]} radius={8} pathOptions={{ color: '#fff', weight: 3, fillColor: '#e44a58', fillOpacity: 1 }}><Tooltip>Destination · {plan.destination.name}</Tooltip></CircleMarker>}
     {incidents.filter((item) => shown(item) && item.latitude != null && item.longitude != null).map((item) => <CircleMarker key={item.id} center={[item.latitude, item.longitude]} radius={selectedIncident?.id === item.id ? 9 : 7} eventHandlers={{ click: () => onSelectIncident(item.id) }} pathOptions={{ color: '#fff', weight: 2, fillColor: item.evidence_status === 'confirmed' ? '#df3946' : item.evidence_status === 'stale' ? '#9ba8b8' : '#e99b28', fillOpacity: 0.95 }}><Tooltip>{item.title} · {statusLabel(item)}</Tooltip></CircleMarker>)}
   </MapContainer>
@@ -204,17 +218,21 @@ function useFullscreen(element) {
     document.addEventListener('keydown', leave)
     return () => document.removeEventListener('keydown', leave)
   }, [on, native])
-  const toggle = () => {
-    if (!native) setOn((value) => !value)
-    else if (document.fullscreenElement) document.exitFullscreen()
-    else element.current?.requestFullscreen().catch(() => setOn(true))
-  }
-  return { on, toggle }
+  const enter = useCallback(() => {
+    if (!native) setOn(true)
+    else if (!document.fullscreenElement) element.current?.requestFullscreen().catch(() => setOn(true))
+  }, [element, native])
+  const exit = useCallback(() => {
+    if (native && document.fullscreenElement) document.exitFullscreen()
+    setOn(false)
+  }, [native])
+  return { on, toggle: () => (on ? exit() : enter()), enter, exit }
 }
 
 // Mappls when the API has a Mappls key, OpenStreetMap otherwise. If Mappls cannot load (no internet, a rejected
 // key) the map falls back to OpenStreetMap and says so, so the dashboard never loses its map.
-export default function RouteMap({ plan, mapConfig, here, hereProblem, onRetryHere, onSearch, searchStatus, ...mapProps }) {
+// onStart begins navigation (null when the route cannot be followed); navigation is the followed route's state.
+export default function RouteMap({ plan, mapConfig, here, hereProblem, onRetryHere, onSearch, searchStatus, onStart, navigation, ...mapProps }) {
   const [focusKey, setFocusKey] = useState(0)
   const layers = useMapLayers()
   const wrap = useRef(null)
@@ -230,6 +248,14 @@ export default function RouteMap({ plan, mapConfig, here, hereProblem, onRetryHe
   }, [])
   const onUnavailable = useCallback((reason) => setMapplsProblem(reason || 'The Mappls map could not load.'), [])
   const fullscreen = useFullscreen(wrap)
+  // Navigation fills the screen, like a maps app, and gives the dashboard back when it ends.
+  const navigating = Boolean(navigation)
+  const { enter, exit } = fullscreen
+  useEffect(() => {
+    if (!navigating) return undefined
+    enter()
+    return exit
+  }, [navigating, enter, exit])
   const useMappls = mapConfig?.provider === 'mappls' && !mapplsProblem
   const credit = `${useMappls ? 'Map © Mappls (MapmyIndia)' : [BASE_LAYERS[layers.base].credit, ...layers.overlays.map((key) => OVERLAYS[key].credit)].join(' · ')} · India boundary: Survey of India`
   const status = plan?.offline_demo ? 'Historical snapshot' : plan ? `Routing fetched ${formatTime(plan.routing_fetched_at)}` : 'Map ready'
@@ -237,12 +263,13 @@ export default function RouteMap({ plan, mapConfig, here, hereProblem, onRetryHe
     {mapplsProblem && <p className="map-fallback" role="status">{mapplsProblem} Showing OpenStreetMap instead.</p>}
     <div className={`map-wrap${fullscreen.on ? ' fullscreen' : ''}`} ref={wrap}>{!mapConfig ? <div className="map-canvas"/> : useMappls
       ? <MapplsMap apiKey={mapConfig.mappls_key} plan={plan} boundary={boundary} here={here} focusKey={focusKey} {...mapProps} onUnavailable={onUnavailable}/>
-      : <DashboardMap plan={plan} boundary={boundary} here={here} focusKey={focusKey} base={layers.base} overlays={layers.overlays} {...mapProps}/>}
-      <MapSearch onSearch={onSearch} status={searchStatus}/>
+      : <DashboardMap plan={plan} boundary={boundary} here={here} focusKey={focusKey} base={layers.base} overlays={layers.overlays} navigating={navigating} {...mapProps}/>}
+      {navigation ? <NavigationPanel {...navigation} here={here}/> : <MapSearch onSearch={onSearch} status={searchStatus}/>}
+      {plan && onStart && !navigation && <button type="button" className="map-start" onClick={onStart}><Icon name="navigate" size={18}/> Start</button>}
       {mapConfig && <LayersPanel base={layers.base} overlays={layers.overlays} onBase={layers.setBase} onToggle={layers.toggleOverlay} mappls={useMappls}/>}
       <button type="button" className="locate-button" onClick={() => (here ? setFocusKey((key) => key + 1) : onRetryHere())} disabled={Boolean(here) && !inIndia(here)} aria-label="Show my location" title={inIndia(here) ? 'Show my location' : here ? hereText : `${hereText} Press to try again.`}><Icon name="locate" size={20}/></button>
       <button type="button" className="fullscreen-button" onClick={fullscreen.toggle} aria-pressed={fullscreen.on} aria-label={fullscreen.on ? 'Exit full screen' : 'Show the map full screen'} title={fullscreen.on ? 'Exit full screen (Esc)' : 'Full screen'}><Icon name={fullscreen.on ? 'fullscreen-exit' : 'fullscreen'} size={20}/></button>
-      {fullscreen.on && <details className="map-credit"><summary aria-label="Map credits" title="Map credits">i</summary><small>{credit}</small></details>}<div className="map-legend"><span><i className="legend-route"/> Selected route</span><span><i className="legend-candidate"/> Other candidates</span><span><i className="legend-incident"/> Geolocated evidence</span><span><i className="legend-here"/> You</span></div></div>
+      {fullscreen.on && <details className="map-credit"><summary aria-label="Map credits" title="Map credits">i</summary><small>{credit}</small></details>}{!navigation && <div className="map-legend"><span><i className="legend-route"/> Selected route</span><span><i className="legend-candidate"/> Other candidates</span><span><i className="legend-incident"/> Geolocated evidence</span><span><i className="legend-here"/> You</span></div>}</div>
     <div className="map-foot"><span><Icon name="pin" size={14}/>{plan ? `${placeName(plan.origin)} → ${placeName(plan.destination)}` : hereText}</span><span>{credit}</span></div>
   </article>
 }

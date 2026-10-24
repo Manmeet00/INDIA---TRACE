@@ -12,8 +12,8 @@ export function useHere() {
   useEffect(() => {
     if (!supported) return undefined
     const watch = navigator.geolocation.watchPosition(
-      ({ coords }) => {
-        setHere({ latitude: coords.latitude, longitude: coords.longitude, accuracy: coords.accuracy })
+      ({ coords, timestamp }) => {
+        setHere({ latitude: coords.latitude, longitude: coords.longitude, accuracy: coords.accuracy, at: timestamp ?? null })
         setProblem('')
       },
       (error) => setProblem(locationProblem(error)),

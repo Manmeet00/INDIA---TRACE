@@ -25,6 +25,16 @@ const PATHS = {
   close: <><path d="m6 6 12 12M18 6 6 18"/></>,
   fullscreen: <><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></>,
   'fullscreen-exit': <><path d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5"/></>,
+  navigate: <><path d="M12 3 5 20l7-4 7 4Z"/></>,
+  // Turn arrows for navigation (see lib/navigation.js turnIcon).
+  straight: <><path d="M12 21V4M6 10l6-6 6 6"/></>,
+  left: <><path d="M17 21v-8a3 3 0 0 0-3-3H5M9 6l-4 4 4 4"/></>,
+  right: <><path d="M7 21v-8a3 3 0 0 1 3-3h9M15 6l4 4-4 4"/></>,
+  'slight-left': <><path d="M15 21v-6.5L7 6.5M7 12V6.5h5.5"/></>,
+  'slight-right': <><path d="M9 21v-6.5l8-8M17 12V6.5h-5.5"/></>,
+  uturn: <><path d="M8 21V9a4 4 0 0 1 8 0v8M12 13l4 4 4-4"/></>,
+  roundabout: <><circle cx="12" cy="9" r="4.5"/><path d="M12 13.5V21M16.5 9H21M19 6.5 21.5 9 19 11.5"/></>,
+  arrive: <><path d="M6 21V4h11l-2.5 4L17 12H6"/></>,
   mountain: <><path d="m3 20 6.5-12 4 7 2.5-4L21 20Z"/></>,
   water: <><path d="M3 8c2 0 2-1.5 4.5-1.5S9.5 8 12 8s2-1.5 4.5-1.5S19 8 21 8M3 13c2 0 2-1.5 4.5-1.5S9.5 13 12 13s2-1.5 4.5-1.5S19 13 21 13M3 18c2 0 2-1.5 4.5-1.5S9.5 18 12 18s2-1.5 4.5-1.5S19 18 21 18"/></>,
 }

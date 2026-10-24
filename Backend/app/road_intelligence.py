@@ -105,6 +105,33 @@ def _route_highways(route: dict[str, Any]) -> dict[str, int]:
     return {key: round(value) for key, value in sorted(metres.items()) if value >= MIN_HIGHWAY_M}
 
 
+def _route_steps(route: dict[str, Any]) -> list[dict[str, Any]]:
+    """Turn-by-turn steps for navigation, in order: what to do at each point and how far it is to the next one.
+
+    OSRM's own fields are passed on (maneuver type and direction, road name and number, roundabout exit); the
+    dashboard words them. A step without a usable maneuver location is left out rather than guessed.
+    """
+    steps = []
+    for leg in route.get("legs", []):
+        for step in leg.get("steps", []):
+            maneuver = step.get("maneuver") if isinstance(step, dict) else None
+            location = maneuver.get("location") if isinstance(maneuver, dict) else None
+            if not (isinstance(location, list) and len(location) >= 2 and _number(location[0]) and _number(location[1])):
+                continue
+            steps.append({
+                "type": str(maneuver.get("type") or "continue"),
+                "modifier": maneuver.get("modifier") if isinstance(maneuver.get("modifier"), str) else None,
+                "exit": maneuver.get("exit") if isinstance(maneuver.get("exit"), int) else None,
+                "bearing_after": maneuver.get("bearing_after") if _number(maneuver.get("bearing_after")) else None,
+                "name": step.get("name") if isinstance(step.get("name"), str) else "",
+                "ref": step.get("ref") if isinstance(step.get("ref"), str) else "",
+                "distance_m": round(float(step.get("distance") or 0), 1) if _number(step.get("distance") or 0) else 0,
+                "duration_s": round(float(step.get("duration") or 0), 1) if _number(step.get("duration") or 0) else 0,
+                "location": [float(location[0]), float(location[1])],
+            })
+    return steps
+
+
 def _number(value: Any) -> bool:
     try:
         return math.isfinite(float(value))
@@ -233,6 +260,7 @@ def plan_route(payload) -> dict[str, Any]:
             "duration_s": round(route["duration"]),
             "geometry": route["geometry"],
             "highways": highways,
+            "steps": _route_steps(route),
             "priority_rank": index + 1,
             "vehicle_suitability": "unknown",
             "exposure": route_exposure(route["geometry"], incident_items, highways),

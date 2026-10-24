@@ -14,6 +14,7 @@ import { useEvidenceFilters } from './hooks/useEvidenceFilters.js'
 import { useSidebar } from './hooks/useSidebar.js'
 import { useHere } from './hooks/useHere.js'
 import { INACTIVE_STATES, formatDistance, formatDuration, formatTime, placeName } from './lib/format.js'
+import { inIndia } from './lib/mapStyle.js'
 import * as api from './services/api.js'
 
 // Degraded: the API answered but could not serve data, usually because its database failed.
@@ -50,7 +51,9 @@ function App() {
   const [refreshing, setRefreshing] = useState(false)
   const [message, setMessage] = useState('')
   const [liveCheck, setLiveCheck] = useState(null)
+  const [navigating, setNavigating] = useState(false) // following the chosen route, turn by turn
   const planToken = useRef(0)
+  const lastRequest = useRef(null)
 
   const showPlan = (payload) => {
     setPlan(payload)
@@ -87,8 +90,11 @@ function App() {
     }
   }
 
-  const planRoute = async (request) => {
+  // keepNavigating: a re-route while following a route; planning any other route ends navigation.
+  const planRoute = async (request, { keepNavigating = false } = {}) => {
     const token = ++planToken.current
+    lastRequest.current = request
+    if (!keepNavigating) setNavigating(false)
     setRouteLoading(true)
     setRouteError('')
     setPlan(null)
@@ -173,6 +179,18 @@ function App() {
   const activeIncident = visibleIncidents.find((item) => item.id === selectedIncidentId) || visibleIncidents[0] || null
   const relevantIncidents = incidents.filter((item) => !INACTIVE_STATES.includes(item.verification))
   const chosenRoute = plan?.routes?.find((item) => item.id === selectedRoute)
+  // Start follows a route from the device's own position, like a maps app; anything else can only be previewed.
+  const startNote = !plan ? '' : plan.offline_demo ? 'A saved snapshot cannot be followed.'
+    : plan.origin?.query !== 'Your location' ? 'Start follows routes that begin at Your location.'
+      : !inIndia(here) ? 'Start needs your current location.'
+        : !chosenRoute?.steps?.length ? 'The routing service sent no turn-by-turn steps for this route.' : ''
+  const start = plan && !startNote ? () => setNavigating(true) : null
+  const reroute = () => {
+    if (!inIndia(here) || !lastRequest.current) return
+    planRoute({ ...lastRequest.current, origin: `${here.latitude.toFixed(5)}, ${here.longitude.toFixed(5)}` }, { keepNavigating: true })
+  }
+  const navigation = navigating ? { route: chosenRoute, destination: plan?.destination, rerouting: routeLoading, error: routeError,
+    onExit: () => setNavigating(false), onReroute: reroute } : null
 
   return <div className={`app-shell${sidebar.hidden ? ' sidebar-hidden' : ''}`}>
     <aside className="sidebar" id="sidebar" inert={sidebar.hidden}>
@@ -199,13 +217,13 @@ function App() {
 
         <section className="workspace-grid">
           <div className="left-column">
-            <RoutePlanner loading={routeLoading} error={routeError} isSnapshot={Boolean(plan?.offline_demo)} onPlan={planRoute} searched={searched} onSearchWithoutStart={() => setSearchNote('Destination set. Choose a starting point in the route planner.')}/>
+            <RoutePlanner loading={routeLoading} error={routeError} isSnapshot={Boolean(plan?.offline_demo)} onPlan={planRoute} searched={searched} hasPlan={Boolean(plan)} onStart={start} startNote={startNote} onSearchWithoutStart={() => setSearchNote('Destination set. Choose a starting point in the route planner.')}/>
             <MapLayers plan={plan} incidents={relevantIncidents} hiddenTypes={hiddenTypes} onToggle={toggleLayer}/>
             <RegionCoverage region={region}/>
           </div>
 
           <div className="center-column" id="map-section">
-            <RouteMap plan={plan} mapConfig={mapConfig} here={here} hereProblem={hereProblem} onRetryHere={retryHere} onSearch={(place) => { setSearchNote(''); setSearched({ ...place, at: Date.now() }) }}
+            <RouteMap plan={plan} mapConfig={mapConfig} here={here} hereProblem={hereProblem} onRetryHere={retryHere} onStart={start} navigation={navigation} onSearch={(place) => { setSearchNote(''); setSearched({ ...place, at: Date.now() }) }}
               searchStatus={!searched ? null : searchNote ? { tone: 'note', text: searchNote } : routeLoading ? { tone: 'busy', text: 'Finding routes…' } : routeError ? { tone: plan?.offline_demo ? 'note' : 'error', text: routeError } : null} incidents={incidents} selectedRoute={selectedRoute} selectedIncident={activeIncident} onSelectIncident={selectIncident} hiddenTypes={hiddenTypes}/>
             <RouteComparison plan={plan} selectedRoute={selectedRoute} onSelectRoute={setSelectedRoute} onSelectIncident={selectIncident}/>
           </div>

@@ -565,6 +565,82 @@ def test_map_search_bar_shows_progress_and_errors_under_the_bar(dashboard):
     assert len(replies) == 1
 
 
+DRIVING = SECURE + """(() => {
+  let position = { coords: { latitude: 26.18, longitude: 91.75, accuracy: 20 }, timestamp: Date.now() }
+  const watchers = []
+  window.driveTo = (latitude, longitude) => {
+    position = { coords: { latitude, longitude, accuracy: 20 }, timestamp: Date.now() }
+    watchers.forEach((ok) => ok(position))
+  }
+  Object.defineProperty(navigator, 'geolocation', { value: {
+    getCurrentPosition: (ok) => ok(position),
+    watchPosition: (ok) => { watchers.push(ok); ok(position); return watchers.length },
+    clearWatch: () => {} } })
+})()"""
+
+
+def osrm_with_steps(request):
+    from conftest import osrm
+    answer = osrm(request)
+    for route, turn in zip(answer["routes"], ([91.80, 25.90], [92.10, 25.90])):
+        route["legs"] = [{"steps": [
+            {"name": "", "distance": 50000, "duration": 2000, "maneuver": {"type": "depart", "modifier": "right", "bearing_after": 170, "location": [91.75, 26.18]}},
+            {"name": "GS Road", "ref": "NH6", "distance": route["distance"] - 50000, "duration": 2000, "maneuver": {"type": "turn", "modifier": "left", "location": turn}},
+            {"name": "", "distance": 0, "duration": 0, "maneuver": {"type": "arrive", "location": [91.88, 25.58]}},
+        ]}]
+    return answer
+
+
+def test_start_follows_the_route_turn_by_turn_until_arrival(dashboard, providers):
+    providers["router.project-osrm.org"] = osrm_with_steps
+    page = dashboard
+    page.add_init_script(DRIVING)
+    page.open()
+    expect(page.locator("#origin")).to_have_value("Your location")
+    expect(page.locator(".start-button")).to_have_count(0)  # nothing to start before a route is found
+    page.fill("#destination", "Shillong")
+    page.keyboard.press("Escape")
+    page.click(".primary-button")
+    expect(page.locator(".route-card")).to_have_count(2)
+
+    page.locator(".start-button").click()
+    banner = page.locator(".nav-banner")
+    expect(banner).to_contain_text("Turn left onto GS Road (NH6)")
+    expect(banner).to_contain_text("50 km")
+    expect(page.locator(".map-wrap.fullscreen")).to_have_count(1)  # navigation fills the screen
+    expect(page.locator(".map-search")).to_have_count(0)
+    expect(page.locator(".nav-bar")).to_contain_text("arrive")
+    expect(page.locator(".leaflet-overlay-pane path.leaflet-interactive[stroke-dasharray]")).to_have_count(0)  # only the followed route
+
+    page.evaluate("driveTo(26.05, 92.45)")  # well away from both routes
+    expect(page.locator(".nav-off-route")).to_contain_text("You are off the route")
+    page.locator(".nav-off-route button").click()
+    expect(banner).to_contain_text("Turn left onto GS Road (NH6)")  # a new route from here, still navigating
+    plans = [request for host, request in providers["calls"] if host == "router.project-osrm.org"]
+    assert "92.45,26.05" in plans[-1].full_url
+
+    page.evaluate("driveTo(25.58, 91.88)")
+    expect(banner).to_contain_text("You have arrived")
+    expect(banner).to_contain_text("Shillong")
+    page.locator(".nav-exit", has_text="Done").click()
+    expect(page.locator(".navigation")).to_have_count(0)
+    expect(page.locator(".map-wrap.fullscreen")).to_have_count(0)  # the dashboard is back
+    expect(page.locator(".map-start")).to_be_visible()  # the route can be started again from the map
+
+
+def test_start_is_only_for_routes_from_your_location(dashboard, providers):
+    providers["router.project-osrm.org"] = osrm_with_steps
+    page = dashboard
+    page.add_init_script(DRIVING)
+    page.open()
+    expect(page.locator("#origin")).to_have_value("Your location")
+    plan(page, "Guwahati", "Shillong")
+    expect(page.locator(".route-card")).to_have_count(2)
+    expect(page.locator(".start-button")).to_be_disabled()
+    expect(page.locator(".start-note")).to_have_text("Start follows routes that begin at Your location.")
+    expect(page.locator(".map-start")).to_have_count(0)
+
+
 def test_refused_location_leaves_the_start_for_the_person_to_type(dashboard):
     page = dashboard
     page.add_init_script(geolocation("fail({ code: 1, PERMISSION_DENIED: 1 })"))

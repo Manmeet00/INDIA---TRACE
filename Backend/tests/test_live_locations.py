@@ -178,6 +178,29 @@ def test_a_town_is_routed_to_the_town_not_the_middle_of_its_district(client, pro
     assert (chosen["destination"]["latitude"], chosen["destination"]["longitude"]) == (30.3301995, 76.4007656)
 
 
+def test_routes_carry_turn_by_turn_steps_for_navigation(client, providers):
+    from conftest import osrm
+
+    def with_steps(request):
+        answer = osrm(request)
+        answer["routes"][0]["legs"] = [{"steps": [
+            {"name": "", "distance": 120.4, "duration": 20, "maneuver": {"type": "depart", "modifier": "right", "bearing_after": 198, "location": [91.75, 26.18]}},
+            {"name": "GS Road", "ref": "NH6", "distance": 90000, "duration": 4000, "maneuver": {"type": "turn", "modifier": "left", "location": [91.76, 26.17]}},
+            {"name": "", "distance": 300, "duration": 30, "maneuver": {"type": "roundabout", "modifier": "right", "exit": 2, "location": [91.87, 25.6]}},
+            {"name": "Broken", "distance": 10, "maneuver": {"type": "turn", "location": ["x", 1]}},  # no usable point: left out
+            {"name": "", "distance": 0, "duration": 0, "maneuver": {"type": "arrive", "location": [91.88, 25.58]}},
+        ]}]
+        return answer
+    providers["router.project-osrm.org"] = with_steps
+    body = client.post("/api/routes/plan", json={"origin": "26.18000, 91.75000", "destination": "Shillong", "priority": "balanced"}).json()
+    steps = body["routes"][0]["steps"]
+    assert [step["type"] for step in steps] == ["depart", "turn", "roundabout", "arrive"]
+    assert steps[1] == {"type": "turn", "modifier": "left", "exit": None, "bearing_after": None, "name": "GS Road", "ref": "NH6",
+                        "distance_m": 90000.0, "duration_s": 4000.0, "location": [91.76, 26.17]}
+    assert steps[2]["exit"] == 2 and steps[0]["bearing_after"] == 198
+    assert body["routes"][1]["steps"] == []  # OSRM sent no maneuvers for it: nothing is made up
+
+
 def test_suggestions_still_offer_region_towns_when_photon_is_down(client, providers):
     providers["photon.komoot.io"] = TimeoutError("timed out")
     assert [item["label"] for item in client.get("/api/places/suggest?q=Shil").json()] == ["Shillong"]

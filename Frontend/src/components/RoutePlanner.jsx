@@ -17,7 +17,8 @@ const place = (text) => ({ text, query: text })
 // chips. The form owns its inputs and hands a plan request to onPlan; App decides how to fetch it.
 // searched: a destination chosen in the map's search bar ({ text, query, at }); it fills the destination and,
 // once the starting point is known, finds routes straight away (otherwise onSearchWithoutStart is told).
-export default function RoutePlanner({ loading, error, isSnapshot, onPlan, searched, onSearchWithoutStart }) {
+// onStart begins turn-by-turn navigation of the chosen route (null when it cannot: startNote says why).
+export default function RoutePlanner({ loading, error, isSnapshot, onPlan, searched, onSearchWithoutStart, hasPlan, onStart, startNote }) {
   // The start is the device's position (found when the form opens); the destination is chosen by the person.
   const [origin, setOrigin] = useState(place(''))
   const [destination, setDestination] = useState(place(''))
@@ -67,7 +68,11 @@ export default function RoutePlanner({ loading, error, isSnapshot, onPlan, searc
         <small className="chip-note">{PRIORITY_NOTES[priority]}</small>
       </fieldset>
 
-      <button className="primary-button" type="submit" disabled={loading}>{loading ? 'Finding routes…' : <><Icon name="route" size={17}/> Find routes</>}</button>
+      <div className={hasPlan ? 'planner-actions' : undefined}>
+        {hasPlan && <button type="button" className="start-button" onClick={onStart} disabled={!onStart || loading} title={startNote || 'Follow this route turn by turn'}><Icon name="navigate" size={17}/> Start</button>}
+        <button className={`primary-button${hasPlan ? ' secondary' : ''}`} type="submit" disabled={loading}>{loading ? 'Finding routes…' : <><Icon name="route" size={17}/> Find routes</>}</button>
+      </div>
+      {hasPlan && startNote && <small className="start-note">{startNote}</small>}
       {error && <div className={isSnapshot ? 'inline-demo-note' : 'inline-error'} role="status">{error}</div>}
     </form>
     <div className="route-disclaimer"><span>i</span><p>Route estimates do not confirm current road conditions or vehicle restrictions.</p></div>
