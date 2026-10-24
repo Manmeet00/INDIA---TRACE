@@ -414,6 +414,18 @@
 .freshness-badge.fresh { color: var(--ok); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ok) 40%, white); }
 .selected-incident h3 { margin: 10px 0 8px; color: var(--text); font: 700 var(--fs-md)/1.35 var(--font-display); }
 .incident-meta { display: grid; gap: 5px; margin-bottom: 10px; }
+/* With a route planned: its reports or all of them, and why the open report is on the route. */
+.evidence-scope { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin: 12px 0 4px; padding: 3px; border-radius: 9px; background: var(--slate-bg); }
+.evidence-scope button { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 34px; padding: 0 10px; border: 0; border-radius: 7px; color: var(--muted); background: transparent; font-size: var(--fs-sm); font-weight: 700; cursor: pointer; }
+.evidence-scope button span { font: 600 var(--fs-xs) var(--font-data); }
+.evidence-scope button.on { color: var(--route); background: var(--card); box-shadow: 0 1px 3px rgba(14, 26, 43, .14); }
+.evidence-scope button:focus-visible { outline: 2px solid var(--route); outline-offset: 1px; }
+.route-match { display: flex; gap: 9px; margin: 0 0 12px; padding: 10px 12px; border-left: 3px solid var(--route); border-radius: 0 8px 8px 0; color: var(--text); background: #e6f0fb; font-size: var(--fs-sm); line-height: 1.45; }
+.route-match svg { flex: none; margin-top: 2px; color: var(--route); }
+.route-match b { display: block; color: var(--route); }
+.route-match.off { border-left-color: var(--faint); background: var(--slate-bg); }
+.route-match.off svg, .route-match.off b { color: var(--muted); }
+.evidence-empty .impact-more { margin-top: 12px; justify-self: center; }
 .incident-meta span { display: flex; align-items: flex-start; gap: 7px; color: var(--muted); font-size: var(--fs-sm); line-height: 1.45; }
 .incident-meta svg { flex: none; margin-top: 1px; color: var(--faint); }
 .incident-summary { margin: 0; color: var(--text); font-size: var(--fs-sm); line-height: 1.6; }

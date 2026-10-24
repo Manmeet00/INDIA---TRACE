@@ -116,3 +116,21 @@ def test_regions_and_location_confidence():
     assert items["road"]["regions"] == ["Assam", "Meghalaya"]
     assert [items[key]["location_confidence"] for key in ("road", "place", "none")] == ["road_mentioned", "place_mentioned", "none"]
     assert items["place"]["regions"] == ["Mizoram"]
+
+
+def test_search_engine_footer_is_removed_and_does_not_set_the_event_type():
+    items = by_id([report("a", "The upcoming 166-km Shillong–Silchar four-lane corridor will ...",
+                          "The corridor will connect Meghalaya and Assam, improving goods movement. Missing:  closure  | Show results with:")])
+    assert items["a"]["summary"] == "The corridor will connect Meghalaya and Assam, improving goods movement."
+    assert items["a"]["event_type"] == "other" and items["a"]["road_report"] is False
+
+
+def test_trip_listings_and_pages_without_a_disruption_are_not_road_reports():
+    items = by_id([
+        report("tour", "Manali Kasol Tour Package From Delhi", "Road construction updates along the NH 44 corridor."),
+        report("taxi", "Delhi NCR to Chandigarh Taxi | ₹2499", "245 km via NH-44, fares from ₹2,499."),
+        report("slide", "NH-44 blocked", "NH-44 blocked by a landslide near Ramban."),
+        report("open", "NH-44 update", "Traffic on NH-44 has been restored."),
+    ])
+    assert [key for key, item in items.items() if item["road_report"]] == ["slide", "open"]
+    assert items["slide"]["related_ids"] == ["open"]  # same-highway links skip the listings

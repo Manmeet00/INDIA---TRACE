@@ -183,6 +183,32 @@ def test_collect_review_locate_and_replan(dashboard, tinyfish_network):
     expect(page.locator(".selected-incident .verification-badge")).to_have_text("Stale")
 
 
+def test_evidence_desk_shows_the_planned_routes_reports_and_why(dashboard, tinyfish_network):
+    tinyfish_network[SEARCH] = {"results": [
+        {"url": "https://example.org/nh6", "title": "Landslide blocks NH-6", "snippet": "Traffic halted on NH-6 after a landslide.", "date": "2 hours ago"},
+        {"url": "https://example.org/corridor", "title": "Four-lane corridor will ...", "snippet": "The corridor will improve goods movement. Missing:  closure  | Show results with:", "date": "1 hour ago"},
+        {"url": "https://example.org/taxi", "title": "Guwahati to Shillong Taxi | ₹2499", "snippet": "Fares on NH-6 from ₹2,499; landslide updates daily."},
+    ]}
+    page = dashboard
+    page.open()
+    page.click("text=Run collection")
+    expect(page.locator(".evidence-row")).to_have_count(3)
+    expect(page.locator(".evidence-scope")).to_have_count(0)  # no route yet: every report
+
+    plan(page, "Guwahati, Assam", "Shillong, Meghalaya")
+    expect(page.locator(".evidence-scope button.on")).to_contain_text("This route1")
+    expect(page.locator(".evidence-row")).to_have_count(1)  # the taxi listing names NH-6 but describes no disruption on it
+    expect(page.locator(".selected-incident h3")).to_have_text("Landslide blocks NH-6")
+    expect(page.locator(".route-match")).to_contain_text("Names NH-6, which this route uses. Where on NH-6 is not known")
+
+    page.get_by_role("button", name="All reports").click()
+    expect(page.locator(".evidence-row")).to_have_count(3)
+    page.locator(".evidence-row", has_text="corridor").click()
+    expect(page.locator(".selected-incident .incident-summary")).to_have_text("The corridor will improve goods movement.")
+    expect(page.locator(".selected-incident .incident-top")).to_contain_text("No disruption described")
+    expect(page.locator(".route-match.off")).to_contain_text("Not matched to this route")
+
+
 # --- Timeouts -----------------------------------------------------------------------------
 
 def test_routing_provider_timeout_is_explained(dashboard, providers):

@@ -176,6 +176,7 @@ class IncidentOut(BaseModel):
     # Text heuristics for the reviewer; see app/evidence.py.
     mentions: dict[str, list[str]] = Field(default_factory=dict)
     report_signal: str | None = None
+    road_report: bool = True
     event_type: str = "other"
     freshness_window_h: int = 24
     regions: list[str] = Field(default_factory=list)

@@ -1,17 +1,12 @@
 import Icon from './Icon.jsx'
 import { INACTIVE_STATES, placeName } from '../lib/format.js'
+import { routeMatches } from '../lib/routeReports.js'
 
-// The reports that matter for a route: reviewer-located nearby, placed at a town on it, or naming its highways.
-function routeReportIds(route) {
-  const exposure = route?.exposure
-  if (!exposure) return null
-  return new Set([...exposure.nearby_ids, ...(exposure.place_match_ids || []), ...exposure.highway_mention_ids])
-}
 
 // Headline counts for the selected route's reports, refreshed by the live route check. They stay at zero until a
 // route is planned: the region's totals say nothing about a particular journey.
 export default function SummaryCards({ incidents, plan, route, liveCheck }) {
-  const ids = routeReportIds(route)
+  const ids = routeMatches(route) // reviewer-located nearby, placed at a town on it, or naming its highways
   const scoped = ids != null
   const reports = scoped ? incidents.filter((item) => !INACTIVE_STATES.includes(item.verification) && ids.has(item.id)) : []
   const ofType = (type) => reports.filter((item) => item.event_types?.includes(type))

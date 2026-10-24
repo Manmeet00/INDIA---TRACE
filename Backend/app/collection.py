@@ -23,7 +23,7 @@ from uuid import uuid4
 from fastapi import HTTPException
 
 from .config import get_settings
-from .evidence import normalize_source_url, source_category
+from .evidence import clean_snippet, normalize_source_url, source_category
 from .monitoring import log_call
 from .media import collect_preview_images
 from .places import geocode_places, pending_places
@@ -134,7 +134,7 @@ def _store_result(connection: sqlite3.Connection, item: dict[str, Any], search: 
         return None
     source_url = normalize_source_url(source_url)
     title = _text(item.get("title"), 300) or "Untitled public source"
-    snippet = _text(item.get("snippet"), 3000)
+    snippet = clean_snippet(_text(item.get("snippet"), 3000))
     if not snippet:
         return None
     if source_category(source_url, search["kind"]) not in allowed:

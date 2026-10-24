@@ -446,24 +446,27 @@ def route_exposure(route_geometry: dict[str, Any], incidents: list[dict[str, Any
     Reports without reviewer coordinates are never counted as nearby. Those placed at a town they name
     (approximate) are listed under place_matches when the town is within 5 km of the route; those that name
     a national highway the route uses are listed under highway_mentions; both are lower-confidence relevance.
-    The rest only count as unlocated. Dismissed and resolved reports are ignored.
+    A report placed at a town away from the route is about another stretch of that highway and is not listed.
+    The rest only count as unlocated. Dismissed and resolved reports are ignored, and so are pages that describe
+    no disruption or reopening (a taxi fare, a tour package) unless a reviewer has located them.
     """
     relevant = [item for item in incidents if item["verification"] not in INACTIVE_STATES]
     located = [item for item in relevant if item.get("latitude") is not None and item.get("longitude") is not None]
     located_ids = {item["id"] for item in located}
     unlocated = [item for item in relevant if item["id"] not in located_ids]
+    reports = [item for item in unlocated if item.get("road_report", True)]
     line = route_geometry.get("coordinates", [])
     distance_to_route = _route_distance(line)
     place_matches: dict[str, list[str]] = {}
     place_distances: dict[str, int] = {}
-    for item in unlocated:
+    for item in reports:
         point = item.get("approximate_location")
         distance = distance_to_route(point["latitude"], point["longitude"], PLACE_TOLERANCE_M) if point else None
         if distance is not None:
             place_matches.setdefault(point["place"], []).append(item["id"])
             place_distances[item["id"]] = round(distance)
     placed = {incident_id for ids in place_matches.values() for incident_id in ids}
-    highway_mentions = {highway: [item["id"] for item in unlocated if item["id"] not in placed
+    highway_mentions = {highway: [item["id"] for item in reports if not item.get("approximate_location")
                                   and highway in item.get("mentions", {}).get("highways", [])]
                         for highway in highways or {}}
     highway_mentions = {highway: ids for highway, ids in highway_mentions.items() if ids}
@@ -550,7 +553,7 @@ def impact_reports(exposure: dict[str, Any], incidents_by_id: dict[str, dict[str
 
 def route_coverage(highways: dict[str, int], incidents: list[dict[str, Any]]) -> dict[str, Any]:
     """Per-highway report counts, so missing reports show as a coverage gap rather than a clear road."""
-    active = [item for item in incidents if item["verification"] not in INACTIVE_STATES]
+    active = [item for item in incidents if item["verification"] not in INACTIVE_STATES and item.get("road_report", True)]
     rows = []
     for highway, metres in highways.items():
         reports = [item for item in active if highway in item["mentions"]["highways"]]

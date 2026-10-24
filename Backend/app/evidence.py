@@ -41,6 +41,17 @@ def _region_patterns(region_id: str) -> tuple[re.Pattern, re.Pattern, list[tuple
     return place, state, aliases
 
 
+# The search engine's note that a result lacks some query words ("Missing: closure | Show results with: closure").
+# It is not the source's text, and its words ("closure") would otherwise set the report's event type.
+SEARCH_FOOTER = re.compile(r"\s*\b(?:Missing|Must include):\s[^|]*(?:\|\s*(?:Show results with|Must include):?[^|]*)*$")
+# Search hits that sell a trip or a ride rather than report on a road, judged by the title.
+LISTING = re.compile(r"\b(tour packages?|taxis?|cab (?:service|booking)s?|car rentals?|hotels?|near me)\b|₹", re.IGNORECASE)
+
+
+def clean_snippet(text: str) -> str:
+    return SEARCH_FOOTER.sub("", text or "").strip()
+
+
 COARSE_RELATIVE = re.compile(r"(week|month|year)s?\s+ago$", re.IGNORECASE)
 STOPWORDS = {"the", "and", "for", "has", "have", "had", "was", "were", "are", "that", "this", "with", "from", "after",
              "due", "its", "into", "over", "near", "along", "amid", "been", "which", "their", "more", "than"}
@@ -224,6 +235,7 @@ def annotate(incidents: list[dict[str, Any]], place_points: dict[str, tuple[floa
     for item in incidents:
         # The fetched page description is the article's own summary; full page text is not used because
         # navigation and related-story links would add unrelated roads and places.
+        item["summary"] = clean_snippet(item["summary"])
         text = f"{item['title']} {item['summary']} {item.get('page_description') or ''}"
         numbers = {match.upper() for match in HIGHWAY.findall(text)}
         numbers |= {road.removeprefix("NH-") for pattern, road in road_aliases if pattern.search(text)}
@@ -234,6 +246,8 @@ def annotate(incidents: list[dict[str, Any]], place_points: dict[str, tuple[floa
         item["report_signal"] = _signal(text)
         item["event_types"] = [name for name, pattern in EVENT_TYPES if pattern.search(text)]
         item["event_type"] = item["event_types"][0] if item["event_types"] else "other"
+        # Describes a disruption or a reopening, and is not a trip or ride listing. Only these are matched to routes.
+        item["road_report"] = bool(item["event_types"] or item["report_signal"]) and not LISTING.search(item["title"])
         item["freshness_window_h"] = windows.get(item["event_type"], windows["other"])
         item["freshness"] = freshness(item.get("published_estimate"), item.get("published_approximate", False),
                                       item["freshness_window_h"] * 3600)
@@ -269,14 +283,16 @@ def annotate(incidents: list[dict[str, Any]], place_points: dict[str, tuple[floa
     for item in incidents:
         groups.setdefault(root(item["id"]), []).append(item["id"])
 
+    # Same-highway links (and the conflicts and corroboration found among them) only join road reports.
     by_highway: dict[str, list[dict[str, Any]]] = {}
     for item in incidents:
-        for highway in item["mentions"]["highways"]:
+        for highway in item["mentions"]["highways"] if item["road_report"] else ():
             by_highway.setdefault(highway, []).append(item)
 
     for item in incidents:
         item["duplicate_ids"] = [other for other in groups[root(item["id"])] if other != item["id"]]
-        related = {other["id"]: other for highway in item["mentions"]["highways"] for other in by_highway[highway] if other["id"] != item["id"]}
+        related = {other["id"]: other for highway in item["mentions"]["highways"] for other in by_highway.get(highway, ())
+                   if other["id"] != item["id"]}
         item["related_ids"] = list(related)
         opposite = {"closure": "reopening", "reopening": "closure"}.get(item["report_signal"] or "")
         item["conflict_ids"] = [other["id"] for other in related.values()

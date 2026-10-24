@@ -158,3 +158,14 @@ def test_coverage_marks_highways_without_recent_reports_as_gaps():
 def test_resolved_reports_no_longer_count_against_a_route():
     exposure = route_exposure(SOUTH, [incident("reopened", "resolved", 26.0, 91.2)])
     assert exposure["nearby"]["confirmed"] == 0 and exposure["located_reports"] == 0
+
+
+def test_highway_mentions_skip_listings_and_reports_placed_elsewhere_on_the_highway():
+    mentions = {"highways": ["NH-6"], "places": []}
+    report = {**incident("report"), "mentions": mentions}
+    listing = {**incident("listing"), "mentions": mentions, "road_report": False}
+    far_town = {**incident("far-town"), "mentions": mentions, "approximate_location": {"place": "Far", "latitude": 27.5, "longitude": 93.0}}
+    exposure = route_exposure(SOUTH, [report, listing, far_town], {"NH-6": 70000})
+    assert exposure["highway_mentions"] == {"NH-6": ["report"]}
+    assert exposure["place_match_ids"] == []
+    assert exposure["unlocated_reports"] == 3

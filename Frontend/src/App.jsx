@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import './App.css'
 import Icon from './components/Icon.jsx'
 import RoutePlanner from './components/RoutePlanner.jsx'
@@ -16,6 +16,7 @@ import { useHere } from './hooks/useHere.js'
 import { INACTIVE_STATES, formatDistance, formatDuration, formatTime, placeName } from './lib/format.js'
 import { inIndia } from './lib/mapStyle.js'
 import { metres } from './lib/navigation.js'
+import { routeMatches } from './lib/routeReports.js'
 import * as api from './services/api.js'
 
 // Degraded: the API answered but could not serve data, usually because its database failed.
@@ -46,6 +47,7 @@ function App() {
   const [searchNote, setSearchNote] = useState('')
   const [selectedRoute, setSelectedRoute] = useState(null)
   const [selectedIncidentId, setSelectedIncidentId] = useState(null)
+  const [evidenceScope, setEvidenceScope] = useState('route') // with a route planned: 'route' (its reports) or 'all'
   const [hiddenTypes, setHiddenTypes] = useState([])
   const [routeLoading, setRouteLoading] = useState(false)
   const [routeError, setRouteError] = useState('')
@@ -58,9 +60,12 @@ function App() {
   const planToken = useRef(0)
   const lastRequest = useRef(null)
 
+  // A new route shows its own reports in the evidence desk, most relevant first.
   const showPlan = (payload) => {
     setPlan(payload)
     setSelectedRoute(payload.routes[0]?.id || null)
+    setSelectedIncidentId(null)
+    setEvidenceScope('route')
   }
 
   // A live check for the planned route: a TinyFish search of the last 3 days for its main highway and its two
@@ -179,9 +184,20 @@ function App() {
   const selectIncident = (id) => { setSearch(''); setSelectedIncidentId(id) }
   const toggleLayer = (key, shown) => setHiddenTypes((types) => shown ? types.filter((type) => type !== key) : [...types, key])
 
-  const activeIncident = visibleIncidents.find((item) => item.id === selectedIncidentId) || visibleIncidents[0] || null
   const relevantIncidents = incidents.filter((item) => !INACTIVE_STATES.includes(item.verification))
   const chosenRoute = plan?.routes?.find((item) => item.id === selectedRoute)
+  // With a route planned the desk and list show its reports (in relevance order) unless 'All reports' is chosen.
+  // A report picked on the map is shown even when it is not one of them.
+  const matches = useMemo(() => routeMatches(chosenRoute), [chosenRoute])
+  const routeIncidents = useMemo(() => {
+    if (!matches) return []
+    const byId = new Map(visibleIncidents.map((item) => [item.id, item]))
+    return [...matches.keys()].map((id) => byId.get(id)).filter(Boolean)
+  }, [matches, visibleIncidents])
+  const shownIncidents = matches && evidenceScope === 'route' ? routeIncidents : visibleIncidents
+  const activeIncident = shownIncidents.find((item) => item.id === selectedIncidentId)
+    || visibleIncidents.find((item) => item.id === selectedIncidentId) || shownIncidents[0] || null
+  const evidenceScopes = matches ? { current: evidenceScope, onChange: setEvidenceScope, route: routeIncidents.length, all: visibleIncidents.length } : null
   // Like a maps app: live guidance (Start) when the device is at the start of the route, whether that is Your
   // location or a typed place; from anywhere else the route can be stepped through turn by turn (Preview).
   const routeStart = chosenRoute?.geometry?.coordinates?.[0]
@@ -235,8 +251,8 @@ function App() {
           </div>
 
           <aside className="right-column" id="evidence">
-            <EvidenceDesk incident={activeIncident} incidents={incidents} visibleCount={visibleIncidents.length} message={message || problem || arrivalNote} refreshing={refreshing} onRefresh={refresh} onSelect={selectIncident} onReview={reviewIncident} onFlag={flagIncident} canRecheck={apiStatus === 'online' && !collectionLoading} onRecheck={recheckIncident}/>
-            <EvidenceList incidents={incidents} visibleIncidents={visibleIncidents} activeId={activeIncident?.id} onSelect={setSelectedIncidentId} filters={filters} onFilterChange={setFilter} canCollect={apiStatus === 'online'} collecting={collectionLoading} progress={runProgress} onCollect={collect} onRecheckDue={recheckDue} lastRun={lastRun}/>
+            <EvidenceDesk incident={activeIncident} incidents={incidents} visibleCount={shownIncidents.length} scopes={evidenceScopes} matchReason={matches ? matches.get(activeIncident?.id) || null : undefined} message={message || problem || arrivalNote} refreshing={refreshing} onRefresh={refresh} onSelect={selectIncident} onReview={reviewIncident} onFlag={flagIncident} canRecheck={apiStatus === 'online' && !collectionLoading} onRecheck={recheckIncident}/>
+            <EvidenceList incidents={incidents} visibleIncidents={shownIncidents} activeId={activeIncident?.id} onSelect={setSelectedIncidentId} filters={filters} onFilterChange={setFilter} canCollect={apiStatus === 'online'} collecting={collectionLoading} progress={runProgress} onCollect={collect} onRecheckDue={recheckDue} lastRun={lastRun}/>
             <div className="source-footnote"><Icon name="check" size={15}/><span>Evidence is unverified until independently reviewed. Dispatch advice remains cautious.</span></div>
           </aside>
         </section>
