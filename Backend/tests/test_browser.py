@@ -657,35 +657,57 @@ def _field(number, wire, payload):
     return _varint(number << 3 | wire) + (_varint(len(payload)) + payload if wire == 2 else payload)
 
 
-def place_tile(places, z, x, y):
-    """A minimal Mapbox vector tile with a "place" layer of points: [(name, class, latitude, longitude)]."""
+def _mvt_layer(name, features, z, x, y):
+    """One vector-tile layer: [(properties, [(latitude, longitude), ...])]; one point is a point, more a line."""
     import math
     extent = 4096
-    keys = ["name", "class"]
-    values = list(dict.fromkeys(value for name, kind, *_ in places for value in (name, kind)))
-    features = b""
-    for name, kind, latitude, longitude in places:
-        px = ((longitude + 180) / 360 * 2 ** z - x) * extent
-        radians = math.radians(latitude)
-        py = ((1 - math.asinh(math.tan(radians)) / math.pi) / 2 * 2 ** z - y) * extent
-        zig = lambda n: (n << 1) ^ (n >> 31)
-        geometry = b"".join(_varint(v) for v in (1 | 1 << 3, zig(round(px)), zig(round(py))))
-        tags = b"".join(_varint(v) for v in (0, values.index(name), 1, values.index(kind)))
-        features += _field(2, 2, _field(2, 2, tags) + _field(3, 0, _varint(1)) + _field(4, 2, geometry))
-    layer = (_field(15, 0, _varint(2)) + _field(1, 2, b"place") + features
+    zig = lambda n: (n << 1) ^ (n >> 31)
+
+    def pixel(latitude, longitude):
+        py = (1 - math.asinh(math.tan(math.radians(latitude))) / math.pi) / 2 * 2 ** z - y
+        return round(((longitude + 180) / 360 * 2 ** z - x) * extent), round(py * extent)
+
+    keys = list(dict.fromkeys(key for properties, _ in features for key in properties))
+    values = list(dict.fromkeys(value for properties, _ in features for value in properties.values()))
+    body = b""
+    for properties, coordinates in features:
+        points = [pixel(*point) for point in coordinates]
+        commands, cx, cy = [1 | 1 << 3], 0, 0
+        for index, (px, py) in enumerate(points):
+            if index == 1:
+                commands.append(2 | (len(points) - 1) << 3)
+            commands += [zig(px - cx), zig(py - cy)]
+            cx, cy = px, py
+        geometry = b"".join(_varint(value) for value in commands)
+        tags = b"".join(_varint(value) for key, item in properties.items() for value in (keys.index(key), values.index(item)))
+        kind = 1 if len(points) == 1 else 2
+        body += _field(2, 2, _field(2, 2, tags) + _field(3, 0, _varint(kind)) + _field(4, 2, geometry))
+    layer = (_field(15, 0, _varint(2)) + _field(1, 2, name.encode()) + body
              + b"".join(_field(3, 2, key.encode()) for key in keys)
              + b"".join(_field(4, 2, _field(1, 2, value.encode())) for value in values) + _field(5, 0, _varint(extent)))
     return _field(3, 2, layer)
 
 
-def test_satellite_view_names_places_inside_india_only(dashboard):
+def place_tile(places, z, x, y, roads=()):
+    """A minimal Mapbox vector tile: a "place" layer of points [(name, class, latitude, longitude)] and,
+    optionally, roads [(class, [(latitude, longitude), ...])] in "transportation"."""
+    tile = _mvt_layer("place", [({"name": name, "class": kind}, [(latitude, longitude)]) for name, kind, latitude, longitude in places], z, x, y)
+    if roads:
+        tile += _mvt_layer("transportation", [({"class": kind}, line) for kind, line in roads], z, x, y)
+    return tile
+
+
+def test_satellite_view_names_places_inside_india_only_and_draws_roads(dashboard):
     places = [("Guwahati", "city", 26.18, 91.75), ("Shillong", "city", 25.57, 91.88),
               ("Sylhet", "city", 24.90, 91.87)]  # Bangladesh: never named on the map
+    roads = [("trunk", [(26.18, 91.0), (25.57, 91.88), (25.0, 93.5)])]  # a highway across the region
     page = dashboard
+    esri_roads = []
+    page.route("**/World_Transportation/**", lambda route: (esri_roads.append(route.request.url), route.abort()))
 
     def tile(route):
         z, x, y = (int(part.split(".")[0]) for part in route.request.url.rsplit("/", 3)[1:])
-        route.fulfill(status=200, body=place_tile(places, z, x, y), headers={"content-type": "application/x-protobuf"})
+        route.fulfill(status=200, body=place_tile(places, z, x, y, roads), headers={"content-type": "application/x-protobuf"})
     page.route("https://tiles.openfreemap.org/planet", lambda route: route.fulfill(
         status=200, body='{"tiles": ["https://tiles.openfreemap.org/planet/test/{z}/{x}/{y}.pbf"]}', headers={"content-type": "application/json"}))
     page.route("https://tiles.openfreemap.org/planet/test/**", tile)
@@ -694,8 +716,18 @@ def test_satellite_view_names_places_inside_india_only(dashboard):
     expect(page.locator(".map-label", has_text="Guwahati")).to_have_count(1)
     expect(page.locator(".map-label", has_text="Shillong")).to_have_count(1)
     expect(page.locator(".map-label", has_text="Sylhet")).to_have_count(0)
-    expect(page.locator(".leaflet-tile-pane img[src*='World_Transportation']").first).to_be_attached()  # roads over the imagery
-    expect(page.locator(".map-foot")).to_contain_text("Place names © OpenStreetMap contributors via OpenFreeMap")
+    # Roads are drawn in Google's highway yellow on canvas tiles over the imagery.
+    expect(page.locator(".hybrid-roads canvas").first).to_be_attached()
+    page.wait_for_function("""() => [...document.querySelectorAll('.hybrid-roads canvas')].some((canvas) => {
+        const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data
+        for (let index = 0; index < pixels.length; index += 4) {
+          if (pixels[index + 3] > 200 && pixels[index] > 230 && pixels[index + 1] > 190 && pixels[index + 2] < 140) return true
+        }
+        return false
+    })""")
+    assert esri_roads == []
+    expect(page.locator(".map-foot")).to_contain_text("Roads and place names © OpenStreetMap contributors via OpenFreeMap")
+
 
 def test_map_has_no_corner_thumbnail_switch(dashboard):
     page = dashboard

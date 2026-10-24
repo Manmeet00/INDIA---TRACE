@@ -10,6 +10,7 @@ import { BASE_LAYERS, GIBS, OVERLAYS, aqiTone } from '../lib/mapLayers.js'
 import { INACTIVE_STATES, MAP_CATEGORIES, formatTime, mapCategory, placeName, statusLabel } from '../lib/format.js'
 import { BORDER_COLOR, HERE_COLOR, HERE_ZOOM, INDIA_BOUNDS, MASK_COLOR, inIndia, insideBoundary } from '../lib/mapStyle.js'
 import { placeNamesInView } from '../lib/placeNames.js'
+import { drawRoadTile } from '../lib/hybridRoads.js'
 import { getAirQuality, loadIndiaBoundary } from '../services/api.js'
 
 const WORLD = [[-89, -180], [-89, 180], [89, 180], [89, -180]]
@@ -100,13 +101,13 @@ function PlaceLabels({ boundary }) {
   const [view, setView] = useState(() => ({ bounds: map.getBounds(), zoom: map.getZoom() }))
   useMapEvents({ moveend: () => setView({ bounds: map.getBounds(), zoom: map.getZoom() }) })
   useEffect(() => {
-    let active = true
+    const controller = new AbortController()
     const timer = setTimeout(() => {
       const box = { south: view.bounds.getSouth(), west: view.bounds.getWest(), north: view.bounds.getNorth(), east: view.bounds.getEast() }
-      placeNamesInView(box, view.zoom).then((names) => { if (active) setLabels(names) }).catch(() => { if (active) setLabels([]) })
+      placeNamesInView(box, view.zoom, setLabels, controller.signal).catch(() => {})
     }, 150)
     return () => {
-      active = false
+      controller.abort()
       clearTimeout(timer)
     }
   }, [view])
@@ -121,6 +122,30 @@ function PlaceLabels({ boundary }) {
   })
   return shown.map((label) => <Marker key={`${label.name}-${label.latitude}-${label.longitude}`} position={[label.latitude, label.longitude]} interactive={false} keyboard={false}
     icon={L.divIcon({ className: '', html: `<span class="map-label ${label.kind}">${label.name.replace(/[&<>"']/g, '')}</span>`, iconSize: [0, 0], iconAnchor: [0, 0] })}/>)
+}
+
+// Google-style roads over the satellite imagery, drawn into canvas tiles (see lib/hybridRoads.js).
+const RoadTiles = L.GridLayer.extend({
+  createTile(coords, done) {
+    const tile = document.createElement('canvas')
+    const ratio = window.devicePixelRatio || 1
+    tile.width = tile.height = 256 * ratio
+    const context = tile.getContext('2d')
+    context.scale(ratio, ratio)
+    tile.loading = new AbortController() // aborted if the map moves on before the tile arrives
+    drawRoadTile(context, coords, tile.loading.signal).catch(() => {}).finally(() => done(null, tile))
+    return tile
+  },
+})
+
+function HybridRoads({ maxZoom }) {
+  const map = useMap()
+  useEffect(() => {
+    const layer = new RoadTiles({ maxZoom, zIndex: 4, className: 'hybrid-roads', ...TILE_OPTIONS })
+    layer.on('tileunload', ({ tile }) => tile.loading?.abort()).addTo(map)
+    return () => { layer.remove() }
+  }, [map, maxZoom])
+  return null
 }
 
 // The chosen detail layers over the base map: NASA imagery as WMS, the rest as tiles, air quality as labels.
@@ -147,7 +172,7 @@ function DashboardMap({ plan, incidents, selectedRoute, selectedIncident, onSele
     {boundary && <IndiaMask boundary={boundary}/>}
     {route && <MapBounds geometry={route.geometry} />}
     <TileLayer key={base} url={BASE_LAYERS[base].url} maxZoom={BASE_LAYERS[base].maxZoom} {...TILE_OPTIONS}/>
-    {BASE_LAYERS[base].roads && <TileLayer key={`${base}-roads`} url={BASE_LAYERS[base].roads} maxZoom={BASE_LAYERS[base].maxZoom} zIndex={4} opacity={0.9} className="hybrid-roads" {...TILE_OPTIONS}/>}
+    {BASE_LAYERS[base].roads && <HybridRoads key={`${base}-roads`} maxZoom={BASE_LAYERS[base].maxZoom}/>}
     {BASE_LAYERS[base].labels && <Pane name="place-labels" style={{ zIndex: 380, pointerEvents: 'none' }}><PlaceLabels boundary={boundary}/></Pane>}
     <DetailLayers overlays={overlays} here={here} plan={plan}/>
     <ZoomControl position="bottomright" />

@@ -11,12 +11,12 @@ export const BASE_LAYERS = {
   },
   satellite: {
     label: 'Satellite', url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', maxZoom: 19,
-    credit: 'Imagery © Esri, Maxar, Earthstar Geographics · Roads © Esri · Place names © OpenStreetMap contributors via OpenFreeMap',
+    credit: 'Imagery © Esri, Maxar, Earthstar Geographics · Roads and place names © OpenStreetMap contributors via OpenFreeMap',
     thumb: '/map-thumbs/satellite.jpg',
-    // Like a hybrid map: roads with highway numbers drawn over the imagery, and place names (see PlaceLabels).
-    // Esri's roads layer has no boundary lines; its boundaries-and-places layer is not used because it draws
-    // disputed lines that differ from India's official boundary.
-    roads: 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}',
+    // Like Google's satellite view: roads, road names and highway numbers drawn over the imagery (HybridRoads),
+    // and place names (PlaceLabels), all from OpenStreetMap. No third-party boundary lines are drawn: Esri's
+    // boundaries-and-places layer draws disputed lines that differ from India's official boundary.
+    roads: true,
     labels: true,
   },
   terrain: {
