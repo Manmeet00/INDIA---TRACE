@@ -59,7 +59,8 @@ def _cached_json(url: str, max_age_s: float, valid: Callable[[Any], bool]) -> tu
     services are rate-limited and sometimes slow, so successful responses are kept in SQLite.
     A response that fails `valid` counts as a failure and is never cached.
     """
-    service = "nominatim" if "nominatim" in url else "photon" if "photon" in url else "osrm"
+    service = ("nominatim" if "nominatim" in url else "photon" if "photon" in url
+               else "open-meteo" if "open-meteo" in url else "osrm")
     with get_connection() as connection:
         row = connection.execute("SELECT response, fetched_at FROM provider_cache WHERE url = ?", (url,)).fetchone()
         if row and _age_seconds(row["fetched_at"]) <= max_age_s:

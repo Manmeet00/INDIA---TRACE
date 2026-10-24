@@ -147,3 +147,14 @@ def test_a_device_position_plans_from_your_location_and_must_be_in_india(client,
     assert not any("nominatim" in host and "26.18" in request.full_url for host, request in providers["calls"])  # never looked up
     outside = client.post("/api/routes/plan", json={"origin": "51.5, -0.12", "destination": "Shillong"})
     assert outside.status_code == 422 and outside.json()["detail"] == "That position is outside India."
+
+
+def test_air_quality_at_a_point_is_banded_and_cached(client, providers):
+    body = client.get("/api/air-quality?lat=26.1445&lon=91.7362").json()
+    assert (body["us_aqi"], body["band"], body["pm2_5"]) == (97, "Moderate", 26.8)
+    client.get("/api/air-quality?lat=26.1449&lon=91.7358")  # within about 1 km: the cached answer
+    assert sum(host == "air-quality-api.open-meteo.com" for host, _ in providers["calls"]) == 1
+    assert client.get("/api/air-quality?lat=51.5&lon=-0.12").json()["detail"] == "Air quality is shown for places in India only."
+    providers["air-quality-api.open-meteo.com"] = {"current": {"us_aqi": None}}
+    missing = client.get("/api/air-quality?lat=25.57&lon=91.88")
+    assert missing.status_code == 502 and "no air quality value" in missing.json()["detail"]

@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Circle, CircleMarker, MapContainer, Pane, Polygon, Polyline, TileLayer, Tooltip, ZoomControl, useMap } from 'react-leaflet'
+import L from 'leaflet'
+import { Circle, CircleMarker, MapContainer, Marker, Pane, Polygon, Polyline, TileLayer, Tooltip, WMSTileLayer, ZoomControl, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import Icon from './Icon.jsx'
+import LayersPanel from './LayersPanel.jsx'
 import MapplsMap from './MapplsMap.jsx'
+import { useMapLayers } from '../hooks/useMapLayers.js'
+import { BASE_LAYERS, GIBS, OVERLAYS, aqiTone } from '../lib/mapLayers.js'
 import { INACTIVE_STATES, MAP_CATEGORIES, formatTime, mapCategory, placeName, statusLabel } from '../lib/format.js'
 import { BORDER_COLOR, HERE_COLOR, HERE_ZOOM, INDIA_BOUNDS, MASK_COLOR, inIndia } from '../lib/mapStyle.js'
-import { loadIndiaBoundary } from '../services/api.js'
+import { getAirQuality, loadIndiaBoundary } from '../services/api.js'
 
 const WORLD = [[-89, -180], [-89, 180], [89, 180], [89, -180]]
 
@@ -51,8 +55,51 @@ function HereLayer({ here, hasPlan, focusKey }) {
   </>
 }
 
+// Current air quality at your position and at the route's start and end, as small AQI labels.
+function AirQualityLayer({ here, plan }) {
+  const [readings, setReadings] = useState({})
+  const points = useMemo(() => [
+    ...(inIndia(here) ? [{ key: 'here', name: 'Your location', latitude: here.latitude, longitude: here.longitude }] : []),
+    ...(plan ? [{ key: 'origin', name: placeName(plan.origin), ...plan.origin }, { key: 'destination', name: placeName(plan.destination), ...plan.destination }] : []),
+  ].map(({ key, name, latitude, longitude }) => ({ key, name, latitude, longitude })), [here, plan])
+  // Asked again only when a point moves about a kilometre, not for every update of a moving position.
+  const signature = points.map((point) => `${point.key}:${point.latitude.toFixed(2)},${point.longitude.toFixed(2)}`).join('|')
+  const latestPoints = useRef(points)
+  useEffect(() => { latestPoints.current = points }, [points])
+  useEffect(() => {
+    let active = true
+    latestPoints.current.forEach((point) => {
+      getAirQuality(point.latitude, point.longitude)
+        .then((reading) => { if (active) setReadings((current) => ({ ...current, [point.key]: reading })) })
+        .catch(() => { if (active) setReadings((current) => ({ ...current, [point.key]: null })) })
+    })
+    return () => { active = false }
+  }, [signature])
+  return points.filter((point) => readings[point.key]).map((point) => {
+    const reading = readings[point.key]
+    return <Marker key={point.key} position={[point.latitude, point.longitude]} interactive={false}
+      icon={L.divIcon({ className: '', html: `<span class="aqi-pill ${aqiTone(reading.us_aqi)}">AQI ${reading.us_aqi}</span>`, iconSize: [64, 22], iconAnchor: [32, 34] })}>
+      <Tooltip>{`${point.name}: AQI ${reading.us_aqi}, ${reading.band} · PM2.5 ${reading.pm2_5} µg/m³`}</Tooltip>
+    </Marker>
+  })
+}
+
+// The chosen detail layers over the base map: NASA imagery as WMS, the rest as tiles, air quality as labels.
+function DetailLayers({ overlays, here, plan }) {
+  return overlays.map((key) => {
+    const layer = OVERLAYS[key]
+    if (layer.kind === 'wms') {
+      return <WMSTileLayer key={key} url={GIBS} opacity={layer.opacity} zIndex={5}
+        params={{ layers: layer.layer, format: 'image/png', transparent: true, version: '1.3.0' }}/>
+    }
+    if (layer.kind === 'tiles') return <TileLayer key={key} url={layer.url} opacity={layer.opacity} zIndex={6}/>
+    if (layer.kind === 'points') return <AirQualityLayer key={key} here={here} plan={plan}/>
+    return null
+  })
+}
+
 // Only reports with reviewer-confirmed coordinates are drawn; text mentions never become map points.
-function DashboardMap({ plan, incidents, selectedRoute, selectedIncident, onSelectIncident, hiddenTypes, boundary, here, focusKey }) {
+function DashboardMap({ plan, incidents, selectedRoute, selectedIncident, onSelectIncident, hiddenTypes, boundary, here, focusKey, base, overlays }) {
   const route = plan?.routes?.find((item) => item.id === selectedRoute) || plan?.routes?.[0]
   const startHere = !plan && inIndia(here)
   const center = plan?.origin ? [plan.origin.latitude, plan.origin.longitude] : startHere ? [here.latitude, here.longitude] : [26.2, 92.4]
@@ -60,7 +107,8 @@ function DashboardMap({ plan, incidents, selectedRoute, selectedIncident, onSele
   return <MapContainer key={`${plan?.origin?.latitude || 'default'}-${plan?.destination?.latitude || 'default'}`} center={center} zoom={plan ? 7 : startHere ? HERE_ZOOM : 6} minZoom={4} maxBounds={INDIA_BOUNDS} maxBoundsViscosity={1} zoomControl={false} className="map-canvas">
     {boundary && <IndiaMask boundary={boundary}/>}
     {route && <MapBounds geometry={route.geometry} />}
-    <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+    <TileLayer key={base} url={BASE_LAYERS[base].url} maxZoom={BASE_LAYERS[base].maxZoom} attribution={BASE_LAYERS[base].credit}/>
+    <DetailLayers overlays={overlays} here={here} plan={plan}/>
     <ZoomControl position="bottomright" />
     <HereLayer here={here} hasPlan={Boolean(plan)} focusKey={focusKey}/>
     {plan?.routes && [...plan.routes].sort((a, b) => (a.id === route?.id) - (b.id === route?.id)).map((item) => <Polyline key={item.id} positions={item.geometry.coordinates.map(([lon, lat]) => [lat, lon])} pathOptions={{ color: item.id === route?.id ? '#0878e8' : '#64748b', opacity: item.id === route?.id ? 0.95 : 0.55, weight: item.id === route?.id ? 5 : 3, dashArray: item.id === route?.id ? undefined : '8 9' }} />)}
@@ -74,6 +122,7 @@ function DashboardMap({ plan, incidents, selectedRoute, selectedIncident, onSele
 // key) the map falls back to OpenStreetMap and says so, so the dashboard never loses its map.
 export default function RouteMap({ plan, mapConfig, here, hereProblem, ...mapProps }) {
   const [focusKey, setFocusKey] = useState(0)
+  const layers = useMapLayers()
   const hereText = !here ? (hereProblem ? `${hereProblem} Showing Northeast India.` : 'Finding your location…')
     : inIndia(here) ? `Your location · accurate to about ${Math.max(1, Math.round(here.accuracy || 0))} m` : 'Your location is outside India. Showing Northeast India.'
   const [mapplsProblem, setMapplsProblem] = useState('')
@@ -91,9 +140,10 @@ export default function RouteMap({ plan, mapConfig, here, hereProblem, ...mapPro
     {mapplsProblem && <p className="map-fallback" role="status">{mapplsProblem} Showing OpenStreetMap instead.</p>}
     <div className="map-wrap">{!mapConfig ? <div className="map-canvas"/> : useMappls
       ? <MapplsMap apiKey={mapConfig.mappls_key} plan={plan} boundary={boundary} here={here} focusKey={focusKey} {...mapProps} onUnavailable={onUnavailable}/>
-      : <DashboardMap plan={plan} boundary={boundary} here={here} focusKey={focusKey} {...mapProps}/>}
+      : <DashboardMap plan={plan} boundary={boundary} here={here} focusKey={focusKey} base={layers.base} overlays={layers.overlays} {...mapProps}/>}
+      {mapConfig && <LayersPanel base={layers.base} overlays={layers.overlays} onBase={layers.setBase} onToggle={layers.toggleOverlay} mappls={useMappls}/>}
       <button type="button" className="locate-button" onClick={() => setFocusKey((key) => key + 1)} disabled={!inIndia(here)} aria-label="Show my location" title={inIndia(here) ? 'Show my location' : hereText}><Icon name="locate" size={20}/></button><div className="map-legend"><span><i className="legend-route"/> Selected route</span><span><i className="legend-candidate"/> Other candidates</span><span><i className="legend-incident"/> Geolocated evidence</span><span><i className="legend-here"/> You</span></div></div>
-    <div className="map-foot"><span><Icon name="pin" size={14}/>{plan ? `${placeName(plan.origin)} → ${placeName(plan.destination)}` : hereText}</span><span>{useMappls ? 'Map © Mappls (MapmyIndia)' : 'Map tiles © OpenStreetMap contributors'} · India boundary: Survey of India</span></div>
+    <div className="map-foot"><span><Icon name="pin" size={14}/>{plan ? `${placeName(plan.origin)} → ${placeName(plan.destination)}` : hereText}</span><span>{useMappls ? 'Map © Mappls (MapmyIndia)' : [BASE_LAYERS[layers.base].credit, ...layers.overlays.map((key) => OVERLAYS[key].credit)].join(' · ')} · India boundary: Survey of India</span></div>
   </article>
 }
 

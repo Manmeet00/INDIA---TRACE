@@ -75,6 +75,9 @@ export const recheckIncident = (id) => request(`/api/incidents/${id}/recheck`, '
 /** Type-ahead suggestions for the route form: [{ label, detail, value, source }]. */
 export const suggestPlaces = (text) => request(`/api/places/suggest?q=${encodeURIComponent(text)}`, 'Could not load place suggestions.')
 
+/** Current US AQI at a point in India: { us_aqi, band, pm2_5, pm10, time }. */
+export const getAirQuality = (latitude, longitude) => request(`/api/air-quality?lat=${latitude.toFixed(4)}&lon=${longitude.toFixed(4)}`, 'Air quality is unavailable.')
+
 export const getRegion = () => request('/api/region', 'Could not load the region.')
 
 /** { provider: 'mappls' | 'osm', mappls_key }: the base map to draw. */

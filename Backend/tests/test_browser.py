@@ -554,3 +554,31 @@ def test_map_stays_on_the_region_when_you_are_outside_india(dashboard):
     page.open()
     expect(page.locator(".map-foot")).to_contain_text("Your location is outside India. Showing Northeast India.")
     expect(page.locator(".locate-button")).to_be_disabled()
+
+
+def test_map_layers_change_the_map_and_are_remembered(dashboard):
+    page = dashboard
+    page.add_init_script(geolocation("ok({ coords: { latitude: 26.14, longitude: 91.74, accuracy: 120 } })"))
+    page.open()
+    page.click(".layers-button")
+    expect(page.locator(".layers-panel")).to_be_visible()
+    expect(page.locator(".layer-tile", has_text="Traffic")).to_be_disabled()  # live traffic needs the Mappls map
+    expect(page.locator(".layer-tile", has_text="Traffic")).to_contain_text("Needs the Mappls map")
+
+    page.locator(".layer-tile", has_text="Satellite").click()
+    page.locator(".layer-tile", has_text="Wildfires").click()
+    page.locator(".layer-tile", has_text="Air quality").click()
+    page.keyboard.press("Escape")
+    expect(page.locator(".layers-panel")).to_have_count(0)
+    expect(page.locator(".leaflet-tile-pane img[src*='World_Imagery']").first).to_be_attached()
+    expect(page.locator(".leaflet-tile-pane img[src*='gibs.earthdata.nasa.gov']").first).to_be_attached()
+    expect(page.locator(".leaflet-tile-pane img[src*='VIIRS_NOAA20_Thermal_Anomalies']").first).to_be_attached()
+    expect(page.locator(".aqi-pill")).to_have_text("AQI 97")
+    expect(page.locator(".map-foot")).to_contain_text("Imagery © Esri")
+    expect(page.locator(".map-foot")).to_contain_text("Fires: NASA VIIRS")
+
+    page.reload()
+    expect(page.locator(".map-foot")).to_contain_text("Imagery © Esri")  # remembered in this browser
+    page.click(".layers-button")
+    expect(page.locator(".layer-tile", has_text="Satellite")).to_have_attribute("aria-checked", "true")
+    expect(page.locator(".layer-tile", has_text="Wildfires")).to_have_attribute("aria-pressed", "true")

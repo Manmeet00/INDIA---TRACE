@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from . import jobs
+from .air_quality import air_quality
 from .collection import (NOT_CONFIGURED, collect_candidates, collection_run, collection_runs, default_searches, locate_places,
                          recheck_reports, targeted_searches)
 from .config import get_settings
@@ -317,6 +318,12 @@ def collect_media():
     new reports). Video and social posts need no reading: their embed comes from the source URL."""
     with jobs.exclusive(), get_connection() as connection:
         return collect_preview_images(connection)
+
+
+@app.get("/api/air-quality")
+def get_air_quality(lat: float = Query(ge=-90, le=90), lon: float = Query(ge=-180, le=180)):
+    """Current US AQI, PM2.5 and PM10 at a point in India (Open-Meteo, cached 30 minutes), for the map's air layer."""
+    return air_quality(lat, lon)
 
 
 @app.get("/api/map-config")
