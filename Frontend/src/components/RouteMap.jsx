@@ -9,7 +9,7 @@ import NavigationPanel from './NavigationPanel.jsx'
 import MapplsMap from './MapplsMap.jsx'
 import { useMapLayers } from '../hooks/useMapLayers.js'
 import { BASE_LAYERS, GIBS, OVERLAYS, aqiTone } from '../lib/mapLayers.js'
-import { INACTIVE_STATES, MAP_CATEGORIES, formatTime, mapCategory, placeName, statusLabel } from '../lib/format.js'
+import { INACTIVE_STATES, MAP_CATEGORIES, mapCategory, placeName, statusLabel } from '../lib/format.js'
 import { BORDER_COLOR, HERE_COLOR, HERE_ZOOM, INDIA_BOUNDS, MASK_COLOR, inIndia, insideBoundary } from '../lib/mapStyle.js'
 import { placeNamesInView } from '../lib/placeNames.js'
 import { drawRoadTile } from '../lib/hybridRoads.js'
@@ -351,8 +351,7 @@ export default function RouteMap({ plan, mapConfig, here, hereProblem, onRetryHe
   const toggleOverview = () => setView((current) => (current.overview ? { following: true, overview: false } : { following: false, overview: true }))
   const useMappls = mapConfig?.provider === 'mappls' && !mapplsProblem
   const credit = `${useMappls ? 'Map © Mappls (MapmyIndia)' : [BASE_LAYERS[layers.base].credit, ...layers.overlays.map((key) => OVERLAYS[key].credit)].join(' · ')} · India boundary: Survey of India`
-  const status = plan?.offline_demo ? 'Historical snapshot' : plan ? `Routing fetched ${formatTime(plan.routing_fetched_at)}` : 'Map ready'
-  return <article className="panel map-panel"><div className="map-heading"><div><span className="section-kicker">NORTHEAST INDIA · NETWORK VIEW</span><h2>{plan ? `${placeName(plan.origin)} to ${placeName(plan.destination)}` : 'Regional road intelligence'}</h2></div><span className={`map-status ${plan?.offline_demo ? 'demo' : ''}`}><i/>{status}</span></div>
+  return <article className="panel map-panel" aria-label="Map">
     {mapplsProblem && <p className="map-fallback" role="status">{mapplsProblem} Showing OpenStreetMap instead.</p>}
     <div className={`map-wrap${fullscreen.on ? ' fullscreen' : ''}${navigating ? ' navigating' : ''}`} ref={wrap}>{!mapConfig ? <div className="map-canvas"/> : useMappls
       ? <MapplsMap apiKey={mapConfig.mappls_key} plan={plan} boundary={boundary} here={here} focusKey={focusKey} {...mapProps} onUnavailable={onUnavailable}/>

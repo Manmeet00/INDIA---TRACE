@@ -267,7 +267,7 @@ def test_routing_timeout_on_the_demo_route_falls_back_to_a_labelled_snapshot(das
     page.open()
     plan(page, "Guwahati, Assam", "Shillong, Meghalaya")
     expect(page.locator(".inline-demo-note")).to_contain_text("This historical route is not for dispatch.")
-    expect(page.locator(".map-status")).to_have_text("Historical snapshot")
+    expect(page.locator(".route-card .time-source").first).to_have_text("Historical")
 
 
 def test_hung_api_request_times_out_in_the_browser(dashboard):
@@ -543,7 +543,7 @@ def test_route_form_suggests_places_and_uses_your_location(dashboard, providers)
     page.locator(".chip", has_text="Fastest").click()
     page.click(".primary-button")
     expect(page.locator(".route-card")).to_have_count(2)
-    expect(page.locator(".map-heading h2")).to_have_text("Your location to Shillong")
+    expect(page.locator(".summary-scope b")).to_contain_text("Your location → Shillong")
 
 
 def test_evidence_desk_shows_the_sources_own_video_and_hides_a_picture_that_will_not_load(dashboard, add_incident):
@@ -604,7 +604,7 @@ def test_start_is_your_location_and_destination_is_chosen(dashboard):
     page.fill("#destination", "Shillong")
     page.keyboard.press("Escape")
     page.click(".primary-button")
-    expect(page.locator(".map-heading h2")).to_have_text("Your location to Shillong")
+    expect(page.locator(".summary-scope b")).to_contain_text("Your location → Shillong")
 
 
 def test_map_search_bar_plans_a_route_to_the_place_chosen(dashboard, providers):
@@ -621,7 +621,7 @@ def test_map_search_bar_plans_a_route_to_the_place_chosen(dashboard, providers):
     search.fill("Shillo")
     page.locator(".map-search .place-suggestions li", has_text="Shillong").first.click()
     expect(page.locator("#destination")).to_have_value("Shillong, Meghalaya")
-    expect(page.locator(".map-heading h2")).to_have_text("Your location to Shillong")
+    expect(page.locator(".summary-scope b")).to_contain_text("Your location → Shillong")
     expect(page.locator(".route-card")).to_have_count(2)
     # The same map moved to the route: nothing already loaded is thrown away and fetched again.
     expect(page.locator(".leaflet-container[data-first='yes']")).to_have_count(1)
@@ -635,7 +635,7 @@ def test_map_search_bar_fills_the_destination_when_the_start_is_unknown(dashboar
     page.keyboard.press("Escape")
     page.keyboard.press("Enter")
     expect(page.locator("#destination")).to_have_value("Shillong")
-    expect(page.locator(".map-heading h2")).to_have_text("Regional road intelligence")  # nothing planned without a start
+    expect(page.locator(".summary-scope b")).to_have_text("No route planned yet")  # nothing planned without a start
     expect(page.locator(".map-search-status")).to_have_text("Destination set. Choose a starting point in the route planner.")
 
 
