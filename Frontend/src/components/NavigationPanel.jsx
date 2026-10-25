@@ -17,9 +17,9 @@ function savedVoice() {
 // Turn-by-turn guidance laid out like Google Maps' navigation: the next turn in a green banner at the top (with
 // "Then" when another turn follows soon after), time and distance left in a sheet at the bottom, spoken
 // directions with a mute button. now/prepared come from the map (see RouteMap). Times are the routing service's
-// estimates without live traffic, and say so.
+// estimates: Google's with traffic when the route was planned (traffic), otherwise OSRM's without it, and say so.
 // mode 'preview' (away from the route's start): the turns one by one with ‹ ›, no voice and no re-routing.
-export default function NavigationPanel({ mode = 'live', prepared, now, here, destination, rerouting, error, onExit, onReroute,
+export default function NavigationPanel({ mode = 'live', traffic = false, prepared, now, here, destination, rerouting, error, onExit, onReroute,
   following, onRecentre, overview, onOverview, previewStep, onPreviewStep }) {
   const [voice, setVoice] = useState(savedVoice)
   const previewing = mode === 'preview' && prepared
@@ -115,7 +115,7 @@ export default function NavigationPanel({ mode = 'live', prepared, now, here, de
       </div>
     </div> : <div className="nav-sheet">
       <button type="button" className="nav-close" onClick={onExit} aria-label={now?.arrived ? 'Done' : 'Exit navigation'} title={now?.arrived ? 'Done' : 'Exit navigation'}><Icon name="close" size={24}/></button>
-      {now && !now.arrived ? <div className="nav-eta" title="Routing service estimates without live traffic">
+      {now && !now.arrived ? <div className="nav-eta" title={traffic ? "Google's estimate with traffic when the route was planned" : 'Routing service estimates without live traffic'}>
         <b>{durationText(now.remainingTime)}</b><span>{distanceText(now.remaining)}{arrival && ` · ${arrival}`}</span>
       </div> : <div className="nav-eta"><b>{now?.arrived ? 'Arrived' : 'Navigation'}</b><span>{destination ? placeName(destination) : ''}</span></div>}
       <button type="button" className={`nav-round${overview ? ' on' : ''}`} onClick={onOverview} aria-pressed={overview} aria-label="Route overview" title="Route overview"><Icon name="route" size={22}/></button>

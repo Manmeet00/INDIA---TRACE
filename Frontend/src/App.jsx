@@ -211,7 +211,7 @@ function App() {
     if (!inIndia(here) || !lastRequest.current) return
     planRoute({ ...lastRequest.current, origin: `${here.latitude.toFixed(5)}, ${here.longitude.toFixed(5)}` }, { keepNavigating: true })
   }
-  const navigation = navigating ? { mode: navigating, route: chosenRoute, destination: plan?.destination, rerouting: routeLoading, error: routeError,
+  const navigation = navigating ? { mode: navigating, traffic: Boolean(plan?.traffic), route: chosenRoute, destination: plan?.destination, rerouting: routeLoading, error: routeError,
     onExit: () => setNavigating(null), onReroute: reroute } : null
 
   return <div className={`app-shell${sidebar.hidden ? ' sidebar-hidden' : ''}`}>

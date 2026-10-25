@@ -1018,3 +1018,30 @@ def test_map_has_no_corner_thumbnail_switch(dashboard):
     page.open()
     expect(page.locator(".leaflet-control-scale")).to_have_count(1)
     expect(page.locator(".base-switch")).to_have_count(0)  # map type is chosen from the Layers panel
+
+
+def test_route_times_say_where_they_come_from_and_google_turns_are_worded_by_google(dashboard, providers, monkeypatch):
+    from test_google_routes import GOOGLE, google_answer
+    page = dashboard
+    page.add_init_script(DRIVING)
+    page.add_init_script(SPEECH)
+    page.open()
+    expect(page.locator("#origin")).to_have_value("Your location")
+    page.fill("#destination", "Shillong")
+    page.keyboard.press("Escape")
+    page.click(".primary-button")
+    expect(page.locator(".route-card").first.locator(".time-source")).to_have_text("OSRM · no traffic")
+    expect(page.locator(".results-provider")).to_have_text("OSRM estimates · no traffic")
+
+    monkeypatch.setenv("GOOGLE_MAPS_API_KEY", "test-google-key")
+    get_settings.cache_clear()
+    providers[GOOGLE] = google_answer
+    page.click(".primary-button")
+    expect(page.locator(".route-card")).to_have_count(1)
+    expect(page.locator(".route-card .time-source")).to_have_text("Google · live traffic")
+    expect(page.locator(".route-card .route-facts")).to_contain_text("3 h")
+    expect(page.locator(".routing-note")).to_have_count(0)
+
+    page.locator(".start-button").click()
+    expect(page.locator(".nav-road")).to_contain_text("Turn right")
+    expect(page.locator(".nav-road b")).to_have_text("Mawlai Bypass")

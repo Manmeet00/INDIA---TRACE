@@ -15,6 +15,7 @@ import sqlite3
 import ssl
 import time
 from typing import Any, Callable
+from urllib.error import HTTPError
 from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 import certifi
@@ -23,6 +24,7 @@ from fastapi import HTTPException
 
 from .config import get_settings
 from .database import get_connection
+from . import google_routes
 from .evidence import annotate
 from .media import media_for
 from .monitoring import log_call
@@ -52,8 +54,19 @@ def _request_json(url: str, headers: dict[str, str] | None = None, body: Any = N
     except (OSError, EOFError, http.client.HTTPException, ValueError) as exc:
         host = urlsplit(url).hostname
         timed_out = isinstance(exc, TimeoutError) or isinstance(getattr(exc, "reason", None), TimeoutError)
-        reason = f"{host} did not answer within {timeout:g} s" if timed_out else f"{host}: {exc}"
+        reason = f"{host} did not answer within {timeout:g} s" if timed_out else f"{host}: {exc}{_error_message(exc)}"
         raise HTTPException(status_code=502, detail=f"An external routing or search service is unavailable ({reason}).") from exc
+
+
+def _error_message(exc: Exception) -> str:
+    """The provider's own explanation of an HTTP error ({"error": {"message": ...}}), such as an API not enabled."""
+    if not isinstance(exc, HTTPError):
+        return ""
+    try:
+        message = json.loads(exc.read().decode("utf-8"))["error"]["message"]
+    except Exception:  # no readable explanation: the status line is enough
+        return ""
+    return f" — {str(message).split(chr(10))[0][:200]}"
 
 
 GEOCODE_CACHE_S = 30 * 86400
@@ -62,36 +75,40 @@ HIGHWAY_REF = re.compile(r"NH\s*-?\s*0*(\d{1,3}[A-Z]?)", re.IGNORECASE)
 MIN_HIGHWAY_M = 2000
 
 
-def _cached_json(url: str, max_age_s: float, valid: Callable[[Any], bool]) -> tuple[Any, str]:
-    """Provider response and when it was fetched; serves an older copy if the provider fails.
+def _cached_json(url: str, max_age_s: float, valid: Callable[[Any], bool], body: dict[str, Any] | None = None,
+                 headers: dict[str, str] | None = None, stale_ok: bool = True) -> tuple[Any, str]:
+    """Provider response and when it was fetched; serves an older copy if the provider fails (unless stale_ok
+    is False, for answers such as live traffic that an old copy would misstate).
 
     Road geometry and place coordinates change slowly, and the public OSRM and Nominatim
     services are rate-limited and sometimes slow, so successful responses are kept in SQLite.
-    A response that fails `valid` counts as a failure and is never cached.
+    A response that fails `valid` counts as a failure and is never cached. A POST body is part of the cache
+    key; headers (which can carry an API key) are not stored.
     """
     service = ("nominatim" if "nominatim" in url else "photon" if "photon" in url
-               else "open-meteo" if "open-meteo" in url else "osrm")
+               else "open-meteo" if "open-meteo" in url else "google_routes" if "googleapis" in url else "osrm")
+    key = f"{url}#{json.dumps(body, sort_keys=True)}" if body is not None else url
     with get_connection() as connection:
-        row = connection.execute("SELECT response, fetched_at FROM provider_cache WHERE url = ?", (url,)).fetchone()
+        row = connection.execute("SELECT response, fetched_at FROM provider_cache WHERE url = ?", (key,)).fetchone()
         if row and _age_seconds(row["fetched_at"]) <= max_age_s:
             log_call(connection, service, "cache")
             return json.loads(row["response"]), row["fetched_at"]
     started = time.monotonic()
     try:
-        data = _request_json(url)
+        data = _request_json(url, headers, body) if body is not None or headers else _request_json(url)
         if not valid(data):
             raise HTTPException(status_code=502, detail=f"An external routing or search service is unavailable ({urlsplit(url).hostname} returned an unexpected response).")
     except HTTPException:
         with get_connection() as connection:
-            log_call(connection, service, "stale_cache" if row else "failed", started)
-        if row:
+            log_call(connection, service, "stale_cache" if row and stale_ok else "failed", started)
+        if row and stale_ok:
             return json.loads(row["response"]), row["fetched_at"]
         raise
     fetched_at = datetime.now(timezone.utc).isoformat()
     with get_connection() as connection:
         log_call(connection, service, "ok", started)
         connection.execute("INSERT OR REPLACE INTO provider_cache (url, response, fetched_at) VALUES (?, ?, ?)",
-                           (url, json.dumps(data), fetched_at))
+                           (key, json.dumps(data), fetched_at))
     return data, fetched_at
 
 
@@ -234,6 +251,42 @@ def _geocode(place: str) -> dict[str, Any]:
     return {"name": str(item.get("display_name") or place), "latitude": float(item["lat"]), "longitude": float(item["lon"])}
 
 
+def _osrm_routes(origin: dict[str, Any], destination: dict[str, Any]) -> tuple[list[dict[str, Any]], str]:
+    coordinates = f"{origin['longitude']},{origin['latitude']};{destination['longitude']},{destination['latitude']}"
+    routes, fetched_at = _cached_json(
+        f"https://router.project-osrm.org/route/v1/driving/{coordinates}?{urlencode({'overview':'full','geometries':'polyline6','alternatives':'3','steps':'true'})}",
+        ROUTE_CACHE_S,
+        _valid_routes,
+    )
+    if routes.get("code") != "Ok" or not routes.get("routes"):
+        raise HTTPException(status_code=422, detail="The routing service could not find a drivable route between these places.")
+    found = []
+    for route in routes["routes"]:
+        route = {**route, "geometry": _route_line(route["geometry"])}  # the compact polyline OSRM sends, as GeoJSON
+        found.append({"distance_m": round(route["distance"]), "duration_s": round(route["duration"]), "duration_no_traffic_s": None,
+                      "geometry": route["geometry"], "highways": _route_highways(route), "steps": _route_steps(route)})
+    return found, fetched_at
+
+
+def _driving_routes(origin: dict[str, Any], destination: dict[str, Any]) -> tuple[list[dict[str, Any]], str, str, str | None]:
+    """Routes, when they were fetched, the provider ("google" or "osrm") and a note when Google could not be used.
+
+    With a Google key, Google's routes and traffic times; an old copy is never served for them, as its traffic
+    would be out of date. If Google fails, OSRM's routes, and the note says why the times have no traffic.
+    """
+    key = get_settings().google_maps_api_key
+    if not key:
+        return (*_osrm_routes(origin, destination), "osrm", None)
+    try:
+        data, fetched_at = _cached_json(google_routes.URL, google_routes.CACHE_S, google_routes.valid,
+                                        body=google_routes.request_body(origin, destination), headers=google_routes.headers(key),
+                                        stale_ok=False)
+        return google_routes.routes(data, _decode_polyline), fetched_at, "google", None
+    except HTTPException as exc:
+        found, fetched_at = _osrm_routes(origin, destination)
+        return found, fetched_at, "osrm", f"Google Routes could not be used ({exc.detail}) Times are OSRM estimates without traffic."
+
+
 def plan_route(payload) -> dict[str, Any]:
     # Each place keeps the name the person typed: Nominatim's best match can be a road or station in that town.
     origin_query, destination_query = payload.origin.strip(), payload.destination.strip()
@@ -241,31 +294,18 @@ def plan_route(payload) -> dict[str, Any]:
     destination = {**_geocode(destination_query)}
     origin["query"] = "Your location" if COORDINATES.match(origin_query) else origin_query
     destination["query"] = "Your location" if COORDINATES.match(destination_query) else destination_query
-    coordinates = f"{origin['longitude']},{origin['latitude']};{destination['longitude']},{destination['latitude']}"
-    routes, routing_fetched_at = _cached_json(
-        f"https://router.project-osrm.org/route/v1/driving/{coordinates}?{urlencode({'overview':'full','geometries':'polyline6','alternatives':'3','steps':'true'})}",
-        ROUTE_CACHE_S,
-        _valid_routes,
-    )
-    if routes.get("code") != "Ok" or not routes.get("routes"):
-        raise HTTPException(status_code=422, detail="The routing service could not find a drivable route between these places.")
+    found, routing_fetched_at, provider, routing_note = _driving_routes(origin, destination)
     with get_connection() as connection:
         incident_items = load_incidents(connection)
     candidates = []
-    for index, route in enumerate(routes["routes"]):
-        route = {**route, "geometry": _route_line(route["geometry"])}  # the compact polyline OSRM sends, as GeoJSON
-        highways = _route_highways(route)
+    for index, route in enumerate(found):
         candidates.append({
             "id": f"route-{index + 1}",
-            "distance_m": round(route["distance"]),
-            "duration_s": round(route["duration"]),
-            "geometry": route["geometry"],
-            "highways": highways,
-            "steps": _route_steps(route),
-            "tolls": tolls_on_route(route["geometry"], route["distance"]),
+            **route,
+            "tolls": tolls_on_route(route["geometry"], route["distance_m"]),
             "priority_rank": index + 1,
             "vehicle_suitability": "unknown",
-            "exposure": route_exposure(route["geometry"], incident_items, highways),
+            "exposure": route_exposure(route["geometry"], incident_items, route["highways"]),
         })
     if payload.priority == "fastest":
         candidates.sort(key=lambda r: r["duration_s"])
@@ -287,12 +327,17 @@ def plan_route(payload) -> dict[str, Any]:
         "destination": destination,
         "vehicle_type": payload.vehicle_type,
         "priority": payload.priority,
-        "provider": "OpenStreetMap Nominatim + OSRM",
+        "provider": f"OpenStreetMap Nominatim + {'Google Routes' if provider == 'google' else 'OSRM'}",
+        "routing_provider": provider,
+        "traffic": provider == "google",
         "routing_fetched_at": routing_fetched_at,
+        "routing_note": routing_note,
         "routes": candidates,
         "recommendation": candidates[0]["recommendation"],
         "recommendation_reason": " ".join(candidates[0]["recommendation_reasons"]),
-        "data_note": "Distance and duration are OSRM estimates without live traffic. They do not include verified disruption or vehicle restriction data.",
+        "data_note": (f"Distance and duration are Google's estimates for a car with traffic as of {routing_fetched_at}; trucks are usually slower."
+                      if provider == "google" else "Distance and duration are OSRM estimates without live traffic.")
+                     + " They do not include verified disruption or vehicle restriction data.",
         "impact_note": IMPACT_NOTE,
     }
 

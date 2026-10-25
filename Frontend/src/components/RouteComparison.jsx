@@ -52,12 +52,18 @@ function RouteTolls({ route }) {
   </div>
 }
 
+// Where a plan's times come from: Google's include live traffic; OSRM's are open-road estimates without it.
+function timeSource(plan) {
+  if (plan.offline_demo) return 'Historical'
+  return plan.traffic ? 'Google · live traffic' : 'OSRM · no traffic'
+}
+
 function RouteCard({ route, index, plan, selected, onSelect }) {
   const advice = adviceFor(route.recommendation || plan.recommendation)
   const highways = Object.entries(route.highways || {})
   return <button className={`route-card ${selected ? 'selected' : ''}`} onClick={onSelect} aria-pressed={selected}><span className="route-radio"/>
     <span className="route-main"><b>Route {index + 1} · {index === 0 ? 'Top estimate' : 'Alternative'}</b><small>{exposureSummary(route.exposure)} · vehicle fit unknown</small>
-      <span className="route-facts"><span><Icon name="clock" size={14}/>{formatDuration(route.duration_s)}</span><span><Icon name="route" size={14}/>{formatDistance(route.distance_m)}</span>{route.tolls && <span><Icon name="toll" size={14}/>{tollSummary(route.tolls)}</span>}{!highways.length && <span><Icon name="layers" size={14}/>{plan.offline_demo ? 'Historical' : 'OSRM'}</span>}</span>
+      <span className="route-facts"><span title={route.duration_no_traffic_s ? `${formatDuration(route.duration_no_traffic_s)} without traffic` : undefined}><Icon name="clock" size={14}/>{formatDuration(route.duration_s)}<i className={`time-source${plan.traffic ? ' live' : ''}`}>{timeSource(plan)}</i></span><span><Icon name="route" size={14}/>{formatDistance(route.distance_m)}</span>{route.tolls && <span><Icon name="toll" size={14}/>{tollSummary(route.tolls)}</span>}</span>
       {highways.length > 0 && <span className="route-roads">{highways.map(([road, metres]) => <Milestone key={road} road={road} detail={`${Math.round(metres / 1000)} km`}/>)}</span>}
     </span>
     <span className={`risk-pill ${advice.tone}`}>{advice.pill}</span>
@@ -68,7 +74,8 @@ export default function RouteComparison({ plan, selectedRoute, onSelectRoute, on
   const chosenRoute = plan?.routes?.find((item) => item.id === selectedRoute)
   const advice = adviceFor(chosenRoute?.recommendation || plan?.recommendation)
   const adviceReasons = chosenRoute?.recommendation_reasons || (plan ? [plan.recommendation_reason] : [])
-  return <section className="route-results"><div className="results-heading"><div><span className="section-kicker">ROUTE COMPARISON</span><h2>{plan ? `${plan.routes.length} candidate route${plan.routes.length === 1 ? '' : 's'}` : 'Compare your options'}</h2></div>{plan && <span className="results-provider">{plan.offline_demo ? 'Saved demo' : 'OSRM estimates'}</span>}</div>
+  return <section className="route-results"><div className="results-heading"><div><span className="section-kicker">ROUTE COMPARISON</span><h2>{plan ? `${plan.routes.length} candidate route${plan.routes.length === 1 ? '' : 's'}` : 'Compare your options'}</h2></div>{plan && <span className="results-provider">{plan.offline_demo ? 'Saved demo' : plan.traffic ? 'Google Routes · live traffic' : 'OSRM estimates · no traffic'}</span>}</div>
+    {plan?.routing_note && <p className="routing-note" role="status"><Icon name="alert" size={15}/>{plan.routing_note}</p>}
     {plan?.routes?.length
       ? <div className="route-card-list">{plan.routes.map((route, index) => <RouteCard key={route.id} route={route} index={index} plan={plan} selected={selectedRoute === route.id} onSelect={() => onSelectRoute(route.id)}/>)}</div>
       : <div className="route-empty"><div className="route-empty-icon"><Icon name="route" size={19}/></div><div><b>No route comparison yet</b><span>Plan a route to fetch provider distance and time estimates.</span></div></div>}

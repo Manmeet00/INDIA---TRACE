@@ -28,6 +28,7 @@ def client(tmp_path, monkeypatch):
     # Tests never inherit the developer's Backend/.env: no keys, no schedule, the default region.
     monkeypatch.setenv("TINYFISH_API_KEY", "")
     monkeypatch.setenv("MAPPLS_STATIC_KEY", "")
+    monkeypatch.setenv("GOOGLE_MAPS_API_KEY", "")
     monkeypatch.setenv("COLLECTION_INTERVAL_MINUTES", "0")
     monkeypatch.setenv("COLLECTION_WINDOW_DAYS", "30")
     monkeypatch.setenv("REGION", "northeast")

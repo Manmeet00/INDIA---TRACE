@@ -13,8 +13,10 @@ export function road(step) {
   return step.name || ref
 }
 
-/** What to do at a step, in the words of a maps app ("Turn left onto GS Road (NH6)"). */
+/** What to do at a step, in the words of a maps app ("Turn left onto GS Road (NH6)"). Google's routes carry
+ * their own words, which are used as they are. */
 export function instruction(step) {
+  if (step.instruction) return step.instruction
   const onto = road(step) ? ` onto ${road(step)}` : ''
   const way = step.modifier && step.modifier !== 'straight' ? step.modifier : ''
   switch (step.type) {
@@ -40,6 +42,11 @@ export function instruction(step) {
 
 /** A step as Google Maps shows it: the road in large type, the action ("Turn left") above it. */
 export function instructionParts(step) {
+  if (step.instruction) {
+    const at = step.name ? step.instruction.indexOf(step.name) : -1
+    if (at <= 0) return { headline: step.instruction, action: '' }
+    return { headline: step.name, action: step.instruction.slice(0, at).replace(/\s+(onto|on|to stay on)\s*$/i, '').trim() }
+  }
   const name = road(step)
   if (!name || step.type === 'arrive') return { headline: instruction(step), action: '' }
   return { headline: name, action: instruction({ ...step, name: '', ref: '' }).replace(/ on the road$/, '') }
