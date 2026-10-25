@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import './App.css'
+import BrandMark from './components/BrandMark.jsx'
 import Icon from './components/Icon.jsx'
 import RoutePlanner from './components/RoutePlanner.jsx'
 import RouteMap, { MapLayers } from './components/RouteMap.jsx'
@@ -250,7 +251,7 @@ function App() {
 
   return <div className={`app-shell${sidebar.hidden ? ' sidebar-hidden' : ''}`}>
     <aside className="sidebar" id="sidebar" inert={sidebar.hidden}>
-      <a className="brand" href="#overview" aria-label="INDIA-TRACE home"><span className="brand-mark"><span /><span /><span /></span><span className="brand-copy"><b>INDIA-TRACE</b><small>Essential deliveries · Northeast India</small></span></a>
+      <a className="brand" href="#overview" aria-label="INDIA-TRACE home"><BrandMark/><span className="brand-copy"><b>INDIA-TRACE</b><small>Essential deliveries · Northeast India</small></span></a>
       <nav className="side-nav" aria-label="Main navigation">
         <a className="nav-item active" href="#overview"><Icon name="home"/> <span>Overview</span></a>
         <a className="nav-item" href="#route-planning"><Icon name="route"/> <span>Plan route</span></a>
@@ -266,7 +267,7 @@ function App() {
     </aside>
 
     <main className="main-area" id="overview">
-      <header className="topbar"><button type="button" className="sidebar-toggle" onClick={sidebar.toggle} aria-controls="sidebar" aria-expanded={!sidebar.hidden} aria-label={sidebar.hidden ? 'Show sidebar' : 'Hide sidebar'} title={sidebar.hidden ? 'Show sidebar' : 'Hide sidebar'}><Icon name="sidebar" size={20}/></button><div className="topbar-brand"><span className="brand-mark small"><span /><span /><span /></span><span><b>INDIA-TRACE</b><small>Road risk dashboard</small></span></div><label className="global-search"><Icon name="search" size={19}/><input aria-label="Search evidence" placeholder="Search locations, roads, sources or reports…" value={search} onChange={(event) => setSearch(event.target.value)}/></label><div className="top-actions"><span className={`connection-label ${apiStatus}`} title={scheduleNote}><i/>{liveLabel}</span><div className="profile-avatar">TT</div><span className="profile-name">Tech Titans</span></div></header>
+      <header className="topbar"><button type="button" className="sidebar-toggle" onClick={sidebar.toggle} aria-controls="sidebar" aria-expanded={!sidebar.hidden} aria-label={sidebar.hidden ? 'Show sidebar' : 'Hide sidebar'} title={sidebar.hidden ? 'Show sidebar' : 'Hide sidebar'}><Icon name="sidebar" size={20}/></button><div className="topbar-brand"><BrandMark small/><span><b>INDIA-TRACE</b><small>Road risk dashboard</small></span></div><label className="global-search"><Icon name="search" size={19}/><input aria-label="Search evidence" placeholder="Search locations, roads, sources or reports…" value={search} onChange={(event) => setSearch(event.target.value)}/></label><div className="top-actions"><span className={`connection-label ${apiStatus}`} title={scheduleNote}><i/>{liveLabel}</span><div className="profile-avatar">TT</div><span className="profile-name">Tech Titans</span></div></header>
 
       <div className="page-content">
         <SummaryCards incidents={incidents} plan={plan} route={chosenRoute} liveCheck={liveCheck}/>
