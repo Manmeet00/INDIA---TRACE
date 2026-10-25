@@ -11,7 +11,7 @@ const PATHS = {
   refresh: <><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.5 9a7 7 0 0 1 12-2L20 12M4 12l2.5 5a7 7 0 0 0 12-2"/></>,
   check: <><path d="m5 12 4 4L19 6"/></>,
   car: <><path d="M3 16v-4l2.5-5h10l3.5 5h2v4z"/><path d="M5.5 12h13"/><circle cx="7.5" cy="17.5" r="1.5"/><circle cx="16.5" cy="17.5" r="1.5"/></>,
-  bike: <><circle cx="5" cy="16.5" r="3"/><circle cx="19" cy="16.5" r="3"/><path d="M8 16.5h6l2.5-5.5"/><path d="M5 16.5 8 11h3.5l1.5 2.5h3.5"/><path d="M7.5 9.5h4"/><path d="m16.5 11 2.5 5.5M16.5 11l-.5-3H14"/></>,
+  motorbike: <><circle cx="5" cy="16.5" r="3"/><circle cx="19" cy="16.5" r="3"/><path d="M8 16.5h6l2.5-5.5"/><path d="M5 16.5 8 11h3.5l1.5 2.5h3.5"/><path d="M7.5 9.5h4"/><path d="m16.5 11 2.5 5.5M16.5 11l-.5-3H14"/></>,
   van: <><path d="M3 7h11l4 4h3v6H3z"/><path d="M14 7v4h4"/><circle cx="7.5" cy="17.5" r="1.5"/><circle cx="16.5" cy="17.5" r="1.5"/></>,
   ambulance: <><path d="M3 7h11v10H3zM14 10h4l3 3v4h-7z"/><path d="M8.5 9.5v5M6 12h5"/><circle cx="7" cy="18" r="1.5"/><circle cx="17.5" cy="18" r="1.5"/></>,
   swap: <><path d="M8 4v16m0-16L4.5 7.5M8 4l3.5 3.5M16 20V4m0 16-3.5-3.5M16 20l3.5-3.5"/></>,

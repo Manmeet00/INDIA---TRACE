@@ -3,7 +3,7 @@ import Icon from './Icon.jsx'
 import PlaceInput from './PlaceInput.jsx'
 
 // Bike gets Google's two-wheeler routes; car and truck a car's (the route notes say trucks are usually slower).
-const VEHICLES = [['car', 'Car', 'car'], ['bike', 'Bike', 'bike'], ['truck', 'Truck', 'truck']]
+const VEHICLES = [['car', 'Car', 'car'], ['bike', 'Bike', 'motorbike'], ['truck', 'Truck', 'truck']]
 const PRIORITIES = [['fastest', 'Fastest'], ['balanced', 'Balanced'], ['shortest', 'Shortest'], ['cautious', 'Cautious']]
 const PRIORITY_NOTES = {
   fastest: 'Shortest estimated time first, like a maps app',
