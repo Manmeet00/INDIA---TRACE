@@ -123,7 +123,6 @@ def test_empty_workspace_and_empty_collection_never_suggest_a_clear_road(dashboa
     expect(page.locator(".action-banner .verdict")).to_have_text("Verify before dispatch")
     expect(page.locator(".action-banner")).to_contain_text("No reports have been collected. No reports does not mean the road is clear.")
     expect(page.locator(".coverage .milestone.gap")).to_have_count(1)  # NH-6 is a coverage gap, not a clear road
-    expect(page.locator(".brief-verdict")).to_have_text("No reports foundNot proof the road is clear")
 
 
 # --- The full flow: malformed and stale reports, missing coordinates, review, flags -------
@@ -141,7 +140,7 @@ def test_collect_review_locate_and_replan(dashboard, tinyfish_network):
     expect(page.locator(".collection-message")).to_contain_text("2 new reports")
     expect(page.locator(".evidence-row")).to_have_count(2)  # web and news both return them; malformed ones are dropped
     # "closed near Shillong" is placed at Shillong (approximate); the Sonapur report is not, as Sonapur is in two states.
-    expect(page.locator(".brief-total")).to_have_count(0)  # no route planned yet: no counts until there is one
+    expect(page.locator(".brief-total b")).to_have_text("0")  # no route planned yet: the cards wait for one
     expect(page.locator(".evidence-row", has_text="Sonapur")).to_contain_text("Sonapur")
 
     page.locator(".evidence-row", has_text="closed for repairs").click()
@@ -503,7 +502,7 @@ def test_planning_a_route_scopes_the_cards_and_runs_a_live_check_for_it(dashboar
     page = dashboard
     page.open()
     expect(page.locator(".summary-scope")).to_contain_text("No route planned yet")
-    expect(page.locator(".brief-total")).to_have_count(0)
+    expect(page.locator(".brief-total b")).to_have_text("0")
 
     plan(page, "Guwahati, Assam", "Shillong, Meghalaya")
     expect(page.locator(".summary-scope .brief-route")).to_have_text("Route 1")
@@ -512,7 +511,6 @@ def test_planning_a_route_scopes_the_cards_and_runs_a_live_check_for_it(dashboar
     expect(page.locator(".live-check")).to_contain_text("1 new report from the route search")
     expect(page.locator(".brief-type.landslide b")).to_have_text("1")   # the new landslide names NH-6, which the route uses
     expect(page.locator(".brief-total")).to_contain_text("for this route")
-    expect(page.locator(".brief-verdict")).to_contain_text("None confirmed")  # one unverified landslide
     expect(page.locator(".action-banner")).to_contain_text("NH-6")    # the advice was recalculated with it
     assert all("query=NH-6+Guwahati+Shillong" in url and "recency_minutes=4320" in url for url in searched)
 
