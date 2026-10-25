@@ -403,7 +403,65 @@
 .icon-button { display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); background: var(--card); }
 .icon-button:hover { border-color: var(--route); color: var(--route); }
 .collection-message { margin-bottom: 10px; padding: 9px 11px; border-radius: var(--radius-sm); color: var(--ok); background: var(--ok-bg); font-size: var(--fs-sm); line-height: 1.5; }
-.selected-incident { display: grid; gap: 0; }
+.selected-incident { display: grid; gap: 14px; }
+/* The open report: its map symbol and title, why it is on the route, the source's words, then the facts. */
+.report-stepper { display: flex; align-items: center; justify-content: space-between; margin-bottom: -4px; color: var(--muted); font: 500 var(--fs-xs) var(--font-data); letter-spacing: .3px; }
+.report-stepper b { color: var(--text); }
+.report-stepper > span:last-child { display: flex; gap: 4px; }
+.report-stepper button { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 1px solid var(--line); border-radius: 50%; color: var(--text); background: var(--card); cursor: pointer; }
+.report-stepper button:hover:not(:disabled) { border-color: var(--route); color: var(--route); }
+.report-stepper button:disabled { opacity: .35; cursor: default; }
+.report-head { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 12px; align-items: start; }
+.report-symbol { display: grid; place-items: center; width: 40px; height: 40px; border: 2px solid #fff; border-radius: 50%; background: var(--tone); box-shadow: 0 1px 4px rgba(14, 26, 43, .35); }
+.report-kind { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; color: var(--muted); font: 700 var(--fs-xs)/1.4 var(--font-display); letter-spacing: .8px; text-transform: uppercase; }
+.report-kind i { font-style: normal; color: var(--line); }
+.report-kind .source-badge { padding: 0; box-shadow: none; background: none; font: inherit; color: inherit; letter-spacing: inherit; }
+.report-kind .source-badge.official { color: var(--teal); background: none; }
+.selected-incident h3 { margin: 3px 0 8px; color: var(--text); font: 700 17px/1.3 var(--font-display); text-wrap: balance; overflow-wrap: anywhere; }
+.selected-incident .incident-top { gap: 5px; }
+.selected-incident .route-match { margin: 0; }
+.report-says { display: grid; gap: 10px; }
+.incident-summary { margin: 0; padding: 2px 0 2px 14px; border-left: 3px solid var(--milestone); color: var(--text); font-size: var(--fs-base); line-height: 1.65; overflow-wrap: anywhere; }
+.source-link { display: flex; align-items: center; gap: 10px; }
+.source-avatar { display: grid; place-items: center; width: 30px; height: 30px; flex: none; border-radius: 50%; color: var(--route); background: #e6f0fb; font: 700 var(--fs-sm) var(--font-display); }
+.source-link > span:nth-child(2) { display: grid; min-width: 0; flex: 1; gap: 1px; }
+.source-link b { overflow: hidden; font-size: var(--fs-sm); text-overflow: ellipsis; white-space: nowrap; }
+.source-link small { color: var(--faint); font-size: var(--fs-xs); }
+.source-link > a { display: inline-flex; align-items: center; gap: 4px; min-height: 30px; padding: 0 11px; border: 1px solid var(--line); border-radius: 999px; color: var(--route); font-size: var(--fs-sm); font-weight: 700; text-decoration: none; }
+.source-link > a:hover { border-color: var(--route); background: #f5f9fe; }
+.incident-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; margin: 0; overflow: hidden; border: 1px solid var(--line-soft); border-radius: var(--radius-sm); background: var(--line-soft); }
+.incident-meta > div { display: grid; align-content: start; gap: 3px; padding: 9px 11px; background: var(--card); }
+.incident-meta > div:first-child { grid-column: 1 / -1; }
+.incident-meta dt { display: flex; align-items: center; gap: 5px; color: var(--faint); font: 700 var(--fs-xs) var(--font-display); letter-spacing: .6px; text-transform: uppercase; }
+.incident-meta dd { display: grid; gap: 4px; justify-items: start; margin: 0; color: var(--text); font-size: var(--fs-sm); line-height: 1.45; overflow-wrap: anywhere; }
+.incident-meta .freshness-badge { padding: 1px 7px; border-radius: 5px; font: 700 var(--fs-xs)/1.4 var(--font-body); }
+.desk-label { color: var(--muted); font: 700 var(--fs-xs) var(--font-display); letter-spacing: .8px; text-transform: uppercase; }
+.report-hints { display: grid; gap: 10px; }
+.linked-reports { display: grid; gap: 0; }
+.linked-reports .desk-label { margin-bottom: 4px; }
+.report-link { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 8px; align-items: center; padding: 8px 2px 8px 10px; border: 0; border-left: 3px solid #9fb4cc; border-bottom: 1px solid var(--line-soft); color: var(--text); background: none; text-align: left; cursor: pointer; }
+.report-link:hover { background: #f7faff; }
+.report-link b { grid-column: 1; color: var(--muted); font-size: 10.5px; letter-spacing: .5px; text-transform: uppercase; }
+.report-link span { grid-column: 1; overflow: hidden; font-size: var(--fs-sm); text-overflow: ellipsis; white-space: nowrap; }
+.report-link svg { grid-column: 2; grid-row: 1 / 3; color: var(--faint); }
+.report-link.conflict { border-left-color: var(--danger); }
+.report-link.conflict b { color: var(--danger); }
+.report-link.corroborating { border-left-color: var(--teal); }
+.report-link.corroborating b { color: var(--teal); }
+.report-link.duplicate { border-left-color: #8a7be0; }
+.linked-reports .hint-note { margin-top: 6px; }
+.review-area { display: grid; gap: 10px; padding-top: 14px; border-top: 1px solid var(--line); }
+.review-area .review-controls, .review-area .source-actions { margin-top: 0; }
+.review-area .review-controls { grid-template-columns: minmax(0, 1fr) auto; }
+.review-area .review-controls input { grid-column: 1 / -1; grid-row: 1; }
+.review-area .review-controls button { grid-column: auto; }
+.safety-callout { display: flex; align-items: flex-start; gap: 8px; padding: 8px 11px; border-radius: var(--radius-sm); color: var(--danger); background: var(--danger-bg); }
+.safety-callout svg { flex: none; margin-top: 1px; }
+.safety-callout p { margin: 0; color: #7a2622; font-size: var(--fs-sm); line-height: 1.45; }
+.desk-more { display: grid; border-top: 1px solid var(--line-soft); }
+.desk-more > details { margin: 0; padding: 9px 0; border-bottom: 1px solid var(--line-soft); }
+.selected-incident .timeline { margin-top: 0; }
+.selected-incident .evidence-media { margin-top: 0; }
 .incident-top { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .verification-badge, .freshness-badge, .hint-badge { padding: 3px 8px; border-radius: 5px; font: 700 var(--fs-xs)/1.4 var(--font-body); }
 .hint-badge { color: var(--slate); background: var(--slate-bg); }
@@ -416,8 +474,6 @@
 .verification-badge.dismissed { text-decoration: line-through; }
 .freshness-badge { color: var(--slate); background: transparent; box-shadow: inset 0 0 0 1px var(--line); }
 .freshness-badge.fresh { color: var(--ok); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ok) 40%, white); }
-.selected-incident h3 { margin: 10px 0 8px; color: var(--text); font: 700 var(--fs-md)/1.35 var(--font-display); }
-.incident-meta { display: grid; gap: 5px; margin-bottom: 10px; }
 /* With a route planned: its reports or all of them, and why the open report is on the route. */
 .evidence-scope { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin: 12px 0 4px; padding: 3px; border-radius: 9px; background: var(--slate-bg); }
 .evidence-scope button { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 34px; padding: 0 10px; border: 0; border-radius: 7px; color: var(--muted); background: transparent; font-size: var(--fs-sm); font-weight: 700; cursor: pointer; }
@@ -430,33 +486,11 @@
 .route-match.off { border-left-color: var(--faint); background: var(--slate-bg); }
 .route-match.off svg, .route-match.off b { color: var(--muted); }
 .evidence-empty .impact-more { margin-top: 12px; justify-self: center; }
-.incident-meta span { display: flex; align-items: flex-start; gap: 7px; color: var(--muted); font-size: var(--fs-sm); line-height: 1.45; }
-.incident-meta svg { flex: none; margin-top: 1px; color: var(--faint); }
-.incident-summary { margin: 0; color: var(--text); font-size: var(--fs-sm); line-height: 1.6; }
-.report-hints { display: grid; gap: 6px; margin-top: 12px; }
 .mention-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .mention-row > small { margin-right: 2px; color: var(--faint); font-size: var(--fs-xs); font-weight: 700; }
 .mention-chip { padding: 3px 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: var(--card); font-size: var(--fs-xs); }
-.report-link { display: grid; gap: 2px; padding: 8px 10px; border: 1px solid var(--line-soft); border-left: 3px solid #9fb4cc; border-radius: var(--radius-sm); text-align: left; background: var(--card); }
-.report-link:hover { background: #f7faff; }
-.report-link b { color: var(--muted); font-size: var(--fs-xs); letter-spacing: .4px; text-transform: uppercase; }
-.report-link span { overflow: hidden; font-size: var(--fs-sm); text-overflow: ellipsis; white-space: nowrap; }
-.report-link.conflict { border-left-color: var(--danger); }
-.report-link.conflict b { color: var(--danger); }
-.report-link.corroborating { border-left-color: var(--teal); }
-.report-link.corroborating b { color: var(--teal); }
-.report-link.duplicate { border-left-color: #8a7be0; }
 .hint-note { color: var(--faint); font-size: var(--fs-xs); }
-.source-link { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 10px 0 0; border-top: 1px solid var(--line-soft); }
 .source-avatar { display: grid; place-items: center; width: 30px; height: 30px; flex: none; border-radius: 7px; color: var(--route); background: #e6f0fb; font: 800 var(--fs-sm) var(--font-display); }
-.source-link > span:nth-child(2) { display: grid; min-width: 0; flex: 1; gap: 1px; }
-.source-link b { overflow: hidden; font-size: var(--fs-sm); text-overflow: ellipsis; white-space: nowrap; }
-.source-link small { color: var(--faint); font-size: var(--fs-xs); }
-.source-link > a { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 7px; color: var(--route); }
-.source-link > a:hover { background: #e6f0fb; }
-.safety-callout { display: flex; gap: 8px; margin-top: 10px; padding: 9px 11px; border-radius: var(--radius-sm); background: var(--danger-bg); }
-.safety-callout > span { display: grid; place-items: center; width: 18px; height: 18px; flex: none; border-radius: 50%; color: #fff; background: var(--danger); font-size: var(--fs-xs); font-weight: 800; }
-.safety-callout p { margin: 0; color: #7a2622; font-size: var(--fs-sm); line-height: 1.45; }
 .provenance, .verified-location, .flag-form, .targeted-search { margin-top: 10px; }
 .provenance summary, .verified-location summary, .flag-form summary, .targeted-search summary { cursor: pointer; color: var(--route); font-size: var(--fs-sm); font-weight: 700; }
 .provenance dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 8px 0 0; font-size: var(--fs-sm); }

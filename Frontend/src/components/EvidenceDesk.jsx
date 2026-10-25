@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import Icon from './Icon.jsx'
 import Milestone from './Milestone.jsx'
+import { incidentStyle } from '../lib/incidentIcons.js'
 import { EVENT_LABELS, FLAG_REASONS, LIFECYCLE_LABELS, SOURCE_LABELS, formatPublished, formatTime, freshnessLabel, locationText, statusLabel } from '../lib/format.js'
 
 // Duplicate, conflict and mention hints come from text heuristics in the API, never from verification.
@@ -21,8 +22,9 @@ function ReportHints({ incident, incidents, onSelect }) {
   if (!links.length && !highways.length && !places.length) return null
   return <div className="report-hints">
     {(highways.length > 0 || places.length > 0) && <div className="mention-row"><small>Mentions</small>{highways.map((road) => <Milestone key={road} road={road}/>)}{places.map((place) => <span className="mention-chip" key={place}>{place}</span>)}</div>}
-    {links.map(([kind, label, id]) => <button type="button" key={`${kind}-${id}`} className={`report-link ${kind}`} onClick={() => onSelect(id)}><b>{label}</b><span>{byId.get(id).title}</span></button>)}
-    <small className="hint-note">Automatic text hints. Check the sources before acting on them.</small>
+    {links.length > 0 && <div className="linked-reports"><span className="desk-label">Linked reports</span>
+      {links.map(([kind, label, id]) => <button type="button" key={`${kind}-${id}`} className={`report-link ${kind}`} onClick={() => onSelect(id)}><b>{label}</b><span>{byId.get(id).title}</span><Icon name="arrow" size={13}/></button>)}
+      <small className="hint-note">Automatic text hints. Check the sources before acting on them.</small></div>}
   </div>
 }
 
@@ -101,6 +103,13 @@ function Timeline({ events }) {
   </div>
 }
 
+// The report's symbol, the same one the map draws for it. The glyphs are this app's own static SVG.
+function ReportSymbol({ type }) {
+  const style = incidentStyle(type)
+  return <span className="report-symbol" style={{ '--tone': style.color }} aria-hidden="true"
+    dangerouslySetInnerHTML={{ __html: `<svg width="22" height="22" viewBox="0 0 24 24">${style.glyph}</svg>` }}/>
+}
+
 // With a route planned: its reports or all of them. counts are { route, all }.
 function ScopeSwitch({ scopes }) {
   return <div className="evidence-scope" role="group" aria-label="Reports to show">
@@ -111,8 +120,9 @@ function ScopeSwitch({ scopes }) {
 
 // The selected report with its review and flag forms. Drafts are kept per report, so switching reports never loses them.
 // onReview and onFlag resolve to true when the API saved the change. scopes and matchReason exist once a route is
-// planned: matchReason says why the report is on that route, or is null when it is not matched to it.
-export default function EvidenceDesk({ incident, incidents, visibleCount, scopes, matchReason, message, refreshing, onRefresh, onSelect, onReview, onFlag, canRecheck, onRecheck }) {
+// planned: matchReason says why the report is on that route, or is null when it is not matched to it. position
+// ({ index, total, onStep }) steps through the reports shown, when the open report is one of them.
+export default function EvidenceDesk({ incident, incidents, visibleCount, scopes, matchReason, position, message, refreshing, onRefresh, onSelect, onReview, onFlag, canRecheck, onRecheck }) {
   const [reviewNotes, setReviewNotes] = useState({})
   const [reviewStatuses, setReviewStatuses] = useState({})
   const [reviewLocations, setReviewLocations] = useState({})
@@ -158,26 +168,61 @@ export default function EvidenceDesk({ incident, incidents, visibleCount, scopes
   const editFlag = (field, value) => setFlagDrafts((drafts) => ({ ...drafts, [incident.id]: { ...drafts[incident.id], [field]: value } }))
   const note = incident ? reviewNotes[incident.id] || '' : ''
 
-  return <article className="panel incident-panel"><div className="incident-panel-heading"><div><span className="section-kicker">ROAD DISRUPTION MONITOR</span><h2>Evidence desk <span className="evidence-count">{visibleCount}</span></h2></div><button className="icon-button" onClick={onRefresh} disabled={refreshing} aria-label="Refresh evidence and API status"><Icon name="refresh" size={17}/></button></div>
+  const freshTone = incident?.freshness === 'fresh' ? 'fresh' : incident?.freshness === 'stale' ? 'stale' : ''
+  const attention = incident ? [
+    incident.lifecycle === 'needs_recheck' && ['recheck', LIFECYCLE_LABELS.needs_recheck],
+    incident.open_flags?.length > 0 && ['conflict', 'Flagged'],
+    incident.conflict_ids?.length > 0 && ['conflict', 'Possible conflict'],
+    incident.road_report === false && ['', 'No disruption described'],
+  ].filter(Boolean) : []
+
+  return <article className="panel incident-panel">
+    <div className="incident-panel-heading"><div><span className="section-kicker">ROAD DISRUPTION MONITOR</span><h2>Evidence desk {!scopes && <span className="evidence-count">{visibleCount}</span>}</h2></div><button className="icon-button" onClick={onRefresh} disabled={refreshing} aria-label="Refresh evidence and API status"><Icon name="refresh" size={17}/></button></div>
     {scopes && <ScopeSwitch scopes={scopes}/>}
     {message && <div className="collection-message" role="status">{message}</div>}
     {incident ? <div className="selected-incident">
-      <div className="incident-top"><span className="hint-badge">{EVENT_LABELS[incident.event_type] || 'Other'}</span><span className={`verification-badge ${incident.evidence_status}`}>{statusLabel(incident)}</span><span className={`freshness-badge ${incident.freshness}`}>{freshnessLabel(incident)}</span><span className={`source-badge ${incident.source_category}`}>{SOURCE_LABELS[incident.source_category] || 'Other web page'}</span>{incident.lifecycle === 'needs_recheck' && <span className="hint-badge recheck">{LIFECYCLE_LABELS.needs_recheck}</span>}{incident.open_flags?.length > 0 && <span className="hint-badge conflict">Flagged</span>}{incident.conflict_ids?.length > 0 && <span className="hint-badge conflict">Possible conflict</span>}{incident.duplicate_ids?.length > 0 && <span className="hint-badge">Possible duplicate</span>}{incident.road_report === false && <span className="hint-badge" title="The text names no closure, landslide, flood, accident, roadworks or reopening, or the page sells a trip">No disruption described</span>}</div>
-      <h3>{incident.title}</h3>
-      <div className="incident-meta"><span><Icon name="pin" size={15}/>{locationText(incident)}</span><span><Icon name="layers" size={15}/>{incident.regions?.length ? incident.regions.join(', ') : 'Region not named in source'}</span><span><Icon name="clock" size={15}/>{formatPublished(incident)}</span></div>
+      {position && position.total > 1 && <div className="report-stepper"><span>Report <b>{position.index + 1}</b> of {position.total}</span>
+        <span><button type="button" onClick={() => position.onStep(-1)} disabled={position.index === 0} aria-label="Previous report" title="Previous report"><Icon name="chevron-left" size={18}/></button>
+        <button type="button" onClick={() => position.onStep(1)} disabled={position.index >= position.total - 1} aria-label="Next report" title="Next report"><Icon name="chevron-right" size={18}/></button></span></div>}
+
+      <header className="report-head">
+        <ReportSymbol type={incident.event_type}/>
+        <div>
+          <span className="report-kind">{EVENT_LABELS[incident.event_type] || 'Other'}<i>·</i><span className={`source-badge ${incident.source_category}`}>{SOURCE_LABELS[incident.source_category] || 'Other web page'}</span></span>
+          <h3>{incident.title}</h3>
+          <div className="incident-top"><span className={`verification-badge ${incident.evidence_status}`}>{statusLabel(incident)}</span>{attention.map(([tone, label]) => <span key={label} className={`hint-badge ${tone}`} title={label === 'No disruption described' ? 'The text names no closure, landslide, flood, accident, roadworks or reopening, or the page sells a trip' : undefined}>{label}</span>)}</div>
+        </div>
+      </header>
+
       {matchReason !== undefined && <p className={`route-match${matchReason ? '' : ' off'}`}><Icon name="route" size={16}/><span><b>{matchReason ? 'Why it is on this route' : 'Not matched to this route'}</b>{matchReason || 'Opened from the map or the list of all reports.'}</span></p>}
+
+      <section className="report-says" aria-label="What the source says">
+        <blockquote className="incident-summary">{incident.summary || 'No source summary provided.'}</blockquote>
+        <div className="source-link"><span className="source-avatar">{incident.source_name.slice(0, 1).toUpperCase()}</span><span><b>{incident.source_name}</b><small>Collected {formatTime(incident.collected_at)}</small></span><a href={incident.source_url} target="_blank" rel="noreferrer" aria-label={`Open source: ${incident.source_name}`}>Open <Icon name="arrow" size={14}/></a></div>
+      </section>
+
+      <dl className="incident-meta">
+        <div><dt><Icon name="pin" size={14}/>Where</dt><dd>{locationText(incident)}</dd></div>
+        <div><dt><Icon name="clock" size={14}/>Published</dt><dd>{formatPublished(incident)}{incident.published_estimate && <small className={`freshness-badge ${freshTone}`}>{freshnessLabel(incident)}</small>}</dd></div>
+        <div><dt><Icon name="layers" size={14}/>Region</dt><dd>{incident.regions?.length ? incident.regions.join(', ') : 'Not named in source'}</dd></div>
+      </dl>
+
       <EvidenceMedia key={`media-${incident.id}`} media={incident.media} sourceUrl={incident.source_url}/>
-      <p className="incident-summary">{incident.summary || 'No source summary provided.'}</p>
       <ReportHints incident={incident} incidents={incidents} onSelect={onSelect}/>
-      <div className="source-link"><span className="source-avatar">{incident.source_name.slice(0, 1).toUpperCase()}</span><span><b>{incident.source_name}</b><small>Collected {formatTime(incident.collected_at)}</small></span><a href={incident.source_url} target="_blank" rel="noreferrer" aria-label={`Open source: ${incident.source_name}`}><Icon name="arrow" size={16}/></a></div>
-      <div className="source-actions"><button type="button" className="text-button" onClick={recheck} disabled={!canRecheck || recheckBusyId === incident.id}><Icon name="refresh" size={14}/>{recheckBusyId === incident.id ? 'Re-checking…' : 'Re-check source'}</button><small>Last checked {incident.last_checked_at ? formatTime(incident.last_checked_at) : 'never'}</small></div>
-      <div className="safety-callout"><span>!</span><p>The report is evidence to review. Current road status and impact are not confirmed.</p></div>
-      <Provenance incident={incident}/>
-      <details className="verified-location"><summary>Add reviewer-confirmed map location</summary><input aria-label={`Location name for ${incident.title}`} placeholder="Location from source" value={reviewLocations[incident.id]?.name ?? (incident.location_text || '')} onChange={(event) => editLocation('name', event.target.value)}/><div><input aria-label={`Latitude for ${incident.title}`} type="number" min="-90" max="90" step="any" placeholder="Latitude" value={reviewLocations[incident.id]?.latitude ?? (incident.latitude ?? '')} onChange={(event) => editLocation('latitude', event.target.value)}/><input aria-label={`Longitude for ${incident.title}`} type="number" min="-180" max="180" step="any" placeholder="Longitude" value={reviewLocations[incident.id]?.longitude ?? (incident.longitude ?? '')} onChange={(event) => editLocation('longitude', event.target.value)}/></div><small>Only enter coordinates you checked in the linked source. Empty both fields and save to remove a wrong location.</small></details>
-      <div className="review-controls"><label className="sr-only" htmlFor={`review-status-${incident.id}`}>Review status</label><select id={`review-status-${incident.id}`} value={reviewStatuses[incident.id] || incident.verification} onChange={(event) => setReviewStatuses((statuses) => ({ ...statuses, [incident.id]: event.target.value }))}><option value="unverified">Unverified</option><option value="confirmed">Confirmed</option><option value="conflicting">Conflicting</option><option value="unknown">Unknown</option><option value="resolved">Resolved (reopened / ended)</option><option value="dismissed">Dismissed (not relevant)</option></select><label className="sr-only" htmlFor={`review-note-${incident.id}`}>Review note</label><input id={`review-note-${incident.id}`} placeholder="Review note (required)" value={note} onChange={(event) => setReviewNotes((notes) => ({ ...notes, [incident.id]: event.target.value }))}/><button disabled={reviewBusyId === incident.id || note.trim().length < 3} onClick={saveReview}>{reviewBusyId === incident.id ? 'Saving…' : 'Save review'}</button></div>
+
+      <section className="review-area" aria-label="Review this report">
+        <div className="safety-callout"><Icon name="alert" size={15}/><p>Evidence to review. Current road status and impact are not confirmed.</p></div>
+        <span className="desk-label">Your review</span>
+        <div className="review-controls"><label className="sr-only" htmlFor={`review-status-${incident.id}`}>Review status</label><select id={`review-status-${incident.id}`} value={reviewStatuses[incident.id] || incident.verification} onChange={(event) => setReviewStatuses((statuses) => ({ ...statuses, [incident.id]: event.target.value }))}><option value="unverified">Unverified</option><option value="confirmed">Confirmed</option><option value="conflicting">Conflicting</option><option value="unknown">Unknown</option><option value="resolved">Resolved (reopened / ended)</option><option value="dismissed">Dismissed (not relevant)</option></select><label className="sr-only" htmlFor={`review-note-${incident.id}`}>Review note</label><input id={`review-note-${incident.id}`} placeholder="Review note (required)" value={note} onChange={(event) => setReviewNotes((notes) => ({ ...notes, [incident.id]: event.target.value }))}/><button disabled={reviewBusyId === incident.id || note.trim().length < 3} onClick={saveReview}>{reviewBusyId === incident.id ? 'Saving…' : 'Save review'}</button></div>
+        <div className="source-actions"><button type="button" className="text-button" onClick={recheck} disabled={!canRecheck || recheckBusyId === incident.id}><Icon name="refresh" size={14}/>{recheckBusyId === incident.id ? 'Re-checking…' : 'Re-check source'}</button><small>Last checked {incident.last_checked_at ? formatTime(incident.last_checked_at) : 'never'}</small></div>
+        {incident.open_flags?.length > 0 && <div className="open-flags"><b>{incident.open_flags.length} open correction flag{incident.open_flags.length === 1 ? '' : 's'} · the next review closes them</b>{incident.open_flags.map((flag) => <span key={flag.created_at}>{FLAG_REASONS[flag.reason] || flag.reason} · {formatTime(flag.created_at)}{flag.note ? ` — ${flag.note}` : ''}</span>)}</div>}
+        <div className="desk-more">
+          <Provenance incident={incident}/>
+          <details className="verified-location"><summary>Add reviewer-confirmed map location</summary><input aria-label={`Location name for ${incident.title}`} placeholder="Location from source" value={reviewLocations[incident.id]?.name ?? (incident.location_text || '')} onChange={(event) => editLocation('name', event.target.value)}/><div><input aria-label={`Latitude for ${incident.title}`} type="number" min="-90" max="90" step="any" placeholder="Latitude" value={reviewLocations[incident.id]?.latitude ?? (incident.latitude ?? '')} onChange={(event) => editLocation('latitude', event.target.value)}/><input aria-label={`Longitude for ${incident.title}`} type="number" min="-180" max="180" step="any" placeholder="Longitude" value={reviewLocations[incident.id]?.longitude ?? (incident.longitude ?? '')} onChange={(event) => editLocation('longitude', event.target.value)}/></div><small>Only enter coordinates you checked in the linked source. Empty both fields and save to remove a wrong location.</small></details>
+          <details className="flag-form"><summary>Flag a problem with this record</summary><div><label className="sr-only" htmlFor={`flag-reason-${incident.id}`}>Problem</label><select id={`flag-reason-${incident.id}`} value={flagDrafts[incident.id]?.reason || 'outdated'} onChange={(event) => editFlag('reason', event.target.value)}>{Object.entries(FLAG_REASONS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select><label className="sr-only" htmlFor={`flag-note-${incident.id}`}>Details</label><input id={`flag-note-${incident.id}`} maxLength="500" placeholder="What is wrong? (optional)" value={flagDrafts[incident.id]?.note || ''} onChange={(event) => editFlag('note', event.target.value)}/><button type="button" disabled={flagBusyId === incident.id} onClick={sendFlag}>{flagBusyId === incident.id ? 'Sending…' : 'Send flag'}</button></div><small>Flags go to a reviewer. They never change the report’s status on their own.</small></details>
+        </div>
+      </section>
       <Timeline key={`timeline-${incident.id}`} events={incident.timeline}/>
-      {incident.open_flags?.length > 0 && <div className="open-flags"><b>{incident.open_flags.length} open correction flag{incident.open_flags.length === 1 ? '' : 's'} · the next review closes them</b>{incident.open_flags.map((flag) => <span key={flag.created_at}>{FLAG_REASONS[flag.reason] || flag.reason} · {formatTime(flag.created_at)}{flag.note ? ` — ${flag.note}` : ''}</span>)}</div>}
-      <details className="flag-form"><summary>Flag a problem with this record</summary><div><label className="sr-only" htmlFor={`flag-reason-${incident.id}`}>Problem</label><select id={`flag-reason-${incident.id}`} value={flagDrafts[incident.id]?.reason || 'outdated'} onChange={(event) => editFlag('reason', event.target.value)}>{Object.entries(FLAG_REASONS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select><label className="sr-only" htmlFor={`flag-note-${incident.id}`}>Details</label><input id={`flag-note-${incident.id}`} maxLength="500" placeholder="What is wrong? (optional)" value={flagDrafts[incident.id]?.note || ''} onChange={(event) => editFlag('note', event.target.value)}/><button type="button" disabled={flagBusyId === incident.id} onClick={sendFlag}>{flagBusyId === incident.id ? 'Sending…' : 'Send flag'}</button></div><small>Flags go to a reviewer. They never change the report’s status on their own.</small></details>
     </div> : scopes?.current === 'route' ? <div className="evidence-empty"><span className="empty-illustration"><Icon name="route" size={24}/></span><b>No reports matched to this route</b><p>No reports does not mean the road is clear. Reports only match when they are placed near the route or name a highway it uses.</p>{scopes.all > 0 && <button type="button" className="impact-more" onClick={() => scopes.onChange('all')}>Show all {scopes.all} reports</button>}</div>
       : <div className="evidence-empty"><span className="empty-illustration"><Icon name="layers" size={24}/></span><b>{incidents.length ? 'No matching evidence' : 'No evidence collected yet'}</b><p>{incidents.length ? 'Try another search term or filter.' : 'No reports does not mean a road is clear.'}</p></div>}
   </article>

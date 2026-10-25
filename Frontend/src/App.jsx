@@ -197,6 +197,10 @@ function App() {
   const shownIncidents = matches && evidenceScope === 'route' ? routeIncidents : visibleIncidents
   const activeIncident = shownIncidents.find((item) => item.id === selectedIncidentId)
     || visibleIncidents.find((item) => item.id === selectedIncidentId) || shownIncidents[0] || null
+  // Steps through the reports shown (the route's, or all), when the open report is one of them.
+  const activeIndex = activeIncident ? shownIncidents.indexOf(activeIncident) : -1
+  const reportPosition = activeIndex >= 0 ? { index: activeIndex, total: shownIncidents.length,
+    onStep: (step) => setSelectedIncidentId(shownIncidents[activeIndex + step]?.id ?? activeIncident.id) } : null
   const evidenceScopes = matches ? { current: evidenceScope, onChange: setEvidenceScope, route: routeIncidents.length, all: visibleIncidents.length } : null
   // Like a maps app: live guidance (Start) when the device is at the start of the route, whether that is Your
   // location or a typed place; from anywhere else the route can be stepped through turn by turn (Preview).
@@ -251,7 +255,7 @@ function App() {
           </div>
 
           <aside className="right-column" id="evidence">
-            <EvidenceDesk incident={activeIncident} incidents={incidents} visibleCount={shownIncidents.length} scopes={evidenceScopes} matchReason={matches ? matches.get(activeIncident?.id) || null : undefined} message={message || problem || arrivalNote} refreshing={refreshing} onRefresh={refresh} onSelect={selectIncident} onReview={reviewIncident} onFlag={flagIncident} canRecheck={apiStatus === 'online' && !collectionLoading} onRecheck={recheckIncident}/>
+            <EvidenceDesk incident={activeIncident} incidents={incidents} visibleCount={shownIncidents.length} scopes={evidenceScopes} position={reportPosition} matchReason={matches ? matches.get(activeIncident?.id) || null : undefined} message={message || problem || arrivalNote} refreshing={refreshing} onRefresh={refresh} onSelect={selectIncident} onReview={reviewIncident} onFlag={flagIncident} canRecheck={apiStatus === 'online' && !collectionLoading} onRecheck={recheckIncident}/>
             <EvidenceList incidents={incidents} visibleIncidents={shownIncidents} activeId={activeIncident?.id} onSelect={setSelectedIncidentId} filters={filters} onFilterChange={setFilter} canCollect={apiStatus === 'online'} collecting={collectionLoading} progress={runProgress} onCollect={collect} onRecheckDue={recheckDue} lastRun={lastRun}/>
             <div className="source-footnote"><Icon name="check" size={15}/><span>Evidence is unverified until independently reviewed. Dispatch advice remains cautious.</span></div>
           </aside>

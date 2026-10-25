@@ -201,8 +201,16 @@ def test_evidence_desk_shows_the_planned_routes_reports_and_why(dashboard, tinyf
     expect(page.locator(".selected-incident h3")).to_have_text("Landslide blocks NH-6")
     expect(page.locator(".route-match")).to_contain_text("Names NH-6, which this route uses. Where on NH-6 is not known")
 
+    expect(page.locator(".report-stepper")).to_have_count(0)  # one report: nothing to step through
+
     page.get_by_role("button", name="All reports").click()
     expect(page.locator(".evidence-row")).to_have_count(3)
+    expect(page.locator(".report-stepper")).to_contain_text("Report 1 of 3")
+    first = page.locator(".selected-incident h3").inner_text()
+    page.get_by_role("button", name="Next report").click()
+    expect(page.locator(".report-stepper")).to_contain_text("Report 2 of 3")
+    expect(page.locator(".selected-incident h3")).not_to_have_text(first)
+    expect(page.get_by_role("button", name="Previous report")).to_be_enabled()
     page.locator(".evidence-row", has_text="corridor").click()
     expect(page.locator(".selected-incident .incident-summary")).to_have_text("The corridor will improve goods movement.")
     expect(page.locator(".selected-incident .incident-top")).to_contain_text("No disruption described")
