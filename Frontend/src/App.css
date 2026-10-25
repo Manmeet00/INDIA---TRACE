@@ -395,7 +395,6 @@
 .toll-price { color: var(--faint); font-size: var(--fs-xs); text-align: right; }
 .toll-note { margin: 0; color: var(--muted); font-size: var(--fs-xs); line-height: 1.5; }
 .toll-marker { display: grid; place-items: center; width: 22px; height: 22px; border: 2px solid #fff; border-radius: 6px; color: #fff; background: #7b3fb5; box-shadow: 0 1px 4px rgba(0, 0, 0, .4); }
-.map-legend .legend-toll { width: 10px; height: 10px; border-radius: 3px; background: #7b3fb5; }
 .impact-heading b { font: 700 var(--fs-md) var(--font-display); }
 .impact-heading small, .coverage p, .impact-empty { margin: 0; color: var(--muted); font-size: var(--fs-sm); line-height: 1.5; }
 .coverage { display: grid; gap: 7px; padding: 10px 12px; border-radius: 8px; background: var(--paper); }
