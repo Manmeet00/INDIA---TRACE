@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 import gzip
 import http.client
 import json
+import logging
 import math
 import re
 import sqlite3
@@ -29,6 +30,8 @@ from .evidence import annotate
 from .media import media_for
 from .monitoring import log_call
 from .tolls import tolls_on_route
+
+logger = logging.getLogger("indiatrace")
 
 
 def _request_json(url: str, headers: dict[str, str] | None = None, body: Any = None, timeout: float = 15) -> Any:
@@ -110,6 +113,25 @@ def _cached_json(url: str, max_age_s: float, valid: Callable[[Any], bool], body:
         connection.execute("INSERT OR REPLACE INTO provider_cache (url, response, fetched_at) VALUES (?, ?, ?)",
                            (key, json.dumps(data), fetched_at))
     return data, fetched_at
+
+
+# How long saved provider answers are kept. Each must outlive its reuse window, plus a margin in which a stale
+# copy can still stand in when the provider is down (Google traffic answers never are).
+CACHE_KEEP_S = {"https://routes.googleapis.com": 3600, "https://router.project-osrm.org": 7 * 86400}
+CACHE_KEEP_DEFAULT_S = 31 * 86400
+
+
+def prune_provider_cache(connection: sqlite3.Connection) -> int:
+    """Delete saved answers past their keeping time; returns how many. Routes from GPS positions are almost
+    never asked for twice, so without this the cache grows by hundreds of kilobytes a plan."""
+    now = datetime.now(timezone.utc)
+    cutoff = lambda seconds: (now - timedelta(seconds=seconds)).isoformat()
+    deleted = 0
+    for prefix, seconds in CACHE_KEEP_S.items():
+        deleted += connection.execute("DELETE FROM provider_cache WHERE url LIKE ? AND fetched_at < ?",
+                                      (f"{prefix}%", cutoff(seconds))).rowcount
+    deleted += connection.execute("DELETE FROM provider_cache WHERE fetched_at < ?", (cutoff(CACHE_KEEP_DEFAULT_S),)).rowcount
+    return deleted
 
 
 def _route_highways(route: dict[str, Any]) -> dict[str, int]:
@@ -287,8 +309,10 @@ def _driving_routes(origin: dict[str, Any], destination: dict[str, Any], vehicle
                                         headers=google_routes.headers(key), stale_ok=False)
         return google_routes.routes(data, _decode_polyline), fetched_at, "google", None
     except HTTPException as exc:
+        logger.warning("Google Routes failed, using OSRM: %s", exc.detail)
         found, fetched_at = _osrm_routes(origin, destination)
-        return found, fetched_at, "osrm", f"Google Routes could not be used ({exc.detail}) Times are OSRM estimates without traffic."
+        return (found, fetched_at, "osrm",
+                f"Google Routes could not be used ({google_routes.failure_reason(str(exc.detail))}). Times are OSRM estimates without traffic.")
 
 
 def _vehicle_note(vehicle: str, provider: str) -> str | None:
@@ -423,9 +447,13 @@ def incident_from_row(row: sqlite3.Row) -> dict[str, Any]:
     return item
 
 
-def load_incidents(connection: sqlite3.Connection, limit: int = 500) -> list[dict[str, Any]]:
-    """Newest reports first, with duplicate, conflict and mention hints computed across them."""
-    rows = connection.execute("SELECT * FROM incidents ORDER BY collected_at DESC LIMIT ?", (limit,)).fetchall()
+def load_incidents(connection: sqlite3.Connection, limit: int | None = None) -> list[dict[str, Any]]:
+    """Newest reports first (all of them unless limit is given), with duplicate, conflict and mention hints.
+
+    Route checks, reviews and metrics need every report: an older confirmed closure must never drop out
+    because newer reports arrived. Only the dashboard's list asks for a limited number.
+    """
+    rows = connection.execute("SELECT * FROM incidents ORDER BY collected_at DESC LIMIT ?", (-1 if limit is None else limit,)).fetchall()
     incidents = [incident_from_row(row) for row in rows]
     history: dict[str, list[dict[str, Any]]] = {}
     for review in connection.execute("SELECT * FROM incident_reviews ORDER BY reviewed_at DESC").fetchall():

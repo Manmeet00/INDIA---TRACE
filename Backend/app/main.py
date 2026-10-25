@@ -22,7 +22,7 @@ from .media import collect_preview_images
 from .places import suggest_places
 from .regions import active_region, coverage_by_state
 from .repository import add_event, create_trace, event_from_row, trace_from_row, update_trace
-from .road_intelligence import load_incidents, plan_route
+from .road_intelligence import load_incidents, plan_route, prune_provider_cache
 from .schemas import (CollectionRequest, CollectionResult, CollectionRun, DashboardSummary, EventCreate, EventOut, IncidentFlag,
                       IncidentOut, IncidentReview, JobStarted, RecheckRequest, RecheckResult, RoutePlanRequest, TraceCreate,
                       TraceDetail, TracePage, TraceStatus, TraceUpdate)
@@ -37,6 +37,8 @@ def _scheduled_collection() -> None:
     """Pilot searches, then a re-check of the reports that are due. Skipped while another run is going."""
     try:
         with jobs.exclusive(), get_connection() as connection:
+            prune_provider_cache(connection)
+            connection.commit()
             try:
                 collect_candidates(connection, trigger="scheduled", recency_minutes=get_settings().collection_window_days * 1440 or None)
             finally:
@@ -75,6 +77,8 @@ async def _collect_periodically(interval_minutes: int, first_delay_s: float) -> 
 async def lifespan(_: FastAPI):
     try:
         initialize_database()
+        with get_connection() as connection:
+            prune_provider_cache(connection)
     except sqlite3.Error:
         # Start anyway so /api/health can report the problem; data endpoints answer 503 until it is fixed.
         logger.exception("Could not initialise the database at %s", settings.database_path)
@@ -143,13 +147,19 @@ def post_route_plan(payload: RoutePlanRequest):
     except HTTPException as exc:
         status_code = exc.status_code
         raise
+    except Exception as exc:
+        status_code = 503 if isinstance(exc, sqlite3.Error) else 500  # counted as a failure in the metrics
+        raise
     finally:
-        with get_connection() as connection:
-            log_route_plan(connection, round((time.monotonic() - started) * 1000), status_code, routes)
+        try:
+            with get_connection() as connection:
+                log_route_plan(connection, round((time.monotonic() - started) * 1000), status_code, routes)
+        except sqlite3.Error:  # a busy database must not turn a planned route into an error
+            logger.warning("Could not log a route plan", exc_info=True)
 
 
 @app.get("/api/incidents", response_model=list[IncidentOut])
-def list_incidents(limit: int = Query(default=100, ge=1, le=500)):
+def list_incidents(limit: int = Query(default=100, ge=1, le=2000)):
     with get_connection() as connection:
         return load_incidents(connection, limit)
 

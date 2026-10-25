@@ -74,7 +74,7 @@ function EvidenceMedia({ media, sourceUrl }) {
   return <figure className={`evidence-media embed ${media.kind}`}>
     {showEmbed
       ? <iframe src={media.embed_url} title={`${media.site} ${noun} from the source`} loading="lazy" referrerPolicy="strict-origin-when-cross-origin"
-          allow="encrypted-media; picture-in-picture; fullscreen" allowFullScreen style={frame.ratio ? { aspectRatio: frame.ratio } : { height: frame.height }}/>
+          allow="encrypted-media; picture-in-picture; fullscreen" style={frame.ratio ? { aspectRatio: frame.ratio } : { height: frame.height }}/>
       : <button type="button" className="embed-load" onClick={() => setShowEmbed(true)}>
           <span className="embed-play" aria-hidden="true">{media.kind === 'youtube' || noun === 'video' ? '▶' : '◩'}</span>
           <span><b>Show the {media.site} {noun}</b><small>The source’s own {noun}, loaded from {media.site.toLowerCase()}.com</small></span>

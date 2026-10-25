@@ -270,3 +270,51 @@ def test_a_page_found_by_several_searches_is_one_sighting_per_run(client, tinyfi
     client.post("/api/collection/run", json={"road": "NH-6"})  # a later run: seen again once
     kinds = [event["kind"] for event in client.get("/api/incidents").json()[0]["timeline"]]
     assert kinds.count("seen_again") == 1 and kinds.count("collected") == 1
+
+
+# --- Fixes from the project review ----------------------------------------------------------
+
+def test_an_unreadable_page_is_not_due_again_on_the_next_run(client, tinyfish_network, add_incident):
+    add_incident("blocked", summary="Landslide on NH-6", published_at=ago(hours=40), last_checked_at=ago(hours=40))
+    tinyfish_network[FETCH] = lambda request: {"results": [], "errors": [{"url": url, "error": "target_unreachable"} for url in json.loads(request.data)["urls"]]}
+    assert client.post("/api/recheck").json()["failed"] == 1
+    report = client.get("/api/incidents/blocked").json()
+    assert report["lifecycle"] == "new"  # the failed attempt restarts the clock: no Fetch on every scheduled run
+    assert report["last_checked_at"].startswith(ago(hours=40)[:13])  # but it is not a successful check
+    assert client.post("/api/recheck").json()["checked"] == 0
+
+
+def test_rechecking_unknown_or_repeated_ids_reads_each_known_page_once(client, tinyfish_network, add_incident):
+    add_incident("one")
+    body = client.post("/api/recheck", json={"incident_ids": ["nope", "one", "one"]}).json()
+    assert (body["checked"], body["fetched"]) == (1, 1)
+    fetched = [json.loads(request.data)["urls"] for host, request in tinyfish_network["calls"] if host == FETCH]
+    assert fetched == [["https://example.org/one"]]
+
+
+def test_a_run_that_breaks_unexpectedly_is_closed_as_failed(client, tinyfish_network, monkeypatch):
+    tinyfish_network[SEARCH] = {"results": [{"url": "https://example.org/x", "title": "NH-6 closed", "snippet": "NH-6 closed."}]}
+    monkeypatch.setattr("app.collection.locate_places", lambda connection, run_id=None: 1 / 0)
+    with pytest.raises(ZeroDivisionError):
+        client.post("/api/collection/run", json={"road": "NH-6"})
+    run = client.get("/api/collection/runs?limit=1").json()[0]
+    assert run["status"] == "failed" and "internal error" in run["message"]
+
+
+def test_reports_older_than_the_newest_500_can_still_be_reviewed_and_matched(client, add_incident):
+    add_incident("oldest", collected_at=ago(days=30))
+    with get_connection() as connection:
+        connection.executemany(
+            "INSERT INTO incidents (id, title, summary, source_name, source_url, collected_at, verification, content_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            [(f"n{index}", "Report", "Landslide", "Source", f"https://example.org/n{index}", ago(hours=1), "unverified", f"n{index}") for index in range(500)])
+    response = client.patch("/api/incidents/oldest/review", json={"verification": "confirmed", "review_note": "Checked with the district"})
+    assert response.status_code == 200 and response.json()["verification"] == "confirmed"
+    assert len(client.get("/api/incidents?limit=2000").json()) == 501
+
+
+def test_an_unexpected_planning_error_is_logged_as_a_failure(client, providers, monkeypatch):
+    monkeypatch.setattr("app.main.plan_route", lambda payload: 1 / 0)
+    with pytest.raises(ZeroDivisionError):
+        client.post("/api/routes/plan", json=ROUTE)
+    with get_connection() as connection:
+        assert connection.execute("SELECT status FROM route_plans ORDER BY id DESC LIMIT 1").fetchone()[0] == 500

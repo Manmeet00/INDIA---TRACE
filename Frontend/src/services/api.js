@@ -40,7 +40,7 @@ async function request(path, fallback, { method = 'GET', body, timeoutMs = TIMEO
 export const getHealth = () => request('/api/health', 'API health check failed.')
 
 // The API's maximum; the default page of 100 would silently leave older reports out.
-export const listIncidents = () => request('/api/incidents?limit=500', 'Could not load evidence records.')
+export const listIncidents = () => request('/api/incidents?limit=2000', 'Could not load evidence records.')
 
 export const getLatestCollectionRun = () => request('/api/collection/runs?limit=1', 'Could not load the collection log.')
   .then((runs) => runs[0] || null)

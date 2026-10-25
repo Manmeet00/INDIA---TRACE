@@ -152,6 +152,8 @@ CREATE TABLE IF NOT EXISTS provider_cache (
 
 # Columns added after the first release; existing databases gain them on startup.
 ADDED_COLUMNS = {
+    # How good a place match the saved point is (0 a town, 2 a district; see road_intelligence._place_rank).
+    "suggested_places": {"place_rank": "INTEGER"},
     "incidents": dict.fromkeys(("reviewed_at", "review_note", "publisher", "search_query", "search_kind", "last_seen_at",
                                 "published_source", "page_description", "page_excerpt", "page_author", "fetched_at",
                                 "fetch_error", "collection_run_id", "last_checked_at", "page_hash", "page_image",

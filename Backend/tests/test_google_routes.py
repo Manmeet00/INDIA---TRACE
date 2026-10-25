@@ -72,7 +72,8 @@ def test_when_google_refuses_the_key_osrm_is_used_with_googles_reason(client, go
     google[GOOGLE] = lambda request: HTTPError(request.full_url, 403, "Forbidden", {}, BytesIO(body.encode()))
     plan = client.post("/api/routes/plan", json=PLAN).json()
     assert plan["routing_provider"] == "osrm" and plan["traffic"] is False
-    assert "Routes API has not been used in project 123" in plan["routing_note"]
+    assert "HTTP 403: it refused the API key, or the Routes API is not enabled for its project" in plan["routing_note"]
+    assert "project 123" not in json.dumps(plan)  # Google's own text (naming the Cloud project) stays in the server log
     assert plan["routing_note"].endswith("Times are OSRM estimates without traffic.")
     assert plan["routes"][0]["duration_s"] == 4000  # OSRM's, not a guess
 
@@ -102,3 +103,11 @@ def test_without_google_a_bike_is_told_it_gets_the_car_route_and_a_truck_that_tr
     truck = client.post("/api/routes/plan", json={**PLAN, "vehicle_type": "truck"}).json()
     assert truck["routing_note"] == "Times are for a car; trucks are usually slower, and truck restrictions are not checked."
     assert client.post("/api/routes/plan", json=PLAN).json()["routing_note"] is None
+
+
+def test_a_highway_named_only_after_toward_is_not_counted_as_used():
+    data = {"routes": [{"distanceMeters": 9000, "duration": "900s", "polyline": {"encodedPolyline": encode_polyline(ROUTE_LINES[0], precision=5)},
+                        "legs": [{"steps": [step("TURN_LEFT", "Turn left onto GS Rd toward NH 27", 8000, 91.75, 26.18)]}]}]}
+    from app.google_routes import routes
+    from app.road_intelligence import _decode_polyline
+    assert routes(data, _decode_polyline)[0]["highways"] == {}

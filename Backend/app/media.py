@@ -90,6 +90,17 @@ class _PreviewImage(HTMLParser):
             self.found.setdefault(name, values["content"].strip())
 
 
+def _public_web_url(url: str) -> bool:
+    """http(s) on the usual web ports to a public host. Other ports are refused, which also keeps a host whose
+    DNS answer changes between this check and the request from reaching a local service such as this API."""
+    parts = urlsplit(url)
+    try:
+        port = parts.port
+    except ValueError:
+        return False
+    return parts.scheme in ("http", "https") and port in (None, 80, 443) and _public_host(parts.hostname)
+
+
 def _public_host(host: str | None) -> bool:
     """Only public internet hosts: never localhost, private, link-local or reserved addresses."""
     if not host or host == "localhost" or host.endswith((".local", ".internal", ".localhost")):
@@ -103,16 +114,14 @@ def _public_host(host: str | None) -> bool:
 
 class _SafeRedirects(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: N802 (urllib's name)
-        parts = urlsplit(newurl)
-        if parts.scheme not in ("http", "https") or not _public_host(parts.hostname):
+        if not _public_web_url(newurl):
             raise URLError(f"redirect to a non-public address refused: {newurl}")
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 def preview_image(url: str) -> str | None:
     """The page's own link-preview picture, from its header only (at most 256 KB read), or None."""
-    parts = urlsplit(url)
-    if parts.scheme not in ("http", "https") or _host(url) in SOCIAL_HOSTS or not _public_host(parts.hostname):
+    if _host(url) in SOCIAL_HOSTS or not _public_web_url(url):
         return None
     opener = build_opener(_SafeRedirects(), HTTPSHandler(context=ssl.create_default_context(cafile=certifi.where())))
     request = Request(url, headers={"User-Agent": get_settings().geocoder_user_agent, "Accept": "text/html"})
@@ -121,7 +130,7 @@ def preview_image(url: str) -> str | None:
             if "html" not in (response.headers.get("Content-Type") or ""):
                 return None
             head = response.read(MAX_HEAD_BYTES).decode(response.headers.get_content_charset() or "utf-8", "replace")
-    except (HTTPError, URLError, OSError, ValueError):
+    except (HTTPError, URLError, OSError, ValueError, LookupError):  # LookupError: a charset Python does not know
         return None
     parser = _PreviewImage()
     try:
@@ -160,6 +169,14 @@ def media_for(item: dict[str, Any]) -> dict[str, str] | None:
     return None
 
 
+def _safe_preview(url: str) -> str | None:
+    """One unreadable page never stops the others (or the collection run around them)."""
+    try:
+        return preview_image(url)
+    except Exception:
+        return None
+
+
 def collect_preview_images(connection: sqlite3.Connection, incident_ids: list[str] | None = None) -> dict[str, int]:
     """Read preview images for news and web reports that have not been checked yet (several pages at a time)."""
     query = "SELECT id, source_url FROM incidents WHERE page_image_checked_at IS NULL"
@@ -170,7 +187,7 @@ def collect_preview_images(connection: sqlite3.Connection, incident_ids: list[st
     rows = [row for row in rows if _host(row["source_url"]) not in SOCIAL_HOSTS][:MAX_PER_RUN]
     connection.commit()  # no write transaction stays open while pages are read
     with ThreadPoolExecutor(max_workers=WORKERS) as pool:
-        images = list(pool.map(lambda row: preview_image(row["source_url"]), rows))
+        images = list(pool.map(lambda row: _safe_preview(row["source_url"]), rows))
     now = datetime.now(timezone.utc).isoformat()
     for row, image in zip(rows, images):
         connection.execute("UPDATE incidents SET page_image = ?, page_image_checked_at = ? WHERE id = ?", (image, now, row["id"]))

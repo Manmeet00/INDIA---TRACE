@@ -74,6 +74,28 @@ def _metres(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
     return math.hypot(x, (lat2 - lat1) * 110540)
 
 
+CELL_DEG = 0.02  # grid cells of about 2 km for finding the route segments near a plaza
+REACH_DEG = 0.006  # a little more than NEAR_ROUTE_M in degrees, at any latitude in India
+
+
+def _cell(longitude: float, latitude: float) -> tuple[int, int]:
+    return math.floor(longitude / CELL_DEG), math.floor(latitude / CELL_DEG)
+
+
+def _segment_cells(line: list[list[float]]) -> dict[tuple[int, int], list[int]]:
+    """Grid cell -> indexes of the segments passing within REACH_DEG of it. A plaza is then compared only with
+    the segments of its own cell, not with every point of a route that can have tens of thousands."""
+    cells: dict[tuple[int, int], list[int]] = {}
+    for index in range(1, len(line)):
+        (ax, ay), (bx, by) = line[index - 1][:2], line[index][:2]
+        x0, y0 = _cell(min(ax, bx) - REACH_DEG, min(ay, by) - REACH_DEG)
+        x1, y1 = _cell(max(ax, bx) + REACH_DEG, max(ay, by) + REACH_DEG)
+        for x in range(x0, x1 + 1):
+            for y in range(y0, y1 + 1):
+                cells.setdefault((x, y), []).append(index)
+    return cells
+
+
 def tolls_on_route(geometry: dict[str, Any], route_distance_m: float) -> dict[str, Any]:
     """{"status": "listed" | "unknown", "plazas": [...in driving order, with km from the start], "source", "as_of"}."""
     loaded = load_plazas()
@@ -92,12 +114,13 @@ def tolls_on_route(geometry: dict[str, Any], route_distance_m: float) -> dict[st
         total += _metres(*line[index - 1][:2], *line[index][:2])
         along.append(total)
     scale = route_distance_m / total if total else 1.0  # the routing service's distances, measured along this line
+    cells = _segment_cells(line)
     found = []
     for plaza in plazas:
         if not (west <= plaza["longitude"] <= east and south <= plaza["latitude"] <= north):
             continue
         best = (math.inf, 0.0)
-        for index in range(1, len(line)):
+        for index in cells.get(_cell(plaza["longitude"], plaza["latitude"]), ()):
             (ax, ay), (bx, by) = line[index - 1][:2], line[index][:2]
             cos = math.cos(math.radians(ay))
             dx, dy = (bx - ax) * cos, by - ay

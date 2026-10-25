@@ -134,13 +134,28 @@ def lifecycle(item: dict[str, Any], now: datetime | None = None) -> str:
     if item["freshness"] == "stale":
         return "stale"
     now = now or datetime.now(timezone.utc)
-    checked = item.get("last_checked_at")
+    # A failed read is not a check (last_checked_at stays at the last successful one), but it is an attempt:
+    # the schedule counts from it too, so an unreadable page is not fetched again on every run.
+    attempts = [item.get("last_checked_at"), _failed_attempt(item)]
+    checked = max((when for when in attempts if when), default=None)
     checked_age = (now - checked).total_seconds() if checked else math.inf
     if item["freshness"] == "unknown":
         return "needs_recheck" if checked_age > LIFECYCLE_DEFAULT_RECHECK_S else "new"
     half_window = item["freshness_window_h"] * 3600 / 2
     published_age = (now - item["published_estimate"]).total_seconds()
     return "needs_recheck" if min(published_age, checked_age) > half_window else "new"
+
+
+def _failed_attempt(item: dict[str, Any]) -> datetime | None:
+    """When the page last failed to be read (fetched_at with a fetch_error), or None."""
+    if not item.get("fetch_error") or not item.get("fetched_at"):
+        return None
+    when = item["fetched_at"]
+    try:
+        when = when if isinstance(when, datetime) else datetime.fromisoformat(when)
+    except (TypeError, ValueError):
+        return None
+    return when if when.tzinfo else when.replace(tzinfo=timezone.utc)
 
 
 def freshness(published: datetime | None, approximate: bool, window_s: float = 24 * 3600) -> str:

@@ -24,7 +24,8 @@ def air_quality(latitude: float, longitude: float) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail="Air quality is shown for places in India only.")
     # Rounded to about 1 km, so nearby requests share one cached answer.
     params = urlencode({"latitude": round(latitude, 2), "longitude": round(longitude, 2), "current": "us_aqi,pm2_5,pm10"})
-    data, fetched_at = _cached_json(f"{AIR_QUALITY_URL}?{params}", CACHE_S, _valid)
+    # Never an old copy: a reading from days ago shown as now would mislead (the map shows the reading time).
+    data, fetched_at = _cached_json(f"{AIR_QUALITY_URL}?{params}", CACHE_S, _valid, stale_ok=False)
     current = data["current"]
     aqi = current.get("us_aqi")
     if not isinstance(aqi, (int, float)):

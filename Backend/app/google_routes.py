@@ -38,6 +38,20 @@ MANEUVERS = {
 }
 
 
+# Why Google could not be used, by HTTP status, for the dashboard. Google's own message (which names the Cloud
+# project) goes to the server log only.
+REASONS = {400: "it rejected the request", 401: "it refused the API key", 403: "it refused the API key, or the Routes API "
+           "is not enabled for its project", 429: "the key's quota is used up"}
+
+
+def failure_reason(detail: str) -> str:
+    status = re.search(r"HTTP Error (\d{3})", detail)
+    if status:
+        code = int(status[1])
+        return f"HTTP {code}: {REASONS.get(code, 'Google is unavailable' if code >= 500 else 'unexpected answer')}"
+    return "Google did not answer in time" if "did not answer" in detail else "Google gave no usable answer"
+
+
 def request_body(origin: dict[str, Any], destination: dict[str, Any], vehicle: str = "car") -> dict[str, Any]:
     """A bike (motorcycle or scooter) gets Google's two-wheeler routes, which India has; every other vehicle a car's."""
     point = lambda place: {"location": {"latLng": {"latitude": place["latitude"], "longitude": place["longitude"]}}}
@@ -102,7 +116,7 @@ def routes(data: dict[str, Any], decode) -> list[dict[str, Any]]:
                 if step is None:
                     continue
                 steps.append(step)
-                for number in HIGHWAY.findall(step["instruction"] or ""):
+                for number in HIGHWAY.findall(step["name"]):  # the road the step is on, never a "toward NH 27"
                     key = f"NH-{number.upper()}"
                     metres[key] = metres.get(key, 0) + step["distance_m"]
         end = _point((route.get("legs") or [{}])[-1].get("endLocation"))

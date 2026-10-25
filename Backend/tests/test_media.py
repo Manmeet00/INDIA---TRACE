@@ -1,11 +1,10 @@
 """The source's own pictures and videos in the evidence desk (app/media.py)."""
-import io
 from urllib.error import URLError
 
 import pytest
 
 import app.media as media
-from conftest import FETCH, SEARCH
+from conftest import SEARCH
 
 
 
@@ -56,7 +55,7 @@ class _Headers:
         return self.content_type if name == "Content-Type" else default
 
     def get_content_charset(self):
-        return "utf-8"
+        return self.content_type.split("charset=")[1] if "charset=" in self.content_type else "utf-8"
 
 
 @pytest.fixture
@@ -129,3 +128,24 @@ def test_reports_carry_their_media_and_collection_reads_preview_images(client, t
     assert items["https://news.example.org/nh6"]["media"] == {"kind": "image", "url": "https://cdn.example.org/nh6.jpg", "site": "news.example.org"}
     assert items["https://www.youtube.com/watch?v=bh1TVzezZWs"]["media"]["kind"] == "youtube"
     assert client.post("/api/media/collect").json() == {"checked": 0, "found": 0}  # each page is read once
+
+
+def test_a_page_with_an_unknown_charset_or_a_local_port_has_no_picture(pages):
+    pages["https://news.example.org/odd"] = Page('<meta property="og:image" content="https://news.example.org/a.jpg">', "text/html; charset=bogus")
+    assert media.preview_image("https://news.example.org/odd") is None  # LookupError, not a crashed run
+    assert media.preview_image("http://news.example.org:8000/admin") is None  # only the usual web ports are read
+
+
+def test_one_failing_page_does_not_stop_the_others(client, add_incident, monkeypatch):
+    add_incident("bad", source_url="https://news.example.org/bad")
+    add_incident("good", source_url="https://news.example.org/good")
+    def preview(url):
+        if url.endswith("bad"):
+            raise RuntimeError("parser exploded")
+        return "https://news.example.org/good.jpg"
+    monkeypatch.setattr(media, "preview_image", preview)
+    from app.database import get_connection
+    with get_connection() as connection:
+        media.collect_preview_images(connection)
+        rows = dict(connection.execute("SELECT id, page_image FROM incidents").fetchall())
+    assert rows == {"bad": None, "good": "https://news.example.org/good.jpg"}

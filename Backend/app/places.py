@@ -58,6 +58,7 @@ def geocode_places(connection: sqlite3.Connection, names: list[str]) -> dict[str
             results = _request_json(f"{NOMINATIM_URL}?{urlencode({'q': query, 'format': 'jsonv2', 'limit': 1, 'countrycodes': 'in'})}")
         except HTTPException:
             log_call(connection, "nominatim", "failed", started)
+            connection.commit()  # the next lookup waits on the network; release the write lock first
             failed += 1
             continue
         log_call(connection, "nominatim", "ok", started)
@@ -135,7 +136,12 @@ def _point(feature: dict[str, Any]) -> tuple[float, float] | None:
 def _remember_points(suggestions: list[dict[str, Any]]) -> None:
     """Keeps the coordinates of the places suggested, for when one is chosen (see road_intelligence._geocode)."""
     now = datetime.now(timezone.utc).isoformat()
-    rows = [(item["value"], *item["point"], now) for item in suggestions if item.get("point")]
+    rows = [(item["value"], *item["point"], now, item.get("rank")) for item in suggestions if item.get("point")]
     if rows:
         with get_connection() as connection:
-            connection.executemany("INSERT OR REPLACE INTO suggested_places (value, latitude, longitude, suggested_at) VALUES (?, ?, ?, ?)", rows)
+            # A later, worse match (the district of "Nongpoh, Meghalaya") never replaces the town saved earlier.
+            connection.executemany(
+                """INSERT INTO suggested_places (value, latitude, longitude, suggested_at, place_rank) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(value) DO UPDATE SET latitude = excluded.latitude, longitude = excluded.longitude,
+                suggested_at = excluded.suggested_at, place_rank = excluded.place_rank
+                WHERE COALESCE(excluded.place_rank, 9) <= COALESCE(suggested_places.place_rank, 9)""", rows)

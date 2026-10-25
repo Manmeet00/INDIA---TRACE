@@ -1,5 +1,4 @@
 """Real, approximate locations from the towns reports name (app/places.py) and the live collection schedule."""
-import json
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -7,7 +6,6 @@ import pytest
 from app.config import get_settings
 from app.database import get_connection
 from app.evidence import annotate
-from app.regions import NORTHEAST
 from test_report_features import ago, report
 
 # Test coordinates: "Jorabat" sits 1 km from the fake Guwahati–Shillong route in conftest.
@@ -247,3 +245,35 @@ def test_air_quality_at_a_point_is_banded_and_cached(client, providers):
     providers["air-quality-api.open-meteo.com"] = {"current": {"us_aqi": None}}
     missing = client.get("/api/air-quality?lat=25.57&lon=91.88")
     assert missing.status_code == 502 and "no air quality value" in missing.json()["detail"]
+
+
+def test_air_quality_is_never_served_from_an_old_copy(client, providers, monkeypatch):
+    assert client.get("/api/air-quality?lat=26.1445&lon=91.7362").status_code == 200
+    monkeypatch.setattr("app.air_quality.CACHE_S", -1)  # the saved reading is now out of date
+    providers["air-quality-api.open-meteo.com"] = TimeoutError("timed out")
+    assert client.get("/api/air-quality?lat=26.1445&lon=91.7362").status_code == 502
+
+
+def test_a_worse_match_never_replaces_a_saved_town_point(client):
+    from app.places import _remember_points
+    _remember_points([{"value": "Nongpoh, Meghalaya", "point": (25.90, 91.88), "rank": 0}])
+    _remember_points([{"value": "Nongpoh, Meghalaya", "point": (25.70, 91.60), "rank": 2}])  # the district
+    with get_connection() as connection:
+        assert tuple(connection.execute("SELECT latitude, longitude FROM suggested_places").fetchone()) == (25.90, 91.88)
+    _remember_points([{"value": "Nongpoh, Meghalaya", "point": (25.91, 91.87), "rank": 0}])  # an equal match updates it
+    with get_connection() as connection:
+        assert tuple(connection.execute("SELECT latitude, longitude FROM suggested_places").fetchone()) == (25.91, 91.87)
+
+
+def test_old_saved_answers_are_pruned_by_provider(client):
+    from datetime import datetime, timedelta, timezone
+    from app.road_intelligence import prune_provider_cache
+    old = lambda **delta: (datetime.now(timezone.utc) - timedelta(**delta)).isoformat()
+    rows = [("https://routes.googleapis.com/x#a", old(hours=2)), ("https://routes.googleapis.com/x#b", old(minutes=10)),
+            ("https://router.project-osrm.org/route/a", old(days=8)), ("https://router.project-osrm.org/route/b", old(days=2)),
+            ("https://nominatim.openstreetmap.org/search?q=a", old(days=40)), ("https://nominatim.openstreetmap.org/search?q=b", old(days=20))]
+    with get_connection() as connection:
+        connection.executemany("INSERT INTO provider_cache (url, response, fetched_at) VALUES (?, '{}', ?)", rows)
+        assert prune_provider_cache(connection) == 3
+        left = {row[0] for row in connection.execute("SELECT url FROM provider_cache")}
+    assert left == {"https://routes.googleapis.com/x#b", "https://router.project-osrm.org/route/b", "https://nominatim.openstreetmap.org/search?q=b"}

@@ -9,7 +9,7 @@ import NavigationPanel from './NavigationPanel.jsx'
 import MapplsMap from './MapplsMap.jsx'
 import { useMapLayers } from '../hooks/useMapLayers.js'
 import { BASE_LAYERS, GIBS, OVERLAYS, aqiTone } from '../lib/mapLayers.js'
-import { INACTIVE_STATES, MAP_CATEGORIES, mapCategory, placeName, statusLabel } from '../lib/format.js'
+import { INACTIVE_STATES, MAP_CATEGORIES, formatTime, mapCategory, placeName, statusLabel } from '../lib/format.js'
 import { BORDER_COLOR, HERE_COLOR, HERE_ZOOM, INDIA_BOUNDS, MASK_COLOR, inIndia, insideBoundary } from '../lib/mapStyle.js'
 import { placeNamesInView } from '../lib/placeNames.js'
 import { drawRoadTile } from '../lib/hybridRoads.js'
@@ -127,7 +127,7 @@ function AirQualityLayer({ here, plan }) {
     const reading = readings[point.key]
     return <Marker key={point.key} position={[point.latitude, point.longitude]} interactive={false}
       icon={L.divIcon({ className: '', html: `<span class="aqi-pill ${aqiTone(reading.us_aqi)}">AQI ${reading.us_aqi}</span>`, iconSize: [64, 22], iconAnchor: [32, 34] })}>
-      <Tooltip>{`${point.name}: AQI ${reading.us_aqi}, ${reading.band} · PM2.5 ${reading.pm2_5} µg/m³`}</Tooltip>
+      <Tooltip>{`${point.name}: AQI ${reading.us_aqi}, ${reading.band} · PM2.5 ${reading.pm2_5} µg/m³${reading.time ? ` · reading for ${formatTime(`${reading.time}Z`)}` : ''}`}</Tooltip>
     </Marker>
   })
 }

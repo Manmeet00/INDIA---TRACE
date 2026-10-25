@@ -94,6 +94,7 @@ def _search(connection: sqlite3.Connection, search: dict[str, str], key: str, re
     if recency_minutes:
         params["recency_minutes"] = recency_minutes
     for attempt in range(SEARCH_ATTEMPTS):
+        connection.commit()  # never hold SQLite's write lock while waiting on the network
         started = time.monotonic()
         try:
             response = _request_json(f"{SEARCH_URL}?{urlencode(params)}", {"X-API-Key": key}, timeout=30)
@@ -176,10 +177,12 @@ def _fetch_pages(connection: sqlite3.Connection, incident_ids: list[str], key: s
     """
     fetched = failed = 0
     rows = [connection.execute("SELECT id, source_url, page_hash FROM incidents WHERE id = ?", (incident_id,)).fetchone()
-            for incident_id in incident_ids[:MAX_FETCH_PER_RUN]]
+            for incident_id in list(dict.fromkeys(incident_ids))[:MAX_FETCH_PER_RUN]]
+    rows = [row for row in rows if row is not None]  # an id that no longer exists is skipped
     for start in range(0, len(rows), FETCH_BATCH):
         batch = rows[start:start + FETCH_BATCH]
         now = _now()
+        connection.commit()  # never hold SQLite's write lock while waiting up to 90 s for Fetch
         started = time.monotonic()
         try:
             response = _request_json(FETCH_URL, {"X-API-Key": key}, {"urls": [row["source_url"] for row in batch], "format": "markdown"}, timeout=90)
@@ -237,6 +240,23 @@ def collect_candidates(connection: sqlite3.Connection, searches: list[dict[str, 
     region_allowed = active_region().source_categories
     allowed = tuple(category for category in region_allowed if not source_categories or category in source_categories)
     run_id = run_id or start_run(connection, trigger, searches, recency_minutes)
+    try:
+        return _collect(connection, searches, key, allowed, recency_minutes, run_id)
+    except HTTPException:
+        raise  # a failed search run is already finished and logged
+    except Exception:
+        _fail_run(connection, run_id)
+        raise
+
+
+def _fail_run(connection: sqlite3.Connection, run_id: str) -> None:
+    """Close a run that broke unexpectedly, so it never stays "running" in the log."""
+    connection.rollback()
+    _finish_run(connection, run_id, "failed", "The run stopped on an internal error. Reports already stored are kept.")
+
+
+def _collect(connection: sqlite3.Connection, searches: list[dict[str, str]], key: str, allowed: tuple[str, ...],
+             recency_minutes: int | None, run_id: str) -> dict[str, Any]:
     results = duplicates = failed_searches = filtered = 0
     new_ids: list[str] = []
     for done, search in enumerate(searches, start=1):
@@ -311,9 +331,17 @@ def recheck_reports(connection: sqlite3.Connection, incident_ids: list[str] | No
     key = get_settings().tinyfish_api_key
     if not key:
         return {"status": "not_configured", "checked": 0, "fetched": 0, "failed": 0, "changed": 0, "message": NOT_CONFIGURED}
-    ids = due_for_recheck(load_incidents(connection)) if incident_ids is None else incident_ids[:MAX_FETCH_PER_RUN]
+    if incident_ids is None:
+        ids = due_for_recheck(load_incidents(connection))
+    else:  # known reports only, each once
+        ids = [incident_id for incident_id in dict.fromkeys(incident_ids)
+               if connection.execute("SELECT 1 FROM incidents WHERE id = ?", (incident_id,)).fetchone()][:MAX_FETCH_PER_RUN]
     run_id = run_id or start_run(connection, trigger, [], None)
-    fetched, failed = _fetch_pages(connection, ids, key, run_id, kind="recheck")
+    try:
+        fetched, failed = _fetch_pages(connection, ids, key, run_id, kind="recheck")
+    except Exception:
+        _fail_run(connection, run_id)
+        raise
     changed = connection.execute("SELECT COUNT(*) FROM incident_checks WHERE run_id = ? AND outcome = 'page_changed'", (run_id,)).fetchone()[0]
     if not ids:
         status, message = "complete", "No reports are due for a re-check."
