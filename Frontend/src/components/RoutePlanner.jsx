@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import Icon from './Icon.jsx'
 import PlaceInput from './PlaceInput.jsx'
 
-const VEHICLES = [['truck', 'Truck', 'truck'], ['van', 'Van', 'van'], ['ambulance', 'Ambulance', 'ambulance']]
+// Bike gets Google's two-wheeler routes; car and truck a car's (the route notes say trucks are usually slower).
+const VEHICLES = [['car', 'Car', 'car'], ['bike', 'Bike', 'bike'], ['truck', 'Truck', 'truck']]
 const PRIORITIES = [['fastest', 'Fastest'], ['balanced', 'Balanced'], ['shortest', 'Shortest'], ['cautious', 'Cautious']]
 const PRIORITY_NOTES = {
   fastest: 'Shortest estimated time first, like a maps app',
@@ -23,7 +24,7 @@ export default function RoutePlanner({ loading, error, isSnapshot, onPlan, searc
   // The start is the device's position (found when the form opens); the destination is chosen by the person.
   const [origin, setOrigin] = useState(place(''))
   const [destination, setDestination] = useState(place(''))
-  const [vehicle, setVehicle] = useState('truck')
+  const [vehicle, setVehicle] = useState('car')
   const [priority, setPriority] = useState('fastest')
 
   const [shownSearch, setShownSearch] = useState(searched)

@@ -9,7 +9,7 @@ from app.config import get_settings
 from conftest import ROUTE_LINES, encode_polyline
 
 GOOGLE = "routes.googleapis.com"
-PLAN = {"origin": "Guwahati", "destination": "Shillong", "vehicle_type": "truck", "priority": "fastest"}
+PLAN = {"origin": "Guwahati", "destination": "Shillong", "vehicle_type": "car", "priority": "fastest"}
 
 
 def step(maneuver, text, metres, lon, lat):
@@ -42,7 +42,7 @@ def google(client, providers, monkeypatch):
 def test_with_a_key_routes_and_times_come_from_google_with_traffic(client, google):
     plan = client.post("/api/routes/plan", json=PLAN).json()
     assert plan["routing_provider"] == "google" and plan["traffic"] is True and plan["routing_note"] is None
-    assert "with traffic" in plan["data_note"] and "trucks are usually slower" in plan["data_note"]
+    assert "Google's estimates for a car with traffic" in plan["data_note"]
     route = plan["routes"][0]
     assert (route["distance_m"], route["duration_s"], route["duration_no_traffic_s"]) == (98000, 10800, 9300)
     assert route["geometry"]["coordinates"][0] == [91.75, 26.18]
@@ -84,3 +84,21 @@ def test_old_traffic_times_are_never_served_when_google_fails(client, google, mo
     google[GOOGLE] = TimeoutError("timed out")
     again = client.post("/api/routes/plan", json=PLAN).json()
     assert again["routing_provider"] == "osrm"
+
+
+def test_a_bike_gets_googles_two_wheeler_routes(client, google):
+    plan = client.post("/api/routes/plan", json={**PLAN, "vehicle_type": "bike"}).json()
+    request = next(request for host, request in google["calls"] if host == GOOGLE)
+    assert json.loads(request.data)["travelMode"] == "TWO_WHEELER"
+    assert "for a two-wheeler with traffic" in plan["data_note"] and plan["routing_note"] is None
+    car = client.post("/api/routes/plan", json=PLAN).json()  # a different request, so not the bike's cached answer
+    assert json.loads([request for host, request in google["calls"] if host == GOOGLE][-1].data)["travelMode"] == "DRIVE"
+    assert car["vehicle_type"] == "car"
+
+
+def test_without_google_a_bike_is_told_it_gets_the_car_route_and_a_truck_that_trucks_are_slower(client, providers):
+    bike = client.post("/api/routes/plan", json={**PLAN, "vehicle_type": "bike"}).json()
+    assert bike["routing_note"] == "OSRM has no two-wheeler routes, so this is the car route and time; a bike may take other roads."
+    truck = client.post("/api/routes/plan", json={**PLAN, "vehicle_type": "truck"}).json()
+    assert truck["routing_note"] == "Times are for a car; trucks are usually slower, and truck restrictions are not checked."
+    assert client.post("/api/routes/plan", json=PLAN).json()["routing_note"] is None

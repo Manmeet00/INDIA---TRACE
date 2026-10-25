@@ -115,7 +115,7 @@ class DashboardSummary(BaseModel):
 class RoutePlanRequest(BaseModel):
     origin: str = Field(min_length=2, max_length=200)
     destination: str = Field(min_length=2, max_length=200)
-    vehicle_type: str = Field(default="truck", pattern=r"^(truck|van|ambulance)$")
+    vehicle_type: str = Field(default="car", pattern=r"^(car|bike|truck|van|ambulance)$")  # van and ambulance: earlier plans
     priority: str = Field(default="fastest", pattern=r"^(balanced|fastest|shortest|cautious)$")
 
 

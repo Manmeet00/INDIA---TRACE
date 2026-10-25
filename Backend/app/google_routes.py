@@ -2,8 +2,8 @@
 
 Used when GOOGLE_MAPS_API_KEY is set in Backend/.env (the Routes API must be enabled for the key's project).
 Google's answer is turned into the shape the rest of the backend uses for OSRM routes, so report matching,
-tolls and turn-by-turn navigation work unchanged. Google's times are for a car; vehicle restrictions are not
-checked. Answers are cached for a few minutes only, because traffic changes.
+tolls and turn-by-turn navigation work unchanged. Google's times are for a car, or a two-wheeler for a bike;
+vehicle restrictions are not checked. Answers are cached for a few minutes only, because traffic changes.
 """
 from __future__ import annotations
 
@@ -38,9 +38,10 @@ MANEUVERS = {
 }
 
 
-def request_body(origin: dict[str, Any], destination: dict[str, Any]) -> dict[str, Any]:
+def request_body(origin: dict[str, Any], destination: dict[str, Any], vehicle: str = "car") -> dict[str, Any]:
+    """A bike (motorcycle or scooter) gets Google's two-wheeler routes, which India has; every other vehicle a car's."""
     point = lambda place: {"location": {"latLng": {"latitude": place["latitude"], "longitude": place["longitude"]}}}
-    return {"origin": point(origin), "destination": point(destination), "travelMode": "DRIVE",
+    return {"origin": point(origin), "destination": point(destination), "travelMode": "TWO_WHEELER" if vehicle == "bike" else "DRIVE",
             "routingPreference": "TRAFFIC_AWARE", "computeAlternativeRoutes": True,
             "languageCode": "en-IN", "regionCode": "in", "units": "METRIC", "polylineQuality": "HIGH_QUALITY"}
 

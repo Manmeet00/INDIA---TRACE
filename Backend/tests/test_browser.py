@@ -236,6 +236,19 @@ def test_route_cards_say_why_the_first_route_is_first_and_how_the_others_compare
     expect(cards.nth(0)).to_contain_text("Route 1 · Shortest")
 
 
+def test_the_vehicle_choice_is_car_bike_or_truck_and_says_what_the_times_mean(dashboard):
+    page = dashboard
+    page.open()
+    expect(page.locator(".chip-group.modes .chip")).to_have_text(["Car", "Bike", "Truck"])
+    expect(page.locator(".chip-group.modes .chip.on")).to_have_text("Car")
+    page.locator(".chip-group.modes .chip", has_text="Bike").click()
+    plan(page, "Guwahati, Assam", "Shillong, Meghalaya")
+    expect(page.locator(".routing-note")).to_have_text("OSRM has no two-wheeler routes, so this is the car route and time; a bike may take other roads.")
+    page.locator(".chip-group.modes .chip", has_text="Truck").click()
+    page.click(".primary-button")
+    expect(page.locator(".routing-note")).to_contain_text("trucks are usually slower")
+
+
 # --- Timeouts -----------------------------------------------------------------------------
 
 def test_routing_provider_timeout_is_explained(dashboard, providers):

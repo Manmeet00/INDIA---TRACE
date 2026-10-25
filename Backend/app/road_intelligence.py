@@ -271,23 +271,33 @@ def _osrm_routes(origin: dict[str, Any], destination: dict[str, Any]) -> tuple[l
     return found, fetched_at
 
 
-def _driving_routes(origin: dict[str, Any], destination: dict[str, Any]) -> tuple[list[dict[str, Any]], str, str, str | None]:
+def _driving_routes(origin: dict[str, Any], destination: dict[str, Any], vehicle: str) -> tuple[list[dict[str, Any]], str, str, str | None]:
     """Routes, when they were fetched, the provider ("google" or "osrm") and a note when Google could not be used.
 
-    With a Google key, Google's routes and traffic times; an old copy is never served for them, as its traffic
-    would be out of date. If Google fails, OSRM's routes, and the note says why the times have no traffic.
+    With a Google key, Google's routes and traffic times (two-wheeler routes for a bike); an old copy is never
+    served for them, as its traffic would be out of date. If Google fails, OSRM's routes, and the note says why
+    the times have no traffic.
     """
     key = get_settings().google_maps_api_key
     if not key:
         return (*_osrm_routes(origin, destination), "osrm", None)
     try:
         data, fetched_at = _cached_json(google_routes.URL, google_routes.CACHE_S, google_routes.valid,
-                                        body=google_routes.request_body(origin, destination), headers=google_routes.headers(key),
-                                        stale_ok=False)
+                                        body=google_routes.request_body(origin, destination, vehicle),
+                                        headers=google_routes.headers(key), stale_ok=False)
         return google_routes.routes(data, _decode_polyline), fetched_at, "google", None
     except HTTPException as exc:
         found, fetched_at = _osrm_routes(origin, destination)
         return found, fetched_at, "osrm", f"Google Routes could not be used ({exc.detail}) Times are OSRM estimates without traffic."
+
+
+def _vehicle_note(vehicle: str, provider: str) -> str | None:
+    """What the times mean for the chosen vehicle: no service here routes trucks, and OSRM has no two-wheeler routes."""
+    if vehicle == "bike" and provider != "google":
+        return "OSRM has no two-wheeler routes, so this is the car route and time; a bike may take other roads."
+    if vehicle == "truck":
+        return "Times are for a car; trucks are usually slower, and truck restrictions are not checked."
+    return None
 
 
 def plan_route(payload) -> dict[str, Any]:
@@ -297,7 +307,8 @@ def plan_route(payload) -> dict[str, Any]:
     destination = {**_geocode(destination_query)}
     origin["query"] = "Your location" if COORDINATES.match(origin_query) else origin_query
     destination["query"] = "Your location" if COORDINATES.match(destination_query) else destination_query
-    found, routing_fetched_at, provider, routing_note = _driving_routes(origin, destination)
+    found, routing_fetched_at, provider, routing_note = _driving_routes(origin, destination, payload.vehicle_type)
+    routing_note = " ".join(note for note in (routing_note, _vehicle_note(payload.vehicle_type, provider)) if note) or None
     with get_connection() as connection:
         incident_items = load_incidents(connection)
     candidates = []
@@ -348,8 +359,9 @@ def plan_route(payload) -> dict[str, Any]:
         "routes": candidates,
         "recommendation": candidates[0]["recommendation"],
         "recommendation_reason": " ".join(candidates[0]["recommendation_reasons"]),
-        "data_note": (f"Distance and duration are Google's estimates for a car with traffic as of {routing_fetched_at}; trucks are usually slower."
-                      if provider == "google" else "Distance and duration are OSRM estimates without live traffic.")
+        "data_note": (f"Distance and duration are Google's estimates for a {'two-wheeler' if payload.vehicle_type == 'bike' else 'car'} "
+                      f"with traffic as of {routing_fetched_at}." if provider == "google"
+                      else "Distance and duration are OSRM estimates for a car without live traffic.")
                      + " They do not include verified disruption or vehicle restriction data.",
         "impact_note": IMPACT_NOTE,
     }
