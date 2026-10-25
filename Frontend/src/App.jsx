@@ -72,57 +72,86 @@ function App() {
   // towns. When it finishes, the route is planned again so its reports, cards and advice include what was found.
   const LIVE_CHECK_DAYS = 3
   const checkRouteLive = async (request, payload, token) => {
+    const current = () => token === planToken.current // false once another route has been planned
     const main = Object.entries(payload.routes[0]?.highways || {}).sort((a, b) => b[1] - a[1])[0]?.[0]
     // Towns as the route plan names them; a device position ("Your location") is not a searchable place.
     const towns = [payload.origin, payload.destination].filter((stop) => stop.query !== 'Your location')
       .map((stop) => placeName(stop)).join(' ').replace(/[^A-Za-z .'-]/g, '').trim().slice(0, 60)
+    if (!current()) return
+    if (!main && !towns) {  // nothing to search for: an empty request would run the whole region's searches
+      setLiveCheck({ state: 'skipped', text: 'Live check not run: this route names no highway or town to search for.' })
+      return
+    }
     setLiveCheck({ state: 'running', text: `Checking live reports for this route (last ${LIVE_CHECK_DAYS} days)…` })
+    let run
     try {
       const job = await api.startCollection({ road: main || null, place: towns || null, window_days: LIVE_CHECK_DAYS })
       if (job.status !== 'running') {
-        if (token === planToken.current) setLiveCheck({ state: 'skipped', text: `Live check not run: ${job.message}` })
+        if (current()) setLiveCheck({ state: 'skipped', text: `Live check not run: ${job.message}` })
         return
       }
-      const run = await api.followRun(job.run_id, () => {})
+      run = await api.followRun(job.run_id, () => {})
+    } catch (error) {
+      if (current()) setLiveCheck({ state: 'skipped', text: `Live check not run: ${error.message}` })
+      return
+    }
+    if (!current()) return
+    if (run.status !== 'complete' && run.status !== 'partial') {  // the search itself failed: that is not "no reports"
+      setLiveCheck({ state: 'skipped', text: `Live check failed: ${run.message || `the run ended ${run.status}`}` })
+      return
+    }
+    const time = new Intl.DateTimeFormat('en-IN', { timeStyle: 'short' }).format(new Date())
+    const found = run.stored
+      ? `Live check ${time}: ${run.stored} new report${run.stored === 1 ? '' : 's'} from the route search`
+      : `Live check ${time}: no new reports in the last ${LIVE_CHECK_DAYS} days. No reports does not mean the road is clear.`
+    const partly = run.status === 'partial' ? ' Some searches failed.' : ''
+    try {
       await refreshWorkspace()
       const updated = await api.planRoute(request)
-      if (token !== planToken.current) return // another route was planned meanwhile
+      if (!current()) return
       setPlan(updated)
-      setSelectedRoute((current) => updated.routes.some((item) => item.id === current) ? current : updated.routes[0]?.id || null)
-      const time = new Intl.DateTimeFormat('en-IN', { timeStyle: 'short' }).format(new Date())
-      setLiveCheck({ state: 'done', text: run.stored
-        ? `Live check ${time}: ${run.stored} new report${run.stored === 1 ? '' : 's'} from the route search`
-        : `Live check ${time}: no new reports in the last ${LIVE_CHECK_DAYS} days. No reports does not mean the road is clear.` })
+      setSelectedRoute((selected) => updated.routes.some((item) => item.id === selected) ? selected : updated.routes[0]?.id || null)
+      setLiveCheck({ state: 'done', text: found + partly })
     } catch (error) {
-      if (token === planToken.current) setLiveCheck({ state: 'skipped', text: `Live check not run: ${error.message}` })
+      if (current()) setLiveCheck({ state: 'skipped', text: `${found.replace(/\.$/, '')}.${partly} The route could not be updated with them: ${error.message}` })
     }
   }
 
-  // keepNavigating: a re-route while following a route; planning any other route ends navigation.
+  // keepNavigating: a re-route while following a route. The route being followed stays until the new one arrives
+  // (a failed re-route keeps guidance going), and no live check runs for it. Planning any other route ends navigation.
+  // Only the latest request counts: an older answer arriving late never replaces a newer route.
   const planRoute = async (request, { keepNavigating = false } = {}) => {
     const token = ++planToken.current
+    const current = () => token === planToken.current
     lastRequest.current = request
-    if (!keepNavigating) setNavigating(null)
+    if (!keepNavigating) {
+      setNavigating(null)
+      setPlan(null)
+      setSelectedRoute(null)
+      setLiveCheck(null)
+    }
     setRouteLoading(true)
     setRouteError('')
-    setPlan(null)
-    setSelectedRoute(null)
-    setLiveCheck(null)
     try {
       const payload = await api.planRoute(request)
+      if (!current()) return
       showPlan(payload)
-      checkRouteLive(request, payload, token)
+      if (!keepNavigating) checkRouteLive(request, payload, token)
     } catch (error) {
-      if (api.hasOfflineRoute(request)) {
+      if (!current()) return
+      if (!keepNavigating && api.hasOfflineRoute(request)) {
         try {
           const snapshot = await api.loadOfflineRoute()
+          if (!current()) return
           showPlan(snapshot)
           setRouteError(`Live services unavailable. Showing a saved OSRM snapshot from ${formatTime(snapshot.captured_at)}. This historical route is not for dispatch.`)
           return
         } catch { /* Keep the original service error if the saved demo asset is unavailable. */ }
       }
       setRouteError(error.message || 'Route planning failed. Check the API and routing connection.')
-    } finally { setRouteLoading(false) }
+    } finally {
+      if (current()) setRouteLoading(false)
+    }
   }
 
   // Collections and re-checks run in the background on the API; the dashboard follows the run until it ends.
@@ -195,8 +224,9 @@ function App() {
     return [...matches.keys()].map((id) => byId.get(id)).filter(Boolean)
   }, [matches, visibleIncidents])
   const shownIncidents = matches && evidenceScope === 'route' ? routeIncidents : visibleIncidents
+  // A report opened from the map or a link shows even when the list's filters or scope leave it out.
   const activeIncident = shownIncidents.find((item) => item.id === selectedIncidentId)
-    || visibleIncidents.find((item) => item.id === selectedIncidentId) || shownIncidents[0] || null
+    || incidents.find((item) => item.id === selectedIncidentId) || shownIncidents[0] || null
   // Steps through the reports shown (the route's, or all), when the open report is one of them.
   const activeIndex = activeIncident ? shownIncidents.indexOf(activeIncident) : -1
   const reportPosition = activeIndex >= 0 ? { index: activeIndex, total: shownIncidents.length,

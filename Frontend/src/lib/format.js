@@ -70,7 +70,9 @@ export function exposureSummary(exposure) {
   if (!exposure) return 'Disruption exposure not assessed'
   const km = `${exposure.tolerance_m / 1000} km`
   const nearby = Object.values(exposure.nearby).reduce((total, count) => total + count, 0)
-  const parts = [nearby ? `${nearby} report${nearby === 1 ? '' : 's'} within ${km}${exposure.nearby.confirmed ? ` (${exposure.nearby.confirmed} confirmed)` : ''}` : `No located reports within ${km}`]
+  // A confirmation older than its report's freshness window is not counted as confirmed: it may no longer hold.
+  const confirmed = exposure.nearby.confirmed - (exposure.nearby_confirmed_stale || 0)
+  const parts = [nearby ? `${nearby} report${nearby === 1 ? '' : 's'} within ${km}${confirmed ? ` (${confirmed} confirmed)` : ''}` : `No located reports within ${km}`]
   const placed = exposure.place_match_ids?.length || 0
   if (placed) parts.push(`${placed} name${placed === 1 ? 's' : ''} a town on the route (${Object.keys(exposure.place_matches).join(', ')}, approximate)`)
   const mentioned = exposure.highway_mention_ids?.length || 0

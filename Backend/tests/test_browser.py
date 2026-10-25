@@ -779,6 +779,40 @@ def test_navigation_recentres_shows_the_overview_mutes_and_reroutes_on_its_own(d
     expect(page.locator(".nav-banner .nav-road b")).to_have_text("GS Road (NH6)")
 
 
+def test_a_failed_reroute_keeps_the_route_and_reroutes_start_no_live_check(dashboard, providers):
+    providers["router.project-osrm.org"] = osrm_with_steps
+    page = dashboard
+    jobs = []
+    page.on("request", lambda request: jobs.append(request.url) if "/api/collection/jobs" in request.url else None)
+    start_navigation(page)
+    expect(page.locator(".nav-banner .nav-road b")).to_have_text("GS Road (NH6)")
+    checks = len(jobs)  # the live check for the planned route
+
+    providers["router.project-osrm.org"] = TimeoutError("timed out")  # no signal in the hills
+    page.evaluate("driveTo(26.05, 92.45)")
+    expect(page.locator(".nav-off-route")).to_be_visible()
+    page.evaluate("driveTo(26.051, 92.451)")
+    expect(page.locator(".nav-banner.problem")).to_contain_text("No new route")
+    expect(page.locator(".nav-retry")).to_be_visible()
+    expect(page.locator(".nav-eta b")).to_have_text(re.compile(r"\d+ (min|h)"))  # still guided: time left on the route
+
+    providers["router.project-osrm.org"] = osrm_with_steps
+    page.locator(".nav-retry").click()
+    expect(page.locator(".nav-banner.problem")).to_have_count(0)
+    page.wait_for_timeout(500)
+    assert len(jobs) == checks  # a re-route, failed or not, never starts a collection
+
+
+def test_far_past_the_destination_is_off_the_route_not_arrived(dashboard, providers):
+    providers["router.project-osrm.org"] = osrm_with_steps
+    page = dashboard
+    start_navigation(page)
+    expect(page.locator(".nav-banner .nav-road b")).to_have_text("GS Road (NH6)")
+    page.evaluate("driveTo(25.45, 91.88)")  # about 14 km beyond Shillong, where the route ends
+    expect(page.locator(".nav-off-route")).to_be_visible()
+    expect(page.locator(".navigation")).not_to_contain_text("You have arrived")
+
+
 def test_a_route_away_from_you_is_previewed_turn_by_turn(dashboard, providers):
     providers["router.project-osrm.org"] = osrm_with_steps
     page = dashboard

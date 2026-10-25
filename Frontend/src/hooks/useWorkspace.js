@@ -37,25 +37,35 @@ export function useWorkspace() {
     getMetrics().then(setMetrics).catch(() => {})
   }, [])
 
+  // Only the latest load is applied: a background load that started before a review was saved can finish after
+  // the reload that follows it, and must not put the old data back.
+  const latestLoad = useRef(0)
+  const load = useCallback(async () => {
+    const id = ++latestLoad.current
+    const workspace = await loadWorkspace()
+    if (id === latestLoad.current) apply(workspace)
+    return workspace
+  }, [apply])
+
   useEffect(() => {
     let active = true
-    loadWorkspace().then((workspace) => { if (active) apply(workspace) })
+    load().catch(() => {})
     // Without the API the map still works, on OpenStreetMap.
     getMapConfig().catch(() => ({ provider: 'osm' })).then((config) => { if (active) setMapConfig(config) })
     const timer = setInterval(() => {
-      if (document.visibilityState === 'visible') loadWorkspace().then((workspace) => { if (active) apply(workspace) })
+      if (document.visibilityState === 'visible') load().catch(() => {})
     }, LIVE_REFRESH_MS)
     return () => {
       active = false
+      latestLoad.current += 1  // an answer arriving after unmount is not applied
       clearInterval(timer)
     }
-  }, [apply])
+  }, [load])
 
   const refresh = useCallback(async () => {
-    const workspace = await loadWorkspace()
-    apply(workspace)
+    const workspace = await load()
     if (workspace.status !== 'online') throw new Error(workspace.problem)
-  }, [apply])
+  }, [load])
 
   return { incidents, apiStatus, problem, lastRun, region, metrics, mapConfig, schedule, updatedAt, arrivals, refresh }
 }

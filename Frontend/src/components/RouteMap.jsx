@@ -13,7 +13,7 @@ import { INACTIVE_STATES, MAP_CATEGORIES, formatTime, mapCategory, placeName, st
 import { BORDER_COLOR, HERE_COLOR, HERE_ZOOM, INDIA_BOUNDS, MASK_COLOR, inIndia, insideBoundary } from '../lib/mapStyle.js'
 import { placeNamesInView } from '../lib/placeNames.js'
 import { drawRoadTile } from '../lib/hybridRoads.js'
-import { prepareRoute, progress } from '../lib/navigation.js'
+import { bearingAt, prepareRoute, progress } from '../lib/navigation.js'
 import { INCIDENT_STYLES, incidentIconHtml, incidentStyle } from '../lib/incidentIcons.js'
 import { getAirQuality, loadIndiaBoundary } from '../services/api.js'
 
@@ -87,10 +87,13 @@ function NavigationLayer({ line, now, focus, following, overview, onUserMove }) 
   }, [line, now])
   const behind = useMemo(() => (now && !now.offRoute
     ? [...line.slice(0, now.segment).map(([lon, lat]) => [lat, lon]), [now.snapped[1], now.snapped[0]]] : []), [line, now])
+  const latestAhead = useRef(ahead)
+  useEffect(() => { latestAhead.current = ahead })
   useEffect(() => {
-    // Room for the banner at the top and the sheet at the bottom.
-    if (overview && ahead.length > 1) map.fitBounds(ahead, { paddingTopLeft: [40, 150], paddingBottomRight: [40, 120], animate: false })
-  }, [overview, ahead, map])
+    // Room for the banner at the top and the sheet at the bottom. Fitted once when overview is turned on (and for a
+    // new route), so zooming in the overview is not undone by the next position.
+    if (overview && latestAhead.current.length > 1) map.fitBounds(latestAhead.current, { paddingTopLeft: [40, 150], paddingBottomRight: [40, 120], animate: false })
+  }, [overview, line, map])
   return <>
     {behind.length > 1 && <Polyline positions={behind} interactive={false} pathOptions={{ color: '#9aa0a6', weight: 7, opacity: 0.95 }}/>}
     <Polyline positions={ahead} interactive={false} pathOptions={{ color: '#1967d2', weight: 10, opacity: 1 }}/>
@@ -283,11 +286,11 @@ function useFullscreen(element) {
   }, [element])
   useEffect(() => {
     window.dispatchEvent(new Event('resize'))
-    if (!on || native) return undefined
+    if (!on || (native && document.fullscreenElement === element.current)) return undefined  // the browser handles Esc
     const leave = (event) => { if (event.key === 'Escape') setOn(false) }
     document.addEventListener('keydown', leave)
     return () => document.removeEventListener('keydown', leave)
-  }, [on, native])
+  }, [on, native, element])
   const enter = useCallback(() => {
     if (!native) setOn(true)
     else if (!document.fullscreenElement) element.current?.requestFullscreen().catch(() => setOn(true))
@@ -330,12 +333,22 @@ export default function RouteMap({ plan, mapConfig, here, hereProblem, onRetryHe
   const followed = navigation?.route
   const prepared = useMemo(() => (followed?.steps?.length ? prepareRoute(followed) : null), [followed])
   const previewing = navigation?.mode === 'preview'
-  const now = navigating && !previewing && prepared && inIndia(here) ? progress(prepared, here) : null
+  // Each position is matched continuing from the last one (a hairpin's later stretch can lie within GPS noise);
+  // a route starts from its beginning, where live guidance starts. Updated only when the position or route changes.
+  const tracking = navigating && !previewing && prepared && inIndia(here)
+  const [track, setTrack] = useState({ here: null, prepared: null, now: null })
+  if (tracking && (track.here !== here || track.prepared !== prepared)) {
+    const previous = track.prepared === prepared && track.now ? track.now : { travelled: 0, at: null }
+    setTrack({ here, prepared, now: progress(prepared, here, previous) })
+  }
+  const now = tracking && track.prepared === prepared ? track.now : null
   // Preview: which turn is shown; live: none. The arrow sits on the device (snapped to the route while on it) or,
   // in a preview, on the turn shown, pointing the way the route leaves it.
   const [previewStep, setPreviewStep] = useState(0)
   const shownStep = previewing && prepared ? prepared.steps[Math.min(previewStep, prepared.steps.length - 1)] : null
-  const focus = shownStep ? { position: [shownStep.location[1], shownStep.location[0]], bearing: shownStep.bearing_after ?? 0 }
+  // Google's steps carry no bearing: the arrow then follows the route line where the step starts.
+  const shownIndex = shownStep ? prepared.steps.indexOf(shownStep) : -1
+  const focus = shownStep ? { position: [shownStep.location[1], shownStep.location[0]], bearing: shownStep.bearing_after ?? bearingAt(prepared, prepared.stepsAt[shownIndex] + 1) }
     : now && !now.offRoute ? { position: [now.snapped[1], now.snapped[0]], bearing: now.bearing }
       : inIndia(here) ? { position: [here.latitude, here.longitude], bearing: now?.bearing || 0 } : null
   // Following the arrow, or looking around (after a drag) or at the whole route (overview); reset at each start.
@@ -345,6 +358,7 @@ export default function RouteMap({ plan, mapConfig, here, hereProblem, onRetryHe
     setViewFor(navigating)
     setView({ following: true, overview: false })
     setPreviewStep(0)
+    setTrack({ here: null, prepared: null, now: null })
   }
   const onUserMove = useCallback(() => setView({ following: false, overview: false }), [])
   const recentre = () => setView({ following: true, overview: false })
@@ -353,7 +367,7 @@ export default function RouteMap({ plan, mapConfig, here, hereProblem, onRetryHe
   const credit = `${useMappls ? 'Map © Mappls (MapmyIndia)' : [BASE_LAYERS[layers.base].credit, ...layers.overlays.map((key) => OVERLAYS[key].credit)].join(' · ')} · India boundary: Survey of India`
   return <article className="panel map-panel" aria-label="Map">
     {mapplsProblem && <p className="map-fallback" role="status">{mapplsProblem} Showing OpenStreetMap instead.</p>}
-    <div className={`map-wrap${fullscreen.on ? ' fullscreen' : ''}${navigating ? ' navigating' : ''}`} ref={wrap}>{!mapConfig ? <div className="map-canvas"/> : useMappls
+    <div className={`map-wrap${fullscreen.on ? ' fullscreen' : ''}${navigating ? ' navigating' : ''}`} ref={wrap}>{!mapConfig ? <div className="map-canvas"/> : useMappls && !navigating
       ? <MapplsMap apiKey={mapConfig.mappls_key} plan={plan} boundary={boundary} here={here} focusKey={focusKey} {...mapProps} onUnavailable={onUnavailable}/>
       : <DashboardMap plan={plan} boundary={boundary} here={here} focusKey={focusKey} base={layers.base} overlays={layers.overlays} navigation={navigating ? { now, focus, ...view, onUserMove } : null} {...mapProps}/>}
       {navigation ? <NavigationPanel {...navigation} prepared={prepared} now={now} here={here} following={view.following}

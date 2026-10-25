@@ -31,6 +31,11 @@ export default function NavigationPanel({ mode = 'live', traffic = false, prepar
 
   // Spoken directions: once when a new turn comes up (with its distance) and again just before it.
   const said = useRef({ step: null, near: false, arrived: false })
+  // A new route (after a re-route) starts again: its next turn may have the same index as the old one's. This runs
+  // before the effect below, so the new route's first instruction is spoken.
+  useEffect(() => { said.current = { step: null, near: false, arrived: false } }, [prepared])
+  // Nothing more is said once navigation closes.
+  useEffect(() => () => { if (typeof window !== 'undefined' && 'speechSynthesis' in window) window.speechSynthesis.cancel() }, [])
   const near = now ? now.toStep < NEAR_M : false
   const announcement = !now || previewing ? '' : now.arrived ? `You have arrived at ${name}` : spoken(next, now.toStep)
   useEffect(() => {
@@ -79,7 +84,7 @@ export default function NavigationPanel({ mode = 'live', traffic = false, prepar
     banner = <div className="nav-banner"><div className="nav-turn"><Icon name={turnIcon(next)} size={44}/><b>{reach}</b></div>
       <div className="nav-road">{action && <span>{action}</span>}<b>{headline}</b></div></div>
   } else if (rerouting) banner = <div className="nav-banner"><div className="nav-turn"><Icon name="refresh" size={40}/></div><div className="nav-road"><b>Rerouting…</b><span>Finding a route from where you are</span></div></div>
-  else if (error) banner = <div className="nav-banner problem"><div className="nav-turn"><Icon name="alert" size={40}/></div><div className="nav-road"><b>No new route</b><span>{error}</span></div></div>
+  else if (error) banner = <div className="nav-banner problem"><div className="nav-turn"><Icon name="alert" size={40}/></div><div className="nav-road"><b>No new route</b><span>{error}</span><button type="button" className="nav-retry" onClick={onReroute}>Try again</button></div></div>
   else if (!prepared) banner = <div className="nav-banner problem"><div className="nav-turn"><Icon name="alert" size={40}/></div><div className="nav-road"><b>This route cannot be followed</b><span>It has no turn-by-turn steps.</span></div></div>
   else if (!now) banner = <div className="nav-banner"><div className="nav-turn"><Icon name="locate" size={40}/></div><div className="nav-road"><b>Finding your location…</b><span>Guidance starts when the device finds you</span></div></div>
   else if (now.arrived) banner = <div className="nav-banner"><div className="nav-turn"><Icon name="arrive" size={40}/></div><div className="nav-road"><span>You have arrived</span><b>{name}</b></div></div>

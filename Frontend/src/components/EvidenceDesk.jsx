@@ -139,6 +139,7 @@ export default function EvidenceDesk({ incident, incidents, visibleCount, scopes
       }
       if (await onReview(incident, body)) {
         setReviewNotes((notes) => ({ ...notes, [incident.id]: '' }))
+        setReviewStatuses((statuses) => ({ ...statuses, [incident.id]: undefined }))  // follow the saved status from now on
         setReviewLocations((locations) => ({ ...locations, [incident.id]: {} }))
       }
     } finally { setReviewBusyId(null) }

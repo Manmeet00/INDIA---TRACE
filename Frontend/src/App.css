@@ -218,6 +218,7 @@
 .nav-turn b { font: 500 18px/1.1 Roboto, Arial, sans-serif; white-space: nowrap; }
 .nav-road { min-width: 0; }
 .nav-road span { display: block; font: 400 17px/1.25 Roboto, Arial, sans-serif; opacity: .92; }
+.nav-retry { margin-top: 8px; min-height: 34px; padding: 0 14px; border: 0; border-radius: 999px; color: #b3261e; background: #fff; font: 700 15px Roboto, Arial, sans-serif; cursor: pointer; }
 .nav-road b { display: block; font: 500 26px/1.15 Roboto, Arial, sans-serif; overflow-wrap: anywhere; }
 .nav-then { display: inline-flex; align-items: center; gap: 6px; padding: 7px 16px 8px; border-radius: 0 0 12px 12px; color: #fff; background: #0d652d; font: 500 17px/1 Roboto, Arial, sans-serif; box-shadow: 0 2px 8px rgba(0, 0, 0, .3); }
 .nav-off-route { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; padding: 8px 10px 8px 14px; border-radius: 10px; color: #3c2a00; background: #fde293; font: 500 14px/1.3 Roboto, Arial, sans-serif; box-shadow: 0 2px 6px rgba(0, 0, 0, .3); }

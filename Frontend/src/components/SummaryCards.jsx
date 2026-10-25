@@ -32,7 +32,7 @@ export default function SummaryCards({ incidents, plan, route, liveCheck }) {
   const recent = count((item) => item.freshness === 'fresh')
   const types = TYPES.map(([type, label]) => {
     const ofType = reports.filter((item) => item.event_types?.includes(type))
-    return { type, label, total: ofType.length, confirmed: ofType.filter((item) => item.verification === 'confirmed').length,
+    return { type, label, total: ofType.length, confirmed: ofType.filter((item) => item.verification === 'confirmed' && item.evidence_status !== 'stale').length,
       recent: ofType.filter((item) => item.freshness === 'fresh').length }
   }).filter((row) => ALWAYS.includes(row.type) || row.total)
   const evidence = [['confirmed', 'confirmed', count((item) => item.verification === 'confirmed' && item.evidence_status !== 'stale')],

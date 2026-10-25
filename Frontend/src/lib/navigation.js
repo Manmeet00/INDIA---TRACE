@@ -95,13 +95,25 @@ export function prepareRoute(route) {
   return { line, along: along.map((value) => value * scale), steps: route.steps, stepsAt, distance: route.distance_m, duration: route.duration_s }
 }
 
+// Metres of gap that one metre of jump along the route is worth when matching a position: on a hairpin road a later
+// stretch can lie within GPS noise of the one being driven, and it should not win just by being a few metres closer.
+// Only a jump longer than the vehicle could have driven since the last position (at up to 40 m/s) costs anything.
+const JUMP_COST = 0.05
+const MAX_SPEED_MPS = 40
+const REACH_WITHOUT_TIME_M = 200
+
 /**
  * Where a position is on a prepared route: { travelled, remaining, offRoute (metres from the line), step (the
- * next maneuver's index), toStep (metres to it), arrived }.
+ * next maneuver's index), toStep (metres to it), arrived }. previous is the last result on this route, if any:
+ * the match then prefers to continue from it.
  */
-export function progress(prepared, { latitude, longitude, accuracy = 0 }) {
+export function progress(prepared, { latitude, longitude, accuracy = 0, at = null }, previous = null) {
   const point = [longitude, latitude]
-  let best = { gap: Infinity, travelled: 0, segment: 1, point: [longitude, latitude] }
+  const seconds = previous?.at != null && at != null ? Math.max(0, (at - previous.at) / 1000) : null
+  const reach = seconds == null ? REACH_WITHOUT_TIME_M : MAX_SPEED_MPS * seconds + 50
+  let nearest = { gap: Infinity, travelled: 0, segment: 1, point: [longitude, latitude] }
+  let likely = nearest
+  let likelyScore = Infinity
   const { line, along } = prepared
   for (let index = 1; index < line.length; index += 1) {
     const a = line[index - 1]
@@ -112,26 +124,44 @@ export function progress(prepared, { latitude, longitude, accuracy = 0 }) {
       / ((b[0] - a[0]) ** 2 * Math.cos((a[1] * Math.PI) / 180) ** 2 + (b[1] - a[1]) ** 2))) : 0
     const closest = [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])]
     const gap = metres(point, closest)
-    if (gap < best.gap) best = { gap, travelled: along[index - 1] + t * (along[index] - along[index - 1]), segment: index, point: closest }
+    const travelled = along[index - 1] + t * (along[index] - along[index - 1])
+    const candidate = { gap, travelled, segment: index, point: closest }
+    if (gap < nearest.gap) nearest = candidate
+    const score = gap + (previous ? JUMP_COST * Math.max(0, Math.abs(travelled - previous.travelled) - reach) : 0)
+    if (score < likelyScore) { likely = candidate; likelyScore = score }
   }
+  // Continuing from the last position wins unless it is off the route while another stretch is on it.
+  const tolerance = Math.max(OFF_ROUTE_M, accuracy)
+  const best = likely.gap > tolerance && nearest.gap <= tolerance ? nearest : likely
   const remaining = Math.max(0, prepared.distance - best.travelled)
   let step = prepared.stepsAt.findIndex((at) => at > best.travelled + 5)
   if (step === -1) step = prepared.steps.length - 1
   const [a, b] = [line[best.segment - 1], line[best.segment]]
   const bearing = (Math.atan2((b[0] - a[0]) * Math.cos((a[1] * Math.PI) / 180), b[1] - a[1]) * 180) / Math.PI
   return {
+    at, // when the position was taken, so the next match knows how far the vehicle could have gone
     travelled: best.travelled,
     segment: best.segment, // the route line continues from this point index
     snapped: best.point, // [longitude, latitude] on the route, where the arrow is drawn while on it
     bearing: (bearing + 360) % 360, // direction of travel along the route, degrees from north
     remaining,
     remainingTime: prepared.distance ? (prepared.duration * remaining) / prepared.distance : 0,
-    offRoute: best.gap > Math.max(OFF_ROUTE_M, accuracy),
+    offRoute: best.gap > tolerance,
     gap: best.gap,
     step,
     toStep: Math.max(0, (prepared.stepsAt[step] ?? prepared.distance) - best.travelled),
-    arrived: remaining <= Math.max(ARRIVED_M, Math.min(accuracy, 100)),
+    // Near the end of the route and on it: far from the line, the nearest point is often the end itself.
+    arrived: best.gap <= tolerance && remaining <= Math.max(ARRIVED_M, Math.min(accuracy, 100)),
   }
+}
+
+/** The direction of travel, degrees from north, at a distance along a prepared route (for steps without a bearing). */
+export function bearingAt(prepared, distance) {
+  const { line, along } = prepared
+  let index = along.findIndex((value) => value > distance)
+  if (index < 1) index = index === 0 ? 1 : line.length - 1
+  const [a, b] = [line[index - 1], line[index]]
+  return ((Math.atan2((b[0] - a[0]) * Math.cos((a[1] * Math.PI) / 180), b[1] - a[1]) * 180) / Math.PI + 360) % 360
 }
 
 /** "400 m", "1.2 km", "12 km". */
