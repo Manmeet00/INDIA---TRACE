@@ -80,7 +80,7 @@ function App() {
     try {
       const job = await api.startCollection({ road: main || null, place: towns || null, window_days: LIVE_CHECK_DAYS })
       if (job.status !== 'running') {
-        if (token === planToken.current) setLiveCheck({ state: 'skipped', text: job.message })
+        if (token === planToken.current) setLiveCheck({ state: 'skipped', text: `Live check not run: ${job.message}` })
         return
       }
       const run = await api.followRun(job.run_id, () => {})

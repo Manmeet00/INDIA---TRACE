@@ -61,27 +61,50 @@
 
 /* ── Page and summary ────────────────────────────────────── */
 .page-content { max-width: 1840px; margin: 0 auto; padding: 18px 20px 24px; }
-.summary { margin-bottom: 16px; }
-.summary-scope { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin: 0 0 8px; font-size: var(--fs-sm); color: var(--muted); }
-.summary-scope b { color: var(--text); font: 700 var(--fs-base)/1.3 var(--font-display); }
+/* Route briefing: one panel. The route and the live check, then the total, the reports by type (with the
+   map's symbols), and two split bars for how solid the evidence and its locations are. */
+.summary { margin-bottom: 16px; padding: 14px 18px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); box-shadow: var(--shadow); }
+.summary-scope { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin: 0 0 14px; padding-bottom: 12px; border-bottom: 1px solid var(--line-soft); font-size: var(--fs-sm); color: var(--muted); }
+.summary-scope b { display: inline-flex; align-items: center; gap: 8px; color: var(--text); font: 700 var(--fs-md)/1.3 var(--font-display); }
+.brief-route { padding: 2px 8px; border-radius: 5px; color: #fff; background: var(--route); font: 700 var(--fs-xs)/1.5 var(--font-display); letter-spacing: .6px; text-transform: uppercase; }
+.brief-body { display: grid; grid-template-columns: minmax(140px, auto) minmax(0, 2fr) minmax(240px, 1fr); align-items: center; gap: 18px 26px; }
+.brief-total { display: grid; gap: 1px; padding-right: 26px; border-right: 1px solid var(--line-soft); }
+.brief-total b { color: var(--text); font: 700 44px/1 var(--font-display); letter-spacing: -1px; font-variant-numeric: tabular-nums; }
+.brief-total > span { color: var(--text); font-weight: 700; font-size: var(--fs-sm); }
+.brief-total small, .brief-type small { color: var(--faint); font-size: var(--fs-xs); }
+.brief-type small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.brief-types { display: grid; grid-template-columns: repeat(auto-fit, minmax(122px, 1fr)); gap: 10px 14px; margin: 0; padding: 0; list-style: none; }
+.brief-type { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.brief-type > span:last-child { display: grid; min-width: 0; }
+.brief-type b { color: var(--text); font: 700 22px/1.05 var(--font-display); font-variant-numeric: tabular-nums; }
+.brief-type > span > span { overflow: hidden; color: var(--text); font-weight: 700; font-size: var(--fs-sm); text-overflow: ellipsis; white-space: nowrap; }
+.brief-type .report-symbol { box-shadow: 0 1px 3px rgba(14, 26, 43, .3); }
+.brief-type.zero .report-symbol { filter: grayscale(1); opacity: .35; box-shadow: none; }
+.brief-type.zero b, .brief-type.zero > span > span { color: var(--faint); }
+.brief-quality { display: grid; gap: 12px; padding-left: 26px; border-left: 1px solid var(--line-soft); }
+.brief-split { display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: center; gap: 4px 10px; }
+.brief-label { color: var(--muted); font: 700 var(--fs-xs) var(--font-display); letter-spacing: .8px; text-transform: uppercase; }
+.split-bar { display: flex; gap: 2px; height: 8px; overflow: hidden; border-radius: 4px; background: var(--slate-bg); }
+.split-bar i { flex-basis: 0; min-width: 6px; }
+.split-bar i.none { flex-grow: 1; background: transparent; }
+.split-key { grid-column: 2; display: flex; flex-wrap: wrap; gap: 2px 10px; color: var(--muted); font-size: var(--fs-xs); }
+.split-key span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.split-key span.zero { color: var(--faint); }
+.split-key i { width: 8px; height: 8px; border-radius: 2px; }
+.split-key span.zero i { opacity: .35; }
+.split-bar .confirmed, .split-key .confirmed { background: var(--danger); }
+.split-bar .unverified, .split-key .unverified { background: #e0a526; }
+.split-bar .stale, .split-key .stale { background: #9aa6b4; }
+.split-bar .exact, .split-key .exact { background: var(--route); }
+.split-bar .town, .split-key .town { background: #7fa9de; }
+.split-bar .road, .split-key .road { background: #c4ccd6; }
+.summary.waiting .brief-total b { color: var(--faint); }
 .live-check { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; padding: 3px 10px; border-radius: 999px; color: var(--ok); background: var(--ok-bg); font-size: var(--fs-xs); font-weight: 700; }
 .live-check i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 .live-check.running { color: var(--route); background: #e6f0fb; }
 .live-check.running i { animation: pulse 1.2s ease-in-out infinite; }
 .live-check.skipped { color: var(--warn); background: var(--warn-bg); }
 @keyframes pulse { 50% { opacity: .25; } }
-.summary-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
-.summary-card { --tone: var(--slate); min-width: 0; display: flex; align-items: center; gap: 12px; padding: 14px 16px; border: 1px solid var(--line); border-top: 3px solid var(--tone); border-radius: var(--radius); background: var(--card); box-shadow: var(--shadow); }
-.summary-card.red { --tone: var(--danger); }
-.summary-card.amber { --tone: #c77d0a; }
-.summary-card.blue { --tone: var(--route); }
-.summary-card.violet { --tone: #6a4fc2; }
-.summary-card.green { --tone: var(--green); }
-.summary-icon { display: grid; place-items: center; width: 38px; height: 38px; flex: none; border-radius: 9px; color: var(--tone); background: color-mix(in srgb, var(--tone) 11%, white); }
-.summary-card > div { min-width: 0; display: grid; }
-.summary-card b { color: var(--text); font: 600 26px/1.1 var(--font-data); letter-spacing: -.5px; }
-.summary-card span:not(.summary-icon) { overflow: hidden; color: var(--text); font-weight: 700; font-size: var(--fs-sm); text-overflow: ellipsis; white-space: nowrap; }
-.summary-card small { overflow: hidden; color: var(--faint); font-size: var(--fs-xs); text-overflow: ellipsis; white-space: nowrap; }
 
 /* ── Workspace grid and panels ───────────────────────────── */
 .workspace-grid { display: grid; grid-template-columns: minmax(270px, .78fr) minmax(460px, 1.75fr) minmax(350px, 1.1fr); gap: 16px; align-items: start; }
@@ -416,7 +439,7 @@
 .report-stepper button:hover:not(:disabled) { border-color: var(--route); color: var(--route); }
 .report-stepper button:disabled { opacity: .35; cursor: default; }
 .report-head { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 12px; align-items: start; }
-.report-symbol { display: grid; place-items: center; width: 40px; height: 40px; border: 2px solid #fff; border-radius: 50%; background: var(--tone); box-shadow: 0 1px 4px rgba(14, 26, 43, .35); }
+.report-symbol { display: grid; flex: none; place-items: center; width: 40px; height: 40px; border: 2px solid #fff; border-radius: 50%; background: var(--tone); box-shadow: 0 1px 4px rgba(14, 26, 43, .35); }
 .report-kind { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; color: var(--muted); font: 700 var(--fs-xs)/1.4 var(--font-display); letter-spacing: .8px; text-transform: uppercase; }
 .report-kind i { font-style: normal; color: var(--line); }
 .report-kind .source-badge { padding: 0; box-shadow: none; background: none; font: inherit; color: inherit; letter-spacing: inherit; }
@@ -623,19 +646,26 @@
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; clip-path: inset(50%); }
 
 /* ── Responsive ──────────────────────────────────────────── */
+/* Below 1600 px the briefing puts its two bars under the counts, so five report types fit in one row. */
+@media (max-width: 1600px) {
+  .brief-body { grid-template-columns: minmax(130px, auto) minmax(0, 1fr); }
+  .brief-quality { grid-column: 1 / -1; grid-template-columns: 1fr 1fr; gap: 12px 26px; padding: 12px 0 0; border-left: 0; border-top: 1px solid var(--line-soft); }
+}
+
 @media (max-width: 1360px) {
   .sidebar { width: 210px; }
   .main-area { margin-left: 210px; }
   .workspace-grid { grid-template-columns: minmax(260px, .8fr) minmax(400px, 1.6fr); }
   .right-column { grid-column: 1 / -1; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); align-items: start; }
   .right-column > .source-footnote { grid-column: 1 / -1; }
-  .summary-card { padding: 12px; gap: 10px; }
-  .summary-card b { font-size: 22px; }
 }
 @media (max-width: 1100px) {
-  .summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 760px) {
+  .summary { padding: 12px 14px 14px; }
+  .brief-body { grid-template-columns: 1fr; }
+  .brief-total { padding: 0 0 12px; border-right: 0; border-bottom: 1px solid var(--line-soft); }
+  .brief-quality { grid-template-columns: 1fr; }
   .sidebar { inset: auto 0 0; width: auto; height: 62px; padding: 6px 8px; border-top: 1px solid var(--ink-line); }
   .sidebar > .brand, .sidebar-bottom { display: none; }
   .side-nav { height: 100%; grid-template-columns: repeat(5, 1fr); gap: 4px; }
@@ -650,8 +680,6 @@
   .global-search { height: 38px; }
   .connection-label, .profile-name { display: none; }
   .page-content { padding: 12px 12px 18px; }
-  .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-  .summary-card:last-child { grid-column: 1 / -1; }
   /* On phones the columns dissolve so panels follow the task: plan, map, routes, evidence, then map toggles. */
   .workspace-grid { grid-template-columns: 1fr; gap: 12px; }
   .left-column, .center-column, .right-column { display: contents; }

@@ -140,7 +140,7 @@ def test_collect_review_locate_and_replan(dashboard, tinyfish_network):
     expect(page.locator(".collection-message")).to_contain_text("2 new reports")
     expect(page.locator(".evidence-row")).to_have_count(2)  # web and news both return them; malformed ones are dropped
     # "closed near Shillong" is placed at Shillong (approximate); the Sonapur report is not, as Sonapur is in two states.
-    expect(page.locator(".summary-card.green b")).to_have_text("0")  # no route planned yet: the cards wait for one
+    expect(page.locator(".brief-total b")).to_have_text("0")  # no route planned yet: the cards wait for one
     expect(page.locator(".evidence-row", has_text="Sonapur")).to_contain_text("Sonapur")
 
     page.locator(".evidence-row", has_text="closed for repairs").click()
@@ -161,7 +161,7 @@ def test_collect_review_locate_and_replan(dashboard, tinyfish_network):
     page.click("text=Save review")
     expect(page.locator(".collection-message")).to_have_text("Evidence review saved.")
     expect(page.locator(".selected-incident .verification-badge")).to_have_text("Confirmed by reviewer")
-    expect(page.locator(".summary-card.violet b")).to_have_text("0")
+    expect(page.locator(".brief-quality")).to_contain_text("0 road only")
     expect(page.locator(".map-options .toggle-row", has_text="Landslides")).to_contain_text("1 on map")
 
     # Plan again with Cautious, which puts the route that avoids the confirmed report first;
@@ -489,14 +489,15 @@ def test_planning_a_route_scopes_the_cards_and_runs_a_live_check_for_it(dashboar
     page = dashboard
     page.open()
     expect(page.locator(".summary-scope")).to_contain_text("No route planned yet")
-    expect(page.locator(".summary-card.green b")).to_have_text("0")
+    expect(page.locator(".brief-total b")).to_have_text("0")
 
     plan(page, "Guwahati, Assam", "Shillong, Meghalaya")
-    expect(page.locator(".summary-scope")).to_contain_text("Route 1: Guwahati → Shillong")
+    expect(page.locator(".summary-scope .brief-route")).to_have_text("Route 1")
+    expect(page.locator(".summary-scope b")).to_contain_text("Guwahati → Shillong")
     expect(page.locator(".live-check")).to_contain_text("Live check")
     expect(page.locator(".live-check")).to_contain_text("1 new report from the route search")
-    expect(page.locator(".summary-card.amber b")).to_have_text("1")   # the new landslide names NH-6, which the route uses
-    expect(page.locator(".summary-card.green")).to_contain_text("Reports for this route")
+    expect(page.locator(".brief-type.landslide b")).to_have_text("1")   # the new landslide names NH-6, which the route uses
+    expect(page.locator(".brief-total")).to_contain_text("for this route")
     expect(page.locator(".action-banner")).to_contain_text("NH-6")    # the advice was recalculated with it
     assert all("query=NH-6+Guwahati+Shillong" in url and "recency_minutes=4320" in url for url in searched)
 

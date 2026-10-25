@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import Icon from './Icon.jsx'
 import Milestone from './Milestone.jsx'
-import { incidentStyle } from '../lib/incidentIcons.js'
+import ReportSymbol from './ReportSymbol.jsx'
 import { EVENT_LABELS, FLAG_REASONS, LIFECYCLE_LABELS, SOURCE_LABELS, formatPublished, formatTime, freshnessLabel, locationText, statusLabel } from '../lib/format.js'
 
 // Duplicate, conflict and mention hints come from text heuristics in the API, never from verification.
@@ -101,13 +101,6 @@ function Timeline({ events }) {
     </li>)}</ol>
     {events.length > TIMELINE_PREVIEW && <button type="button" className="impact-more" onClick={() => setExpanded((value) => !value)}>{expanded ? 'Show recent' : `Show all ${events.length} events`}</button>}
   </div>
-}
-
-// The report's symbol, the same one the map draws for it. The glyphs are this app's own static SVG.
-function ReportSymbol({ type }) {
-  const style = incidentStyle(type)
-  return <span className="report-symbol" style={{ '--tone': style.color }} aria-hidden="true"
-    dangerouslySetInnerHTML={{ __html: `<svg width="22" height="22" viewBox="0 0 24 24">${style.glyph}</svg>` }}/>
 }
 
 // With a route planned: its reports or all of them. counts are { route, all }.
