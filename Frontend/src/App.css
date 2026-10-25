@@ -388,6 +388,10 @@
 .impact-copy b { overflow: hidden; font-size: var(--fs-sm); text-overflow: ellipsis; white-space: nowrap; }
 .impact-copy small { color: var(--muted); font-size: var(--fs-xs); }
 .impact-factors { color: var(--muted); font-size: var(--fs-xs); line-height: 1.45; }
+.route-records { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 2px 0 1px; }
+.route-records .record { padding: 1px 7px; border-radius: 5px; color: var(--slate); background: var(--slate-bg); font: 700 var(--fs-xs)/1.5 var(--font-body); font-style: normal; }
+.route-records .record.fast { color: var(--ok); background: var(--ok-bg); }
+.route-records em { color: var(--text); font-size: var(--fs-sm); font-style: normal; font-weight: 700; }
 .time-source { margin-left: 6px; padding: 1px 6px; border-radius: 4px; color: var(--muted); background: var(--slate-bg); font: 600 var(--fs-xs) var(--font-data); font-style: normal; white-space: nowrap; }
 .time-source.live { color: var(--ok); background: var(--ok-bg); }
 .routing-note { display: flex; gap: 8px; align-items: flex-start; margin: 0 0 10px; padding: 9px 12px; border-radius: 8px; color: var(--warn); background: var(--warn-bg); font-size: var(--fs-sm); line-height: 1.45; }

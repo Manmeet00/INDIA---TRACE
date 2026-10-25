@@ -3,12 +3,12 @@ import Icon from './Icon.jsx'
 import PlaceInput from './PlaceInput.jsx'
 
 const VEHICLES = [['truck', 'Truck', 'truck'], ['van', 'Van', 'van'], ['ambulance', 'Ambulance', 'ambulance']]
-const PRIORITIES = [['cautious', 'Cautious'], ['balanced', 'Balanced'], ['fastest', 'Fastest'], ['shortest', 'Shortest']]
+const PRIORITIES = [['fastest', 'Fastest'], ['balanced', 'Balanced'], ['shortest', 'Shortest'], ['cautious', 'Cautious']]
 const PRIORITY_NOTES = {
-  cautious: 'Routes with fewer reports nearby first',
-  balanced: 'The routing service’s order',
-  fastest: 'Shortest estimated time first',
-  shortest: 'Shortest distance first',
+  fastest: 'Shortest estimated time first, like a maps app',
+  balanced: 'Fastest, unless a route at most 10% slower has fewer reports placed near it',
+  shortest: 'Shortest distance first, even when it takes longer',
+  cautious: 'Routes with fewer reports nearby first, even when slower',
 }
 
 const place = (text) => ({ text, query: text })
@@ -24,7 +24,7 @@ export default function RoutePlanner({ loading, error, isSnapshot, onPlan, searc
   const [origin, setOrigin] = useState(place(''))
   const [destination, setDestination] = useState(place(''))
   const [vehicle, setVehicle] = useState('truck')
-  const [priority, setPriority] = useState('cautious')
+  const [priority, setPriority] = useState('fastest')
 
   const [shownSearch, setShownSearch] = useState(searched)
   if (searched !== shownSearch) {

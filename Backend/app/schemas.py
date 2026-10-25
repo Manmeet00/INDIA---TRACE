@@ -116,7 +116,7 @@ class RoutePlanRequest(BaseModel):
     origin: str = Field(min_length=2, max_length=200)
     destination: str = Field(min_length=2, max_length=200)
     vehicle_type: str = Field(default="truck", pattern=r"^(truck|van|ambulance)$")
-    priority: str = Field(default="balanced", pattern=r"^(balanced|fastest|shortest|cautious)$")
+    priority: str = Field(default="fastest", pattern=r"^(balanced|fastest|shortest|cautious)$")
 
 
 class IncidentFlag(BaseModel):

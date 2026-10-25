@@ -97,9 +97,11 @@ def geolocation(body):
     return GEOLOCATION % (body, body)
 
 
-def plan(page, origin, destination):
+def plan(page, origin, destination, preference=None):
     page.fill("#origin", origin)
     page.fill("#destination", destination)
+    if preference:  # the form starts on Fastest
+        page.locator(".chip", has_text=preference).click()
     page.click(".primary-button")
 
 
@@ -162,8 +164,9 @@ def test_collect_review_locate_and_replan(dashboard, tinyfish_network):
     expect(page.locator(".summary-card.violet b")).to_have_text("0")
     expect(page.locator(".map-options .toggle-row", has_text="Landslides")).to_contain_text("1 on map")
 
-    # Plan again. The form's default "cautious" priority puts the route that avoids the confirmed report first;
+    # Plan again with Cautious, which puts the route that avoids the confirmed report first;
     # it still says verify, because the old report names NH-6 without a location.
+    page.locator(".chip", has_text="Cautious").click()
     page.click(".primary-button")
     expect(page.locator(".route-card").nth(0)).to_contain_text("No located reports within 3 km")
     expect(page.locator(".action-banner .verdict")).to_have_text("Verify before dispatch")
@@ -215,6 +218,22 @@ def test_evidence_desk_shows_the_planned_routes_reports_and_why(dashboard, tinyf
     expect(page.locator(".selected-incident .incident-summary")).to_have_text("The corridor will improve goods movement.")
     expect(page.locator(".selected-incident .incident-top")).to_contain_text("No disruption described")
     expect(page.locator(".route-match.off")).to_contain_text("Not matched to this route")
+
+
+def test_route_cards_say_why_the_first_route_is_first_and_how_the_others_compare(dashboard):
+    # The fake OSRM routes: route 1 is 100 km in 66 min 40 s, route 2 is 120 km in 76 min 40 s.
+    page = dashboard
+    page.open()
+    expect(page.locator(".chip-group.preferences .chip.on")).to_have_text("Fastest")  # like a maps app
+    plan(page, "Guwahati, Assam", "Shillong, Meghalaya")
+    cards = page.locator(".route-card")
+    expect(cards.nth(0)).to_contain_text("Route 1 · Fastest")
+    expect(cards.nth(0).locator(".record")).to_have_text(["Fastest", "Shortest"])
+    expect(cards.nth(1)).to_contain_text("Route 2 · Alternative")
+    expect(cards.nth(1).locator(".route-records em")).to_have_text("10 min slower · 20 km longer")
+
+    plan(page, "Guwahati, Assam", "Shillong, Meghalaya", "Shortest")
+    expect(cards.nth(0)).to_contain_text("Route 1 · Shortest")
 
 
 # --- Timeouts -----------------------------------------------------------------------------
@@ -378,7 +397,7 @@ def test_mappls_draws_routes_markers_and_selects_evidence(dashboard, mappls_key,
     rings = mask["data"]["features"][0]["geometry"]["coordinates"]
     assert mask["cType"] == 1 and rings[0][0] == [-180, -89] and len(rings) == 59  # the world, with India's 58 land parts cut out
 
-    plan(page, "Guwahati, Assam", "Shillong, Meghalaya")
+    plan(page, "Guwahati, Assam", "Shillong, Meghalaya", "Cautious")
     expect(page.locator(".route-card")).to_have_count(2)
     page.wait_for_function("window.__mappls.polylines.filter((item) => !item.removed).length === 2")
     lines = live(page, "polylines")

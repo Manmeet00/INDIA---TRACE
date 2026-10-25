@@ -251,6 +251,9 @@ def _geocode(place: str) -> dict[str, Any]:
     return {"name": str(item.get("display_name") or place), "latitude": float(item["lat"]), "longitude": float(item["lon"])}
 
 
+BALANCED_SLACK = 1.10  # "balanced" accepts a route up to 10% slower than the fastest when fewer reports are near it
+
+
 def _osrm_routes(origin: dict[str, Any], destination: dict[str, Any]) -> tuple[list[dict[str, Any]], str]:
     coordinates = f"{origin['longitude']},{origin['latitude']};{destination['longitude']},{destination['latitude']}"
     routes, fetched_at = _cached_json(
@@ -309,6 +312,16 @@ def plan_route(payload) -> dict[str, Any]:
         })
     if payload.priority == "fastest":
         candidates.sort(key=lambda r: r["duration_s"])
+    elif payload.priority == "balanced":
+        # The fastest route, unless one at most 10% slower has fewer reports placed near it (reviewer-located or at a
+        # town on it). Reports that only name a highway are left out: long, busy highways are simply named more often.
+        quickest = min(r["duration_s"] for r in candidates)
+        def balance(route):
+            exposure = route["exposure"]
+            close = route["duration_s"] <= quickest * BALANCED_SLACK
+            placed = (exposure["nearby"]["confirmed"], _unconfirmed_nearby(exposure), len(exposure["place_match_ids"]))
+            return (not close, placed if close else (0, 0, 0), route["duration_s"])
+        candidates.sort(key=balance)
     elif payload.priority == "shortest":
         candidates.sort(key=lambda r: r["distance_m"])
     elif payload.priority == "cautious":

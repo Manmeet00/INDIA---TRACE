@@ -1,3 +1,6 @@
+import pytest
+
+import conftest
 from app import road_intelligence
 
 PLACES = {"Guwahati": (26.18, 91.75), "Shillong": (25.58, 91.88)}
@@ -144,3 +147,21 @@ def test_map_config_uses_mappls_only_when_a_key_is_set(client, monkeypatch):
     monkeypatch.setenv("MAPPLS_STATIC_KEY", "browser-key")
     get_settings.cache_clear()
     assert client.get("/api/map-config").json() == {"provider": "mappls", "mappls_key": "browser-key"}
+
+
+@pytest.mark.parametrize("second_route_s, first", [(4300, "route-2"), (4600, "route-1")])
+def test_balanced_takes_a_slightly_slower_route_only_when_fewer_reports_are_placed_near_it(client, providers, add_incident, second_route_s, first):
+    # A confirmed report on route 1 (25.90, 91.80). Route 2 is 7.5% or 15% slower than route 1's 4000 s.
+    add_incident("slide", "confirmed", 25.90, 91.80)
+    durations = [4000, second_route_s]
+
+    def osrm(request):
+        answer = conftest.osrm(request)
+        for route, seconds in zip(answer["routes"], durations):
+            route["duration"] = seconds
+        return answer
+    providers["router.project-osrm.org"] = osrm
+    body = client.post("/api/routes/plan", json={"origin": "Guwahati", "destination": "Shillong", "priority": "balanced"}).json()
+    assert body["routes"][0]["id"] == first
+    fastest = client.post("/api/routes/plan", json={"origin": "Guwahati", "destination": "Shillong"}).json()
+    assert fastest["priority"] == "fastest" and fastest["routes"][0]["id"] == "route-1"  # the default, like a maps app

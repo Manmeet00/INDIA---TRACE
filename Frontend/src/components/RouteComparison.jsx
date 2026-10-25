@@ -58,11 +58,29 @@ function timeSource(plan) {
   return plan.traffic ? 'Google · live traffic' : 'OSRM · no traffic'
 }
 
+// Why the first route is first, by the preference the routes were ordered with.
+const FIRST_BECAUSE = { fastest: 'Fastest', shortest: 'Shortest', cautious: 'Fewest reports nearby', balanced: 'Best balance' }
+
+// How a route compares with the first one: "13 min faster · 5 km longer".
+function versusFirst(route, first) {
+  const minutes = Math.round((route.duration_s - first.duration_s) / 60)
+  const km = Math.round((route.distance_m - first.distance_m) / 1000)
+  const time = minutes === 0 ? 'Same time' : `${formatDuration(Math.abs(minutes) * 60)} ${minutes < 0 ? 'faster' : 'slower'}`
+  return km === 0 ? time : `${time} · ${Math.abs(km)} km ${km < 0 ? 'shorter' : 'longer'}`
+}
+
 function RouteCard({ route, index, plan, selected, onSelect }) {
   const advice = adviceFor(route.recommendation || plan.recommendation)
   const highways = Object.entries(route.highways || {})
+  const routes = plan.routes
+  const several = routes.length > 1
+  // Which route holds each record, whatever the order: a route can be first without being the fastest.
+  const fastest = several && route.duration_s === Math.min(...routes.map((item) => item.duration_s))
+  const shortest = several && route.distance_m === Math.min(...routes.map((item) => item.distance_m))
+  const label = index === 0 ? (several ? FIRST_BECAUSE[plan.priority] || 'Top estimate' : 'Only route') : 'Alternative'
   return <button className={`route-card ${selected ? 'selected' : ''}`} onClick={onSelect} aria-pressed={selected}><span className="route-radio"/>
-    <span className="route-main"><b>Route {index + 1} · {index === 0 ? 'Top estimate' : 'Alternative'}</b><small>{exposureSummary(route.exposure)} · vehicle fit unknown</small>
+    <span className="route-main"><b>Route {index + 1} · {label}</b>
+      {several && <span className="route-records">{fastest && <i className="record fast">Fastest</i>}{shortest && <i className="record">Shortest</i>}{index > 0 && <em>{versusFirst(route, routes[0])}</em>}</span>}<small>{exposureSummary(route.exposure)} · vehicle fit unknown</small>
       <span className="route-facts"><span title={route.duration_no_traffic_s ? `${formatDuration(route.duration_no_traffic_s)} without traffic` : undefined}><Icon name="clock" size={14}/>{formatDuration(route.duration_s)}<i className={`time-source${plan.traffic ? ' live' : ''}`}>{timeSource(plan)}</i></span><span><Icon name="route" size={14}/>{formatDistance(route.distance_m)}</span>{route.tolls && <span><Icon name="toll" size={14}/>{tollSummary(route.tolls)}</span>}</span>
       {highways.length > 0 && <span className="route-roads">{highways.map(([road, metres]) => <Milestone key={road} road={road} detail={`${Math.round(metres / 1000)} km`}/>)}</span>}
     </span>
