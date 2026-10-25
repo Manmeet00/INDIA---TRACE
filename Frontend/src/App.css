@@ -528,6 +528,11 @@
 .evidence-media iframe { display: block; width: 100%; border: 0; border-radius: 8px; background: #000; }
 .evidence-media.instagram iframe, .evidence-media.facebook iframe { background: var(--card); border: 1px solid var(--line); }
 .evidence-media figcaption { margin-top: 5px; color: var(--faint); font-size: var(--fs-xs); line-height: 1.4; }
+.evidence-media .embed-caption { display: grid; gap: 6px; }
+.embed-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.embed-actions a, .embed-actions button { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--route); background: var(--card); font-size: var(--fs-sm); font-weight: 700; text-decoration: none; cursor: pointer; }
+.embed-actions a:hover, .embed-actions button:hover { border-color: var(--route); }
+.evidence-media.facebook iframe[style*="aspect-ratio"] { background: #000; }
 .embed-load { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px; border: 1px solid var(--line); border-radius: 8px; color: var(--text); background: linear-gradient(135deg, var(--paper), #e6eef8); text-align: left; }
 .embed-load:hover { border-color: var(--route); }
 .embed-load b { display: block; font-size: var(--fs-base); }

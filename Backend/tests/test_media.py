@@ -19,10 +19,13 @@ from conftest import FETCH, SEARCH
     ("https://www.facebook.com/NortheastToday/posts/12345",
      "facebook", "https://www.facebook.com/plugins/post.php?href=https%3A%2F%2Fwww.facebook.com%2FNortheastToday%2Fposts%2F12345&show_text=true&width=500"),
     ("https://m.facebook.com/page/videos/98765",
-     "facebook", "https://www.facebook.com/plugins/video.php?href=https%3A%2F%2Fwww.facebook.com%2Fpage%2Fvideos%2F98765&show_text=true&width=500"),
+     "facebook", "https://www.facebook.com/plugins/video.php?href=https%3A%2F%2Fwww.facebook.com%2Fpage%2Fvideos%2F98765&show_text=false&width=500"),
 ])
 def test_embeds_from_source_urls(url, kind, embed):
-    assert media.embed_for(url) == {"kind": kind, "embed_url": embed, "site": {"youtube": "YouTube", "instagram": "Instagram", "facebook": "Facebook"}[kind]}
+    expected = {"kind": kind, "embed_url": embed, "site": {"youtube": "YouTube", "instagram": "Instagram", "facebook": "Facebook"}[kind]}
+    if kind == "facebook":  # a Facebook video plays in a video-shaped frame, without the post text
+        expected["format"] = "video" if "video.php" in embed else "post"
+    assert media.embed_for(url) == expected
 
 
 @pytest.mark.parametrize("url", ["https://www.youtube.com/", "https://www.instagram.com/", "https://www.facebook.com/page",

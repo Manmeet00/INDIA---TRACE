@@ -47,13 +47,16 @@ function Provenance({ incident }) {
   </details>
 }
 
-// Player sizes for each site's official embed.
-const EMBED_FRAMES = { youtube: { ratio: '16 / 9' }, instagram: { height: 560 }, facebook: { height: 520 } }
+// Player sizes for each site's official embed. A Facebook video gets a video-shaped frame: its player is no taller,
+// and a refusal ("Unavailable") then fills the frame instead of leaving blank space under it.
+const EMBED_FRAMES = { youtube: { ratio: '16 / 9' }, instagram: { height: 560 }, facebook: { height: 520 }, 'facebook-video': { ratio: '16 / 9' } }
 const EMBED_NOUN = { youtube: 'video', instagram: 'post', facebook: 'post' }
 
 // The source's own picture or video. Embeds load only when asked, so opening a report sends nothing to
 // YouTube, Instagram or Facebook; a picture that fails to load (some sites block it) is simply left out.
-function EvidenceMedia({ media }) {
+// The page cannot see inside a site's player, so when an owner does not allow embedding (Facebook shows
+// "Unavailable") the caption offers the post on the site itself, and the player can be hidden again.
+function EvidenceMedia({ media, sourceUrl }) {
   const [showEmbed, setShowEmbed] = useState(false)
   const [imageFailed, setImageFailed] = useState(false)
   if (!media) return null
@@ -64,17 +67,20 @@ function EvidenceMedia({ media }) {
       <figcaption>Picture from the {media.site} page. It may be a file photo, not this exact incident.</figcaption>
     </figure>
   }
-  const noun = EMBED_NOUN[media.kind] || 'post'
-  const frame = EMBED_FRAMES[media.kind] || { height: 520 }
+  const noun = media.format === 'video' ? 'video' : EMBED_NOUN[media.kind] || 'post'
+  const frame = EMBED_FRAMES[media.format === 'video' ? `${media.kind}-video` : media.kind] || EMBED_FRAMES[media.kind] || { height: 520 }
   return <figure className={`evidence-media embed ${media.kind}`}>
     {showEmbed
       ? <iframe src={media.embed_url} title={`${media.site} ${noun} from the source`} loading="lazy" referrerPolicy="strict-origin-when-cross-origin"
           allow="encrypted-media; picture-in-picture; fullscreen" allowFullScreen style={frame.ratio ? { aspectRatio: frame.ratio } : { height: frame.height }}/>
       : <button type="button" className="embed-load" onClick={() => setShowEmbed(true)}>
-          <span className="embed-play" aria-hidden="true">{media.kind === 'youtube' ? '▶' : '◩'}</span>
+          <span className="embed-play" aria-hidden="true">{media.kind === 'youtube' || noun === 'video' ? '▶' : '◩'}</span>
           <span><b>Show the {media.site} {noun}</b><small>The source’s own {noun}, loaded from {media.site.toLowerCase()}.com</small></span>
         </button>}
-    <figcaption>{showEmbed ? `Shown by ${media.site}. A private or removed ${noun} will not appear.` : `Nothing loads from ${media.site} until you choose to.`}</figcaption>
+    {showEmbed
+      ? <figcaption className="embed-caption"><span>Shown by {media.site}. If it says Unavailable, the owner does not allow it to be shown here, or it was removed.</span>
+          <span className="embed-actions">{sourceUrl && <a href={sourceUrl} target="_blank" rel="noreferrer">Open on {media.site} <Icon name="arrow" size={13}/></a>}<button type="button" onClick={() => setShowEmbed(false)}>Hide</button></span></figcaption>
+      : <figcaption>Nothing loads from {media.site} until you choose to.</figcaption>}
   </figure>
 }
 
@@ -160,7 +166,7 @@ export default function EvidenceDesk({ incident, incidents, visibleCount, scopes
       <h3>{incident.title}</h3>
       <div className="incident-meta"><span><Icon name="pin" size={15}/>{locationText(incident)}</span><span><Icon name="layers" size={15}/>{incident.regions?.length ? incident.regions.join(', ') : 'Region not named in source'}</span><span><Icon name="clock" size={15}/>{formatPublished(incident)}</span></div>
       {matchReason !== undefined && <p className={`route-match${matchReason ? '' : ' off'}`}><Icon name="route" size={16}/><span><b>{matchReason ? 'Why it is on this route' : 'Not matched to this route'}</b>{matchReason || 'Opened from the map or the list of all reports.'}</span></p>}
-      <EvidenceMedia key={`media-${incident.id}`} media={incident.media}/>
+      <EvidenceMedia key={`media-${incident.id}`} media={incident.media} sourceUrl={incident.source_url}/>
       <p className="incident-summary">{incident.summary || 'No source summary provided.'}</p>
       <ReportHints incident={incident} incidents={incidents} onSelect={onSelect}/>
       <div className="source-link"><span className="source-avatar">{incident.source_name.slice(0, 1).toUpperCase()}</span><span><b>{incident.source_name}</b><small>Collected {formatTime(incident.collected_at)}</small></span><a href={incident.source_url} target="_blank" rel="noreferrer" aria-label={`Open source: ${incident.source_name}`}><Icon name="arrow" size={16}/></a></div>

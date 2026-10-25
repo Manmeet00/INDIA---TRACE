@@ -532,6 +532,26 @@ def test_evidence_desk_shows_the_sources_own_video_and_hides_a_picture_that_will
 
 
 
+def test_a_facebook_video_that_refuses_embedding_can_be_opened_on_facebook_or_hidden(dashboard, add_incident):
+    url = "https://www.facebook.com/61570749780277/videos/1093339910158314"
+    add_incident("fbvideo", summary="HMVs halted at Lakhanpur on NH44", source_url=url)
+    page = dashboard
+    page.route("https://www.facebook.com/plugins/**", lambda route: route.fulfill(status=200, body="<p>Unavailable</p>", headers={"content-type": "text/html"}))
+    page.open()
+    page.locator(".evidence-row", has_text="Report fbvideo").click()
+    expect(page.locator(".embed-load")).to_contain_text("Show the Facebook video")
+    page.locator(".embed-load").click()
+    frame = page.locator(".evidence-media iframe")
+    expect(frame).to_have_attribute("src", re.compile(r"plugins/video\.php.*show_text=false"))
+    box = frame.bounding_box()
+    assert abs(box["height"] - box["width"] * 9 / 16) < 2  # video-shaped: no blank space under a refusal
+    expect(page.locator(".embed-caption")).to_contain_text("If it says Unavailable, the owner does not allow it to be shown here")
+    expect(page.locator(".embed-actions a")).to_have_attribute("href", url)
+    page.locator(".embed-actions button", has_text="Hide").click()
+    expect(page.locator(".evidence-media iframe")).to_have_count(0)
+    expect(page.locator(".embed-load")).to_be_visible()
+
+
 def test_start_is_your_location_and_destination_is_chosen(dashboard):
     page = dashboard
     page.add_init_script(geolocation("ok({ coords: { latitude: 26.18, longitude: 91.75 } })"))

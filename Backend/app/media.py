@@ -64,9 +64,10 @@ def embed_for(url: str | None) -> dict[str, str] | None:
     if host == "facebook.com" and len(segments) >= 2:
         canonical = f"https://www.facebook.com{parts.path}"
         video = any(segment in ("videos", "reel", "reels", "watch") for segment in segments)
-        plugin = "video.php" if video else "post.php"
-        return {"kind": "facebook", "embed_url": f"https://www.facebook.com/plugins/{plugin}?href={quote(canonical, safe='')}&show_text=true&width=500",
-                "site": "Facebook"}
+        # A video plays in a video-shaped frame without the post text (the evidence desk shows the text already).
+        plugin, text = ("video.php", "false") if video else ("post.php", "true")
+        return {"kind": "facebook", "format": "video" if video else "post", "site": "Facebook",
+                "embed_url": f"https://www.facebook.com/plugins/{plugin}?href={quote(canonical, safe='')}&show_text={text}&width=500"}
     return None
 
 
