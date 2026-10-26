@@ -4,9 +4,11 @@ export const MASK_COLOR = '#e2ece7'
 export const BORDER_COLOR = '#0e1a2b'
 
 
-// The device's position: a blue dot, centred at town level when no route is planned.
+// The device's position: a blue dot, centred at street level when no route is planned (or when "my location" is
+// pressed): at zoom 17 the map's scale bar (SCALE_WIDTH wide) reads 100 m anywhere in India.
 export const HERE_COLOR = '#1a73e8'
-export const HERE_ZOOM = 12
+export const HERE_ZOOM = 17
+export const SCALE_WIDTH = 120
 export const INDIA_BOUNDS = [[5.5, 67], [38, 98.5]]
 
 export function inIndia(here) {

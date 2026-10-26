@@ -10,7 +10,7 @@ import MapplsMap from './MapplsMap.jsx'
 import { useMapLayers } from '../hooks/useMapLayers.js'
 import { BASE_LAYERS, GIBS, OVERLAYS, aqiTone } from '../lib/mapLayers.js'
 import { INACTIVE_STATES, MAP_CATEGORIES, formatTime, mapCategory, placeName, statusLabel } from '../lib/format.js'
-import { BORDER_COLOR, HERE_COLOR, HERE_ZOOM, INDIA_BOUNDS, MASK_COLOR, inIndia, insideBoundary } from '../lib/mapStyle.js'
+import { BORDER_COLOR, HERE_COLOR, HERE_ZOOM, INDIA_BOUNDS, MASK_COLOR, SCALE_WIDTH, inIndia, insideBoundary } from '../lib/mapStyle.js'
 import { placeNamesInView } from '../lib/placeNames.js'
 import { drawRoadTile } from '../lib/hybridRoads.js'
 import { bearingAt, pointAlong, prepareRoute, progress, sliceRoute } from '../lib/navigation.js'
@@ -295,7 +295,7 @@ function DashboardMap({ plan, incidents, selectedRoute, selectedIncident, onSele
     {BASE_LAYERS[base].labels && <Pane name="place-labels" style={{ zIndex: 380, pointerEvents: 'none' }}><PlaceLabels boundary={boundary}/></Pane>}
     <DetailLayers overlays={overlays} here={here} plan={plan}/>
     <ZoomControl position="bottomright" />
-    <ScaleControl position="bottomright" imperial={false}/>
+    <ScaleControl position="bottomright" imperial={false} maxWidth={SCALE_WIDTH}/>
     {!navigating && <HereLayer here={here} hasPlan={Boolean(plan)} focusKey={focusKey}/>}
     {navigating && route && <NavigationLayer line={route.geometry.coordinates} here={here} {...navigation}/>}
     {!navigating && <HighwayReports route={route} incidents={incidents.filter(shown)} selectedIncident={selectedIncident} onSelectIncident={onSelectIncident}/>}
