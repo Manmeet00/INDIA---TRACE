@@ -313,6 +313,9 @@
 .locate-button { position: absolute; z-index: 450; right: 10px; bottom: 160px; display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 2px; color: #666; background: #fff; box-shadow: rgba(0, 0, 0, .3) 0 1px 4px -1px; }
 .fullscreen-button { position: absolute; z-index: 450; right: 10px; bottom: 210px; display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 2px; color: #666; background: #fff; box-shadow: rgba(0, 0, 0, .3) 0 1px 4px -1px; }
 .fullscreen-button:hover, .locate-button:hover:not(:disabled) { color: var(--route); }
+/* Mappls puts its compass, 3D and zoom controls at the bottom right: our two buttons go under the layers button. */
+.map-wrap.on-mappls .fullscreen-button { top: 54px; bottom: auto; }
+.map-wrap.on-mappls .locate-button { top: 102px; bottom: auto; }
 .map-wrap.fullscreen { position: fixed; z-index: 2000; inset: 0; width: 100%; height: 100%; }
 /* Full screen hides the credits under the map; the tile licences still need them, so they sit behind an "i". */
 .map-credit { position: absolute; z-index: 400; right: 60px; bottom: 8px; display: flex; flex-direction: row-reverse; align-items: center; gap: 6px; max-width: calc(100% - 120px); }

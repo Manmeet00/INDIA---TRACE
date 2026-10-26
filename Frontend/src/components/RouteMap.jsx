@@ -398,19 +398,24 @@ export default function RouteMap({ plan, mapConfig, here, hereProblem, onRetryHe
   const onUserMove = useCallback(() => setView({ following: false, overview: false }), [])
   const recentre = () => setView({ following: true, overview: false })
   const toggleOverview = () => setView((current) => (current.overview ? { following: true, overview: false } : { following: false, overview: true }))
-  const useMappls = mapConfig?.provider === 'mappls' && !mapplsProblem
-  const credit = `${useMappls ? 'Map © Mappls (MapmyIndia)' : [BASE_LAYERS[layers.base].credit, ...layers.overlays.map((key) => OVERLAYS[key].credit)].join(' · ')} · India boundary: Survey of India`
+  // Mappls draws only its own map style (with its own traffic button). Satellite, terrain and the other details are
+  // drawn on the OpenStreetMap map, so choosing one of them switches to it, and Default brings Mappls back.
+  const mapplsReady = mapConfig?.provider === 'mappls' && !mapplsProblem
+  const details = layers.overlays.filter((key) => OVERLAYS[key].kind !== 'mappls')
+  const useMappls = mapplsReady && layers.base === 'default' && details.length === 0
+  const credit = `${useMappls ? 'Map © Mappls (MapmyIndia)' : [BASE_LAYERS[layers.base].credit, ...details.map((key) => OVERLAYS[key].credit)].join(' · ')} · India boundary: Survey of India`
   return <article className="panel map-panel" aria-label="Map">
     {mapplsProblem && <p className="map-fallback" role="status">{mapplsProblem} Showing OpenStreetMap instead.</p>}
-    <div className={`map-wrap${fullscreen.on ? ' fullscreen' : ''}${navigating ? ' navigating' : ''}`} ref={wrap}>{!mapConfig ? <div className="map-canvas"/> : useMappls && !navigating
+    <div className={`map-wrap${fullscreen.on ? ' fullscreen' : ''}${navigating ? ' navigating' : ''}${useMappls && !navigating ? ' on-mappls' : ''}`} ref={wrap}>{!mapConfig ? <div className="map-canvas"/> : useMappls && !navigating
       ? <MapplsMap apiKey={mapConfig.mappls_key} plan={plan} boundary={boundary} here={here} focusKey={focusKey} {...mapProps} onUnavailable={onUnavailable}/>
-      : <DashboardMap plan={plan} boundary={boundary} here={here} focusKey={focusKey} base={layers.base} overlays={layers.overlays} navigation={navigating ? { now, focus, ...view, onUserMove } : null} {...mapProps}/>}
+      : <DashboardMap plan={plan} boundary={boundary} here={here} focusKey={focusKey} base={layers.base} overlays={details} navigation={navigating ? { now, focus, ...view, onUserMove } : null} {...mapProps}/>}
       {navigation ? <NavigationPanel {...navigation} prepared={prepared} now={now} here={here} following={view.following}
         previewStep={previewing ? Math.min(previewStep, (prepared?.steps.length || 1) - 1) : null}
         onPreviewStep={(index) => { setPreviewStep(index); setView({ following: true, overview: false }) }}
         onRecentre={recentre} overview={view.overview} onOverview={toggleOverview}/> : <MapSearch onSearch={onSearch} status={searchStatus}/>}
       {plan && onStart && !navigation && <button type="button" className="map-start" onClick={onStart}><Icon name={startMode === 'preview' ? 'route' : 'navigate'} size={18}/> {startMode === 'preview' ? 'Preview' : 'Start'}</button>}
-      {mapConfig && <LayersPanel base={layers.base} overlays={layers.overlays} onBase={layers.setBase} onToggle={layers.toggleOverlay} mappls={useMappls}/>}
+      {mapConfig && <LayersPanel base={layers.base} overlays={details} onBase={layers.setBase} onToggle={layers.toggleOverlay}
+        mappls={mapplsReady} showingMappls={useMappls} onMappls={layers.showDefault}/>}
       <button type="button" className="locate-button" onClick={() => (here ? setFocusKey((key) => key + 1) : onRetryHere())} disabled={Boolean(here) && !inIndia(here)} aria-label="Show my location" title={inIndia(here) ? 'Show my location' : here ? hereText : `${hereText} Press to try again.`}><Icon name="locate" size={20}/></button>
       <button type="button" className="fullscreen-button" onClick={fullscreen.toggle} aria-pressed={fullscreen.on} aria-label={fullscreen.on ? 'Exit full screen' : 'Show the map full screen'} title={fullscreen.on ? 'Exit full screen (Esc)' : 'Full screen'}><Icon name={fullscreen.on ? 'fullscreen-exit' : 'fullscreen'} size={20}/></button>
       {fullscreen.on && <details className="map-credit"><summary aria-label="Map credits" title="Map credits">i</summary><small>{credit}</small></details>}{!navigation && <div className="map-legend"><span><i className="legend-route"/> Selected route</span><span><i className="legend-candidate"/> Other candidates</span><span><i className="legend-symbol" dangerouslySetInnerHTML={{ __html: incidentIconHtml('accident') }}/> Road reports</span><span><i className="legend-here"/> You</span></div>}</div>

@@ -25,5 +25,6 @@ export function useMapLayers() {
   const toggleOverlay = useCallback((key) => setLayers((current) => ({
     ...current, overlays: current.overlays.includes(key) ? current.overlays.filter((item) => item !== key) : [...current.overlays, key],
   })), [])
-  return { ...layers, setBase, toggleOverlay }
+  const showDefault = useCallback(() => setLayers({ base: 'default', overlays: [] }), [])
+  return { ...layers, setBase, toggleOverlay, showDefault }
 }

@@ -1187,3 +1187,30 @@ def test_a_report_naming_only_a_highway_is_shown_on_that_stretch_of_the_route(da
     expect(page.locator(".leaflet-tooltip")).to_contain_text("1 report names NH-6 · exact spot unknown")
     marker.click()
     expect(page.locator(".selected-incident h3")).to_have_text("Report hw")
+
+
+def test_with_mappls_every_layer_works_and_the_buttons_clear_its_controls(dashboard, mappls_key):
+    page = dashboard
+    page.route("https://sdk.mappls.com/**", lambda route: route.fulfill(status=200, body=FAKE_MAPPLS_SDK, headers={"content-type": "text/javascript"}))
+    page.open()
+    expect(page.locator(".mappls-canvas[data-mappls=ready]")).to_have_count(1)
+    expect(page.locator(".map-wrap.on-mappls")).to_have_count(1)
+    # Our buttons sit under the layers button, away from Mappls' compass, 3D and zoom controls at the bottom right.
+    assert page.locator(".fullscreen-button").evaluate("(el) => getComputedStyle(el).top") == "54px"
+    assert page.locator(".locate-button").evaluate("(el) => getComputedStyle(el).top") == "102px"
+
+    page.click(".layers-button")
+    expect(page.locator(".layer-tile", has_text="Default")).to_contain_text("Mappls street names")
+    expect(page.locator(".layer-tile", has_text="Traffic")).to_have_attribute("aria-pressed", "true")
+    page.locator(".layer-tile", has_text="Satellite").click()  # drawn on OpenStreetMap
+    expect(page.locator(".leaflet-container")).to_have_count(1)
+    expect(page.locator(".mappls-canvas")).to_have_count(0)
+    expect(page.locator(".map-foot")).to_contain_text("Imagery © Esri")
+    page.locator(".layer-tile", has_text="Rainfall").click()
+    expect(page.locator(".layer-tile", has_text="Rainfall")).to_have_attribute("aria-pressed", "true")
+
+    page.locator(".layer-tile", has_text="Traffic").click()  # back to Mappls, whose traffic button is on the map
+    expect(page.locator(".mappls-canvas[data-mappls=ready]")).to_have_count(1)
+    expect(page.locator(".map-foot")).to_contain_text("Map © Mappls (MapmyIndia)")
+    expect(page.locator(".layer-tile", has_text="Rainfall")).to_have_attribute("aria-pressed", "false")
+    expect(page.locator(".layer-tile", has_text="Default")).to_have_attribute("aria-checked", "true")
