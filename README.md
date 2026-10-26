@@ -66,6 +66,27 @@ The pilot corridor is **NH-6 / NH-306, Guwahati – Shillong – Silchar – Aiz
 - SQLite instead of the PostgreSQL + PostGIS in the proposal: it needs no setup on the demo laptop. PostGIS is the scale-up path.
 - The original shipment trace/event API is preserved under `/api/v1/*`.
 
+## Deploy for free (Vercel + Render)
+
+The dashboard is a static site; the API is a small Python service. Both deploy from this GitHub repository.
+
+1. **Backend on Render.** On render.com choose *New → Blueprint* and pick this repository; `render.yaml` sets it up.
+   Enter `TINYFISH_API_KEY` when asked (and `GOOGLE_MAPS_API_KEY` for live-traffic times, optional). Leave
+   `CORS_ORIGINS` for step 3. Render generates `ADMIN_TOKEN`: that is the reviewer key. When the service is live,
+   `https://<service>.onrender.com/api/health` answers `"status": "ok"`.
+2. **Dashboard on Vercel.** On vercel.com choose *Add New → Project*, import this repository and set
+   *Root Directory* to `Frontend` (Vite is detected). Add the environment variable
+   `VITE_API_URL=https://<service>.onrender.com`, then deploy.
+3. **Connect them.** In Render, set `CORS_ORIGINS` to the Vercel address (for example `https://india-trace.vercel.app`,
+   no trailing slash) and save; Render restarts the API.
+
+On the public site anyone can view reports and plan routes. Collecting, re-checking and reviewing need the
+reviewer key (sidebar → *Reviewer sign-in*), so visitors never spend the team's TinyFish searches.
+
+Free-plan limits: the Render service sleeps after 15 minutes without visitors (the next visit takes about a minute
+to wake it, and no collection runs while it sleeps), and its disk is not kept, so reports are collected afresh after
+each deploy or restart.
+
 ## Tests
 
 ```sh

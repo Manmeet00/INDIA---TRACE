@@ -26,6 +26,9 @@ class Settings:
         # Google Routes API key (server-side only). With it, routes and times come from Google with live traffic;
         # without it, or when Google fails, from OSRM without traffic.
         self.google_maps_api_key = os.getenv("GOOGLE_MAPS_API_KEY", "").strip()
+        # On a public deployment, the team's token for actions that spend TinyFish quota or change records
+        # (collections, re-checks, reviews, flags, traces). Empty, as on a laptop, leaves every action open.
+        self.admin_token = os.getenv("ADMIN_TOKEN", "").strip()
         self.geocoder_user_agent = os.getenv("GEOCODER_USER_AGENT", "INDIA-TRACE/0.1 (hackathon demo)")
         # 0 turns scheduled collection off; otherwise the pilot searches run every N minutes.
         self.collection_interval_minutes = int(os.getenv("COLLECTION_INTERVAL_MINUTES", "0") or 0)

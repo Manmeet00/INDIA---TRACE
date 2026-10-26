@@ -1,0 +1,29 @@
+# Render Blueprint for the INDIA-TRACE backend (render.com → New → Blueprint → this repository).
+# The free plan sleeps after 15 minutes without visitors and does not keep its disk: the SQLite database starts
+# empty after each deploy or restart, and the first collection runs as soon as the service starts.
+services:
+  - type: web
+    name: india-trace-api
+    runtime: python
+    plan: free
+    rootDir: Backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.5
+      - key: TINYFISH_API_KEY
+        sync: false          # entered in the Render dashboard, never committed
+      - key: ADMIN_TOKEN
+        generateValue: true  # the reviewer key; copy it from the service's Environment page
+      - key: CORS_ORIGINS
+        sync: false          # the dashboard's address, e.g. https://india-trace.vercel.app
+      - key: GOOGLE_MAPS_API_KEY
+        sync: false          # optional: live-traffic times
+      - key: COLLECTION_INTERVAL_MINUTES
+        value: "10"
+      - key: COLLECTION_WINDOW_DAYS
+        value: "30"
+      - key: REGION
+        value: northeast

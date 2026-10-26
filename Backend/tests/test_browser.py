@@ -66,7 +66,7 @@ def dashboard(client, providers, built_frontend, browser):
         if url.netloc != urlsplit(ORIGIN).netloc:
             return route.abort()  # map tiles, web fonts: the tests never depend on the internet
         if url.path.startswith("/api/"):
-            headers = {"content-type": request.headers["content-type"]} if "content-type" in request.headers else {}
+            headers = {name: request.headers[name] for name in ("content-type", "authorization") if name in request.headers}
             response = client.request(request.method, url.path + (f"?{url.query}" if url.query else ""),
                                       content=request.post_data_buffer, headers=headers)
             return route.fulfill(status=response.status_code, body=response.content,
@@ -1140,3 +1140,31 @@ def test_route_times_say_where_they_come_from_and_google_turns_are_worded_by_goo
     page.locator(".start-button").click()
     expect(page.locator(".nav-road")).to_contain_text("Turn right")
     expect(page.locator(".nav-road b")).to_have_text("Mawlai Bypass")
+
+
+# --- Public deployment ---------------------------------------------------------------------
+
+def test_on_a_public_site_visitors_plan_without_spending_searches_and_reviewers_sign_in(dashboard, tinyfish_network, monkeypatch):
+    monkeypatch.setenv("ADMIN_TOKEN", "team-secret")
+    get_settings.cache_clear()
+    page = dashboard
+    started = []
+    page.on("request", lambda request: started.append(request.url) if "/api/collection/jobs" in request.url else None)
+    page.open()
+    plan(page, "Guwahati, Assam", "Shillong, Meghalaya")
+    expect(page.locator(".route-card")).to_have_count(2)  # planning stays open to everyone
+    expect(page.locator(".live-check")).to_contain_text("Live check is for signed-in reviewers")
+    assert started == []  # and a visitor never starts a TinyFish search
+
+    page.locator(".reviewer-access summary").click()
+    page.fill("[aria-label='Reviewer key']", "wrong")
+    page.click(".reviewer-access button[type=submit]")
+    expect(page.locator(".reviewer-error")).to_have_text("That key is not right.")
+    page.fill("[aria-label='Reviewer key']", "team-secret")
+    page.click(".reviewer-access button[type=submit]")
+    expect(page.locator(".reviewer-access.on")).to_contain_text("Signed in as reviewer")
+
+    plan(page, "Guwahati, Assam", "Shillong, Meghalaya")
+    expect(page.locator(".live-check")).not_to_contain_text("signed-in reviewers")
+    expect(page.locator(".live-check")).to_contain_text("Live check")
+    assert len(started) == 1

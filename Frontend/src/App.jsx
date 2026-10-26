@@ -9,6 +9,7 @@ import EvidenceDesk from './components/EvidenceDesk.jsx'
 import EvidenceList from './components/EvidenceList.jsx'
 import Monitoring from './components/Monitoring.jsx'
 import RegionCoverage from './components/RegionCoverage.jsx'
+import ReviewerSignIn from './components/ReviewerSignIn.jsx'
 import SummaryCards from './components/SummaryCards.jsx'
 import { useWorkspace } from './hooks/useWorkspace.js'
 import { useEvidenceFilters } from './hooks/useEvidenceFilters.js'
@@ -58,6 +59,9 @@ function App() {
   const [message, setMessage] = useState('')
   const [liveCheck, setLiveCheck] = useState(null)
   const [navigating, setNavigating] = useState(null) // 'live' (following the route) or 'preview' (stepping through it)
+  // On a public deployment (the API reports admin_required), visitors read and plan; signed-in reviewers also collect.
+  const [reviewer, setReviewer] = useState(() => Boolean(api.getReviewerToken()))
+  const teamOnly = Boolean(schedule?.admin_required) && !reviewer
   const planToken = useRef(0)
   const lastRequest = useRef(null)
 
@@ -79,6 +83,11 @@ function App() {
     const towns = [payload.origin, payload.destination].filter((stop) => stop.query !== 'Your location')
       .map((stop) => placeName(stop)).join(' ').replace(/[^A-Za-z .'-]/g, '').trim().slice(0, 60)
     if (!current()) return
+    if (teamOnly) {  // a live check spends the team's TinyFish searches
+      const every = schedule?.collection_interval_minutes ? `; new ones are collected every ${schedule.collection_interval_minutes} min` : ''
+      setLiveCheck({ state: 'skipped', text: `Live check is for signed-in reviewers. Showing the reports collected so far${every}.` })
+      return
+    }
     if (!main && !towns) {  // nothing to search for: an empty request would run the whole region's searches
       setLiveCheck({ state: 'skipped', text: 'Live check not run: this route names no highway or town to search for.' })
       return
@@ -261,6 +270,7 @@ function App() {
       </nav>
       <div className="sidebar-bottom">
         <div className="offline-card"><span className={`status-dot ${apiStatus}`} /><span><b>{statusLabel}</b><small>{apiStatus === 'online' ? scheduleNote : statusNote}</small></span></div>
+        {schedule?.admin_required && <ReviewerSignIn signedIn={reviewer} onChange={setReviewer}/>}
         <div className="sidebar-note"><span className="sidebar-landscape" aria-hidden="true">⌁</span><p>Road intelligence for essential deliveries across Northeast India.</p></div>
         <div className="team-card"><div className="team-avatar">TT</div><div><b>Team Tech Titans</b><small>INDIA-TRACE workspace</small></div></div>
       </div>

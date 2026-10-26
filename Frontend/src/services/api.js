@@ -16,17 +16,32 @@ async function readJson(response, fallback) {
   throw apiError(message || `${fallback} (HTTP ${response.status})`, response.status)
 }
 
+// A public deployment (ADMIN_TOKEN on the backend) lets only the team collect, re-check and review. A reviewer's
+// token is kept in this browser and sent with every request; without one, reading and route planning still work.
+const TOKEN_KEY = 'indiatrace-reviewer-token'
+let reviewerToken = ''
+try { reviewerToken = localStorage.getItem(TOKEN_KEY) || '' } catch { /* storage blocked: sign in again per visit */ }
+export const getReviewerToken = () => reviewerToken
+export function setReviewerToken(token) {
+  reviewerToken = token || ''
+  try { if (reviewerToken) localStorage.setItem(TOKEN_KEY, reviewerToken); else localStorage.removeItem(TOKEN_KEY) } catch { /* kept for this visit only */ }
+}
+
 // Longer than the backend's own provider timeouts, so a slow provider reports its own error first.
 const TIMEOUT_MS = { read: 20000, plan: 60000 }
 
-async function request(path, fallback, { method = 'GET', body, timeoutMs = TIMEOUT_MS.read } = {}) {
+async function request(path, fallback, { method = 'GET', body, timeoutMs = TIMEOUT_MS.read, token = reviewerToken } = {}) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
+  const headers = {
+    ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  }
   let response
   try {
     response = await fetch(`${API_URL}${path}`, {
-      method, signal: controller.signal,
-      ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+      method, signal: controller.signal, headers,
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     })
     return await readJson(response, fallback)
   } catch (error) {
@@ -38,6 +53,9 @@ async function request(path, fallback, { method = 'GET', body, timeoutMs = TIMEO
 }
 
 export const getHealth = () => request('/api/health', 'API health check failed.')
+
+/** Resolves when the backend accepts this reviewer token; rejects with its explanation otherwise. */
+export const checkReviewerToken = (token) => request('/api/admin/check', 'Could not check the reviewer key.', { token })
 
 // The API's maximum; the default page of 100 would silently leave older reports out.
 export const listIncidents = () => request('/api/incidents?limit=2000', 'Could not load evidence records.')

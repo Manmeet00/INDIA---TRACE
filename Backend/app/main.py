@@ -2,11 +2,12 @@ import asyncio
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timedelta, timezone
 import logging
+import secrets
 import time
 from uuid import uuid4
 import sqlite3
 
-from fastapi import FastAPI, HTTPException, Query, Request, Response, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
@@ -125,6 +126,28 @@ def find_trace(connection: sqlite3.Connection, trace_id: str) -> sqlite3.Row:
     return row
 
 
+ADMIN_ONLY = "Only the project team can do this on the public site. Sign in as a reviewer first."
+
+
+def require_admin(authorization: str | None = Header(default=None)) -> None:
+    """With ADMIN_TOKEN set, the request must carry it as "Authorization: Bearer <token>"; without it, anyone may."""
+    token = get_settings().admin_token
+    if not token:
+        return
+    supplied = (authorization or "").removeprefix("Bearer ").strip()
+    if not secrets.compare_digest(supplied.encode(), token.encode()):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=ADMIN_ONLY)
+
+
+ADMIN = [Depends(require_admin)]
+
+
+@app.get("/api/admin/check", dependencies=ADMIN)
+def admin_check():
+    """Lets the dashboard check a reviewer token before keeping it."""
+    return {"ok": True}
+
+
 @app.get("/health")
 @app.get("/api/health")
 def health():
@@ -133,7 +156,8 @@ def health():
         connection.execute("SELECT 1 FROM incidents LIMIT 1")
     interval = get_settings().collection_interval_minutes
     return {"status": "ok", "service": settings.app_name, "collection_interval_minutes": interval,
-            "next_collection_at": schedule["next_collection_at"] if interval > 0 else None}
+            "next_collection_at": schedule["next_collection_at"] if interval > 0 else None,
+            "admin_required": bool(get_settings().admin_token)}
 
 
 @app.post("/api/routes/plan")
@@ -178,7 +202,7 @@ def get_incident(incident_id: str):
         return find_incident(connection, incident_id)
 
 
-@app.patch("/api/incidents/{incident_id}/review", response_model=IncidentOut)
+@app.patch("/api/incidents/{incident_id}/review", response_model=IncidentOut, dependencies=ADMIN)
 def review_incident(incident_id: str, payload: IncidentReview):
     reviewed_at = datetime.now(timezone.utc).isoformat()
     with get_connection() as connection:
@@ -207,7 +231,7 @@ def review_incident(incident_id: str, payload: IncidentReview):
         return find_incident(connection, incident_id)
 
 
-@app.post("/api/incidents/{incident_id}/flags", response_model=IncidentOut, status_code=status.HTTP_201_CREATED)
+@app.post("/api/incidents/{incident_id}/flags", response_model=IncidentOut, status_code=status.HTTP_201_CREATED, dependencies=ADMIN)
 def flag_incident(incident_id: str, payload: IncidentFlag):
     """User correction (report section 5): flags a record for review without changing its status."""
     with get_connection() as connection:
@@ -229,7 +253,7 @@ def _collection_plan(payload: CollectionRequest | None) -> tuple[list[dict[str, 
     return searches, "targeted" if targeted else "manual", payload.window_days * 1440 if payload.window_days else None, payload.source_categories
 
 
-@app.post("/api/collection/run", response_model=CollectionResult)
+@app.post("/api/collection/run", response_model=CollectionResult, dependencies=ADMIN)
 def run_collection(payload: CollectionRequest | None = None):
     """Runs the collection and answers when it has finished. The dashboard uses /api/collection/jobs instead."""
     searches, trigger, recency, categories = _collection_plan(payload)
@@ -237,7 +261,7 @@ def run_collection(payload: CollectionRequest | None = None):
         return collect_candidates(connection, searches, trigger, recency, categories)
 
 
-@app.post("/api/collection/jobs", response_model=JobStarted, status_code=status.HTTP_202_ACCEPTED)
+@app.post("/api/collection/jobs", response_model=JobStarted, status_code=status.HTTP_202_ACCEPTED, dependencies=ADMIN)
 def start_collection_job(response: Response, payload: CollectionRequest | None = None):
     """Starts a collection in the background; follow it with GET /api/collection/runs/{run_id}."""
     if not get_settings().tinyfish_api_key:
@@ -249,14 +273,14 @@ def start_collection_job(response: Response, payload: CollectionRequest | None =
     return {"status": "running", "run_id": run_id, "message": f"Collection started: {len(searches)} searches."}
 
 
-@app.post("/api/recheck", response_model=RecheckResult)
+@app.post("/api/recheck", response_model=RecheckResult, dependencies=ADMIN)
 def recheck(payload: RecheckRequest | None = None):
     """Reads report pages again now. Without ids, re-checks the reports whose lifecycle says they are due."""
     with jobs.exclusive(), get_connection() as connection:
         return recheck_reports(connection, payload.incident_ids if payload else None)
 
 
-@app.post("/api/recheck/jobs", response_model=JobStarted, status_code=status.HTTP_202_ACCEPTED)
+@app.post("/api/recheck/jobs", response_model=JobStarted, status_code=status.HTTP_202_ACCEPTED, dependencies=ADMIN)
 def start_recheck_job(response: Response, payload: RecheckRequest | None = None):
     if not get_settings().tinyfish_api_key:
         response.status_code = status.HTTP_200_OK
@@ -266,7 +290,7 @@ def start_recheck_job(response: Response, payload: RecheckRequest | None = None)
     return {"status": "running", "run_id": run_id, "message": "Re-check started."}
 
 
-@app.post("/api/incidents/{incident_id}/recheck", response_model=IncidentOut)
+@app.post("/api/incidents/{incident_id}/recheck", response_model=IncidentOut, dependencies=ADMIN)
 def recheck_incident(incident_id: str):
     """Reads one report's page again and returns the report with the outcome in its timeline."""
     with get_connection() as connection:
@@ -325,7 +349,7 @@ def locate_named_places():
         return locate_places(connection)
 
 
-@app.post("/api/media/collect")
+@app.post("/api/media/collect", dependencies=ADMIN)
 def collect_media():
     """Reads the link-preview picture of news and web reports not checked yet (collection does this for
     new reports). Video and social posts need no reading: their embed comes from the source URL."""
@@ -392,7 +416,7 @@ def list_traces(
     return {"items": [trace_from_row(row) for row in rows], "total": total, "limit": limit, "offset": offset}
 
 
-@app.post(f"{settings.api_prefix}/traces", response_model=TraceDetail, status_code=status.HTTP_201_CREATED)
+@app.post(f"{settings.api_prefix}/traces", response_model=TraceDetail, status_code=status.HTTP_201_CREATED, dependencies=ADMIN)
 def post_trace(payload: TraceCreate):
     trace_id = f"tr_{uuid4().hex}"
     try:
@@ -413,7 +437,7 @@ def get_trace(trace_id: str):
     return {**trace_from_row(row), "events": [event_from_row(event) for event in events]}
 
 
-@app.patch(f"{settings.api_prefix}/traces/{{trace_id}}", response_model=TraceDetail)
+@app.patch(f"{settings.api_prefix}/traces/{{trace_id}}", response_model=TraceDetail, dependencies=ADMIN)
 def patch_trace(trace_id: str, payload: TraceUpdate):
     with get_connection() as connection:
         row = update_trace(connection, find_trace(connection, trace_id), payload)
@@ -422,7 +446,7 @@ def patch_trace(trace_id: str, payload: TraceUpdate):
     return {**trace_from_row(row), "events": [event_from_row(event) for event in events]}
 
 
-@app.delete(f"{settings.api_prefix}/traces/{{trace_id}}", status_code=status.HTTP_204_NO_CONTENT)
+@app.delete(f"{settings.api_prefix}/traces/{{trace_id}}", status_code=status.HTTP_204_NO_CONTENT, dependencies=ADMIN)
 def delete_trace(trace_id: str):
     with get_connection() as connection:
         find_trace(connection, trace_id)
@@ -439,7 +463,7 @@ def list_events(trace_id: str):
     return [event_from_row(row) for row in rows]
 
 
-@app.post(f"{settings.api_prefix}/traces/{{trace_id}}/events", response_model=EventOut,
+@app.post(f"{settings.api_prefix}/traces/{{trace_id}}/events", response_model=EventOut, dependencies=ADMIN,
           status_code=status.HTTP_201_CREATED)
 def post_event(trace_id: str, payload: EventCreate):
     try:

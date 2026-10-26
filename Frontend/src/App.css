@@ -20,6 +20,18 @@
 .offline-card b, .offline-card small { display: block; }
 .offline-card b { font-size: var(--fs-sm); }
 .offline-card small { margin-top: 2px; color: var(--on-ink-muted); font-size: var(--fs-xs); }
+.reviewer-access { margin-top: 8px; padding: 9px 12px; border: 1px solid var(--ink-line); border-radius: 8px; background: var(--ink-2); font-size: var(--fs-xs); color: var(--on-ink-muted); }
+.reviewer-access summary { color: var(--on-ink); font-weight: 700; font-size: var(--fs-sm); cursor: pointer; }
+.reviewer-access form { display: flex; gap: 6px; margin: 8px 0 6px; }
+.reviewer-access input { flex: 1; min-width: 0; padding: 6px 8px; border: 1px solid var(--ink-line); border-radius: 6px; color: var(--on-ink); background: var(--ink); font: inherit; font-size: var(--fs-sm); }
+.reviewer-access button { padding: 6px 10px; border: 0; border-radius: 6px; color: #fff; background: var(--route); font-weight: 700; font-size: var(--fs-xs); cursor: pointer; }
+.reviewer-access button:disabled { opacity: .5; cursor: default; }
+.reviewer-access small { display: block; line-height: 1.4; }
+.reviewer-access .reviewer-error { margin-bottom: 4px; color: #ffb4ae; }
+.reviewer-access.on { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.reviewer-access.on span { display: inline-flex; align-items: center; gap: 6px; color: var(--on-ink); font-weight: 700; }
+.reviewer-access.on i { width: 7px; height: 7px; border-radius: 50%; background: #3ccf8e; }
+.reviewer-access.on button { color: var(--on-ink); background: transparent; border: 1px solid var(--ink-line); }
 .status-dot, .connection-label i { width: 8px; height: 8px; flex: none; border-radius: 50%; background: #d8a64a; }
 .status-dot.online, .connection-label.online i { background: #2ec27e; box-shadow: 0 0 0 3px rgba(46, 194, 126, .18); }
 .status-dot.offline, .connection-label.offline i { background: #e5534b; }
