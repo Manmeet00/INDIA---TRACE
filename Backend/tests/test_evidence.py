@@ -79,11 +79,13 @@ def sourced(incident_id, url, summary, published_at, verification="unverified", 
 
 
 def test_independent_publishers_corroborate_but_reposts_and_unattributable_links_do_not():
+    from datetime import datetime, timedelta, timezone
+    ago = lambda hours: (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()  # recent, whatever today is
     items = by_id([
-        sourced("news", "https://assamtribune.com/nh6-closed", "NH-6 blocked by landslide at Sonapur.", "2026-10-22T08:00:00Z"),
-        sourced("page", "https://www.facebook.com/nemediahub/posts/1", "Traffic on National Highway 6 closed near Sonapur.", "2026-10-22T11:00:00Z"),
-        sourced("same", "https://assamtribune.com/nh6-update", "NH-6 remains closed at Sonapur.", "2026-10-22T12:00:00Z"),
-        sourced("reel", "https://www.instagram.com/reel/abc", "NH-6 blocked, watch.", "2026-10-22T09:00:00Z"),
+        sourced("news", "https://assamtribune.com/nh6-closed", "NH-6 blocked by landslide at Sonapur.", ago(6)),
+        sourced("page", "https://www.facebook.com/nemediahub/posts/1", "Traffic on National Highway 6 closed near Sonapur.", ago(3)),
+        sourced("same", "https://assamtribune.com/nh6-update", "NH-6 remains closed at Sonapur.", ago(2)),
+        sourced("reel", "https://www.instagram.com/reel/abc", "NH-6 blocked, watch.", ago(5)),
     ])
     assert items["news"]["corroborating_ids"] == ["page"]
     assert items["news"]["evidence_status"] == "corroborated"
