@@ -177,17 +177,30 @@ def _safe_preview(url: str) -> str | None:
         return None
 
 
-def collect_preview_images(connection: sqlite3.Connection, incident_ids: list[str] | None = None) -> dict[str, int]:
-    """Read preview images for news and web reports that have not been checked yet (several pages at a time)."""
+def preview_rows(connection: sqlite3.Connection, incident_ids: list[str] | None = None) -> list[sqlite3.Row]:
+    """News and web reports whose preview image has not been checked yet."""
     query = "SELECT id, source_url FROM incidents WHERE page_image_checked_at IS NULL"
     rows = connection.execute(query).fetchall()
     if incident_ids is not None:
         wanted = set(incident_ids)
         rows = [row for row in rows if row["id"] in wanted]
-    rows = [row for row in rows if _host(row["source_url"]) not in SOCIAL_HOSTS][:MAX_PER_RUN]
-    connection.commit()  # no write transaction stays open while pages are read
+    return [row for row in rows if _host(row["source_url"]) not in SOCIAL_HOSTS][:MAX_PER_RUN]
+
+
+def read_preview_images(rows: list[sqlite3.Row]) -> list[str | None]:
+    """The preview image of each row's page (several pages at a time); no database access, so it can run in a thread."""
     with ThreadPoolExecutor(max_workers=WORKERS) as pool:
-        images = list(pool.map(lambda row: _safe_preview(row["source_url"]), rows))
+        return list(pool.map(lambda row: _safe_preview(row["source_url"]), rows))
+
+
+def collect_preview_images(connection: sqlite3.Connection, incident_ids: list[str] | None = None) -> dict[str, int]:
+    """Read preview images for news and web reports that have not been checked yet (several pages at a time)."""
+    rows = preview_rows(connection, incident_ids)
+    connection.commit()  # no write transaction stays open while pages are read
+    return save_preview_images(connection, rows, read_preview_images(rows))
+
+
+def save_preview_images(connection: sqlite3.Connection, rows: list[sqlite3.Row], images: list[str | None]) -> dict[str, int]:
     now = datetime.now(timezone.utc).isoformat()
     for row, image in zip(rows, images):
         connection.execute("UPDATE incidents SET page_image = ?, page_image_checked_at = ? WHERE id = ?", (image, now, row["id"]))

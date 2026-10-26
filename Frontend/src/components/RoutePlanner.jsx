@@ -13,6 +13,8 @@ const PRIORITY_NOTES = {
 }
 
 const place = (text) => ({ text, query: text })
+// A plan usually takes a few seconds; after this long the form says why it may take longer.
+const SLOW_MS = 8000
 
 // Directions in the style of a maps app: start and destination joined by a line, travel mode and preference as
 // chips. The form owns its inputs and hands a plan request to onPlan; App decides how to fetch it.
@@ -26,6 +28,12 @@ export default function RoutePlanner({ loading, error, isSnapshot, onPlan, searc
   const [destination, setDestination] = useState(place(''))
   const [vehicle, setVehicle] = useState('car')
   const [priority, setPriority] = useState('fastest')
+  const [slow, setSlow] = useState(false)
+  useEffect(() => {
+    if (!loading) return undefined
+    const timer = setTimeout(() => setSlow(true), SLOW_MS)
+    return () => { clearTimeout(timer); setSlow(false) }
+  }, [loading])
 
   const [shownSearch, setShownSearch] = useState(searched)
   if (searched !== shownSearch) {
@@ -75,6 +83,7 @@ export default function RoutePlanner({ loading, error, isSnapshot, onPlan, searc
         <button className={`primary-button${hasPlan ? ' secondary' : ''}`} type="submit" disabled={loading}>{loading ? 'Finding routes…' : <><Icon name="route" size={17}/> Find routes</>}</button>
       </div>
       {hasPlan && startNote && <small className="start-note">{startNote}</small>}
+      {loading && slow && <small className="start-note" role="status">Still finding routes. After a quiet spell the free server takes up to a minute to start, and the map services can be slow at busy times.</small>}
       {error && <div className={isSnapshot ? 'inline-demo-note' : 'inline-error'} role="status">{error}</div>}
     </form>
     <div className="route-disclaimer"><span>i</span><p>Route estimates do not confirm current road conditions or vehicle restrictions.</p></div>

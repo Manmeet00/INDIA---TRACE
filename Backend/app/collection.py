@@ -10,6 +10,7 @@ incident_checks.
 """
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
@@ -23,9 +24,10 @@ from uuid import uuid4
 from fastapi import HTTPException
 
 from .config import get_settings
+from .database import get_connection
 from .evidence import clean_snippet, normalize_source_url, source_category
 from .monitoring import log_call
-from .media import collect_preview_images
+from .media import preview_rows, read_preview_images, save_preview_images
 from .places import geocode_places, pending_places
 from .regions import active_region
 from .road_intelligence import _request_json, load_incidents
@@ -34,6 +36,7 @@ SEARCH_URL = "https://api.search.tinyfish.ai"
 FETCH_URL = "https://api.fetch.tinyfish.ai"
 FETCH_BATCH = 10  # Fetch accepts up to 10 URLs per request.
 MAX_FETCH_PER_RUN = 30
+SEARCH_WORKERS = 3  # searches waiting on TinyFish at the same time
 SEARCH_ATTEMPTS = 2
 URL_SCHEME = re.compile(r"^[a-z][a-z0-9+.\-]*:(?!\d)", re.IGNORECASE)  # "host:8080/path" is a port, not a scheme
 NOT_CONFIGURED = "TinyFish is not configured. Add TINYFISH_API_KEY to Backend/.env to collect public web evidence."
@@ -110,6 +113,12 @@ def _search(connection: sqlite3.Connection, search: dict[str, str], key: str, re
         log_call(connection, "tinyfish_search", "ok", started)
         return [item for item in response["results"] if isinstance(item, dict)]
     return []
+
+
+def _search_alone(search: dict[str, str], key: str, recency_minutes: int | None) -> list[dict[str, Any]]:
+    """One search on its own database connection, so several searches can wait on TinyFish at once."""
+    with get_connection() as connection:
+        return _search(connection, search, key, recency_minutes)
 
 
 def _text(value: Any, limit: int) -> str:
@@ -259,29 +268,36 @@ def _collect(connection: sqlite3.Connection, searches: list[dict[str, str]], key
              recency_minutes: int | None, run_id: str) -> dict[str, Any]:
     results = duplicates = failed_searches = filtered = 0
     new_ids: list[str] = []
-    for done, search in enumerate(searches, start=1):
-        try:
-            items = _search(connection, search, key, recency_minutes)
-        except HTTPException:
-            failed_searches += 1
-            items = []
-        results += len(items)
-        now = _now()
-        for item in items:
-            outcome = _store_result(connection, item, search, now, run_id, allowed)
-            if outcome == "duplicate":
-                duplicates += 1
-            elif outcome == "filtered":
-                filtered += 1
-            elif outcome:
-                new_ids.append(outcome)
-        _update_run(connection, run_id, searches_done=done, results=results, stored=len(new_ids), duplicates=duplicates,
-                    filtered=filtered, failed_searches=failed_searches, phase="searching" if done < len(searches) else "reading pages")
-    fetched, fetch_failed = _fetch_pages(connection, new_ids, key, run_id)
-    located = locate_places(connection, run_id)
-    if new_ids:
-        _update_run(connection, run_id, phase="reading preview images")
-        collect_preview_images(connection, new_ids)
+    # The searches wait on TinyFish together; their results are stored in the order of the searches, as before.
+    with ThreadPoolExecutor(max_workers=min(SEARCH_WORKERS, len(searches))) as pool:
+        pending = [pool.submit(_search_alone, search, key, recency_minutes) for search in searches]
+        for done, (search, answer) in enumerate(zip(searches, pending), start=1):
+            try:
+                items = answer.result()
+            except HTTPException:
+                failed_searches += 1
+                items = []
+            results += len(items)
+            now = _now()
+            for item in items:
+                outcome = _store_result(connection, item, search, now, run_id, allowed)
+                if outcome == "duplicate":
+                    duplicates += 1
+                elif outcome == "filtered":
+                    filtered += 1
+                elif outcome:
+                    new_ids.append(outcome)
+            _update_run(connection, run_id, searches_done=done, results=results, stored=len(new_ids), duplicates=duplicates,
+                        filtered=filtered, failed_searches=failed_searches, phase="searching" if done < len(searches) else "reading pages")
+    # Preview images come from the pages' own headers, read while TinyFish Fetch reads the same pages' text.
+    image_rows = preview_rows(connection, new_ids) if new_ids else []
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        images = pool.submit(read_preview_images, image_rows)
+        fetched, fetch_failed = _fetch_pages(connection, new_ids, key, run_id)
+        located = locate_places(connection, run_id)
+        if image_rows and not images.done():
+            _update_run(connection, run_id, phase="reading preview images")
+        save_preview_images(connection, image_rows, images.result())
     status = "failed" if failed_searches == len(searches) else "partial" if failed_searches else "complete"
     if status == "failed":
         message = "TinyFish could not return search results. Try again later."

@@ -116,8 +116,7 @@ function App() {
       : `Live check ${time}: no new reports in the last ${LIVE_CHECK_DAYS} days. No reports does not mean the road is clear.`
     const partly = run.status === 'partial' ? ' Some searches failed.' : ''
     try {
-      await refreshWorkspace()
-      const updated = await api.planRoute(request)
+      const [updated] = await Promise.all([api.planRoute(request), refreshWorkspace()])
       if (!current()) return
       setPlan(updated)
       setSelectedRoute((selected) => updated.routes.some((item) => item.id === selected) ? selected : updated.routes[0]?.id || null)

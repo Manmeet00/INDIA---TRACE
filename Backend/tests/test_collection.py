@@ -1,3 +1,5 @@
+import threading
+
 import pytest
 
 from app import collection
@@ -48,7 +50,7 @@ def test_targeted_collection_searches_web_and_news_then_fetches_pages(client, ti
     body = client.post("/api/collection/run", json={"road": "NH-6", "place": "Sonapur", "event_type": "landslide", "window_days": 7}).json()
     assert body["collected"] == 3
     searches = [url for url in tinyfish if url.startswith(collection.SEARCH_URL)]
-    assert len(searches) == 2 and "domain_type=news" in searches[1]
+    assert len(searches) == 2 and sum("domain_type=news" in url for url in searches) == 1  # web and news, sent together
     assert all("NH-6+Sonapur+landslide+road+update" in url and "recency_minutes=10080" in url for url in searches)
 
     items = incidents_by_url(client)
@@ -62,6 +64,25 @@ def test_targeted_collection_searches_web_and_news_then_fetches_pages(client, ti
 
     run = client.get("/api/collection/runs").json()[0]
     assert (run["trigger"], run["stored"], run["fetched"], run["fetch_failed"], run["recency_minutes"], run["status"]) == ("targeted", 3, 2, 1, 10080, "complete")
+
+
+def test_searches_and_preview_images_overlap_instead_of_queueing(client, tinyfish, monkeypatch):
+    """A live check waits on the slowest search, not on each in turn; preview images are read while Fetch reads the
+    pages. Each fake call waits until its partner has started, so run one after another this test times out."""
+    fake = collection._request_json
+    searches, reading = threading.Barrier(2, timeout=5), threading.Event()
+
+    def together(url, headers=None, body=None, timeout=15):
+        if url.startswith(collection.SEARCH_URL):
+            searches.wait()
+        elif not reading.wait(timeout=5):
+            raise AssertionError("Fetch ran before the preview images were being read")
+        return fake(url, headers, body, timeout)
+    monkeypatch.setattr(collection, "_request_json", together)
+    monkeypatch.setattr("app.media.preview_image", lambda url: reading.set() or "https://www.ndtv.com/photo.jpg")
+    body = client.post("/api/collection/run", json={"road": "NH-6"}).json()
+    assert (body["status"], body["collected"]) == ("complete", 3)
+    assert incidents_by_url(client)["https://www.ndtv.com/landslide"]["media"]["url"] == "https://www.ndtv.com/photo.jpg"
 
 
 def test_repeat_collection_records_recheck_instead_of_duplicating(client, tinyfish):
