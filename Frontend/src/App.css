@@ -493,9 +493,6 @@
 .review-area .review-controls { grid-template-columns: minmax(0, 1fr) auto; }
 .review-area .review-controls input { grid-column: 1 / -1; grid-row: 1; }
 .review-area .review-controls button { grid-column: auto; }
-.safety-callout { display: flex; align-items: flex-start; gap: 8px; padding: 8px 11px; border-radius: var(--radius-sm); color: var(--danger); background: var(--danger-bg); }
-.safety-callout svg { flex: none; margin-top: 1px; }
-.safety-callout p { margin: 0; color: #7a2622; font-size: var(--fs-sm); line-height: 1.45; }
 .desk-more { display: grid; border-top: 1px solid var(--line-soft); }
 .desk-more > details { margin: 0; padding: 9px 0; border-bottom: 1px solid var(--line-soft); }
 .selected-incident .timeline { margin-top: 0; }
