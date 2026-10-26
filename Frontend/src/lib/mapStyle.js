@@ -9,6 +9,12 @@ export const BORDER_COLOR = '#0e1a2b'
 export const HERE_COLOR = '#1a73e8'
 export const HERE_ZOOM = 17
 export const SCALE_WIDTH = 120
+
+// Mappls draws 512-pixel vector tiles with a 100-pixel scale bar, so the same zoom number shows a quarter of the area
+// it does on OpenStreetMap. This zoom makes its 100 pixels about 115 m at the given latitude: the bar reads 100 m.
+export function mapplsHereZoom(latitude) {
+  return Math.log2((40075016 * Math.cos((latitude * Math.PI) / 180)) / (512 * 1.15))
+}
 export const INDIA_BOUNDS = [[5.5, 67], [38, 98.5]]
 
 export function inIndia(here) {
