@@ -13,7 +13,7 @@ import { INACTIVE_STATES, MAP_CATEGORIES, formatTime, mapCategory, placeName, st
 import { BORDER_COLOR, HERE_COLOR, HERE_ZOOM, INDIA_BOUNDS, MASK_COLOR, inIndia, insideBoundary } from '../lib/mapStyle.js'
 import { placeNamesInView } from '../lib/placeNames.js'
 import { drawRoadTile } from '../lib/hybridRoads.js'
-import { bearingAt, prepareRoute, progress } from '../lib/navigation.js'
+import { bearingAt, pointAlong, prepareRoute, progress, sliceRoute } from '../lib/navigation.js'
 import { INCIDENT_STYLES, incidentIconHtml, incidentStyle } from '../lib/incidentIcons.js'
 import { getAirQuality, loadIndiaBoundary } from '../services/api.js'
 
@@ -246,6 +246,40 @@ function IncidentMarkers({ incidents, selectedIncident, onSelectIncident }) {
   </>
 }
 
+// Reports matched to the route only because they name one of its highways: where on the highway is not known, so they
+// are never drawn at a point of their own. The stretch of the route on that highway is shaded instead, with one symbol
+// on it (dashed ring, like a town placement) naming the highway and the count; its tooltip says the spot is unknown.
+function HighwayReports({ route, incidents, selectedIncident, onSelectIncident }) {
+  const prepared = useMemo(() => (route?.steps?.length && route.highway_spans ? prepareRoute(route) : null), [route])
+  const exposure = route?.exposure
+  if (!prepared || !exposure?.highway_mentions) return null
+  const located = new Set([...(exposure.nearby_ids || []), ...(exposure.place_match_ids || [])])
+  const byId = new Map(incidents.map((item) => [item.id, item]))
+  const typeOf = (item) => (INCIDENT_STYLES[item.event_type] ? item.event_type : 'other')
+  return Object.entries(exposure.highway_mentions).flatMap(([road, ids]) => {
+    const items = ids.filter((id) => !located.has(id) && byId.has(id)).map((id) => byId.get(id))
+    const spans = route.highway_spans[road] || []
+    if (!items.length || !spans.length) return []
+    const selected = items.some((item) => item.id === selectedIncident?.id)
+    const counts = items.reduce((tally, item) => tally.set(typeOf(item), (tally.get(typeOf(item)) || 0) + 1), new Map())
+    const type = [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0]
+    const [from, to] = spans.reduce((longest, span) => (span[1] - span[0] > longest[1] - longest[0] ? span : longest))
+    const [lon, lat] = pointAlong(prepared, (from + to) / 2)
+    const lead = items.find((item) => item.evidence_status !== 'stale') || items[0]
+    const open = () => onSelectIncident(selected ? selectedIncident.id : lead.id)
+    const note = `${items.length} report${items.length === 1 ? '' : 's'} name${items.length === 1 ? 's' : ''} ${road}`
+    return [
+      ...spans.map(([start, end]) => <Polyline key={`${road}-${start}`} positions={sliceRoute(prepared, start, end).map(([x, y]) => [y, x])}
+        className="highway-band" eventHandlers={{ click: open }} pathOptions={{ color: '#f2b705', weight: selected ? 16 : 13, opacity: selected ? 0.7 : 0.42, lineCap: 'butt' }}>
+        <Tooltip sticky>{note}. Where on {road} is not known; this is where the route uses {road}.</Tooltip></Polyline>),
+      <Marker key={`${road}-marker`} position={[lat, lon]} zIndexOffset={selected ? 550 : 350} eventHandlers={{ click: open }}
+        icon={L.divIcon({ className: '', html: `<span class="highway-report${selected ? ' selected' : ''}">${incidentIconHtml(type, { approximate: true, stale: items.every((item) => item.evidence_status === 'stale'), selected })}<b>${road} · ${items.length}</b></span>`,
+          iconSize: [ICON_SIZE, ICON_SIZE], iconAnchor: [ICON_SIZE / 2, ICON_SIZE / 2] })}>
+        <Tooltip>{note} · exact spot unknown<br/>Shown mid-way along the stretch of {road} on this route · {lead.title}</Tooltip></Marker>,
+    ]
+  })
+}
+
 // navigation: { now, following, overview, onUserMove } while a route is followed (see NavigationLayer).
 function DashboardMap({ plan, incidents, selectedRoute, selectedIncident, onSelectIncident, hiddenTypes, boundary, here, focusKey, base, overlays, navigation }) {
   const navigating = Boolean(navigation)
@@ -264,6 +298,7 @@ function DashboardMap({ plan, incidents, selectedRoute, selectedIncident, onSele
     <ScaleControl position="bottomright" imperial={false}/>
     {!navigating && <HereLayer here={here} hasPlan={Boolean(plan)} focusKey={focusKey}/>}
     {navigating && route && <NavigationLayer line={route.geometry.coordinates} here={here} {...navigation}/>}
+    {!navigating && <HighwayReports route={route} incidents={incidents.filter(shown)} selectedIncident={selectedIncident} onSelectIncident={onSelectIncident}/>}
     {plan?.routes && [...plan.routes].filter(() => !navigating).sort((a, b) => (a.id === route?.id) - (b.id === route?.id)).map((item) => <Polyline key={item.id} positions={item.geometry.coordinates.map(([lon, lat]) => [lat, lon])} pathOptions={{ color: item.id === route?.id ? '#0878e8' : '#64748b', opacity: item.id === route?.id ? 0.95 : 0.55, weight: item.id === route?.id ? 5 : 3, dashArray: item.id === route?.id ? undefined : '8 9' }} />)}
     {route?.tolls?.plazas?.map((plaza) => <Marker key={`toll-${plaza.code || plaza.name}`} position={[plaza.latitude, plaza.longitude]} keyboard={false}
       icon={L.divIcon({ className: '', html: `<span class="toll-marker">${TOLL_SVG}</span>`, iconSize: [22, 22], iconAnchor: [11, 11] })}>

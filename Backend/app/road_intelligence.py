@@ -145,6 +145,27 @@ def _route_highways(route: dict[str, Any]) -> dict[str, int]:
     return {key: round(value) for key, value in sorted(metres.items()) if value >= MIN_HIGHWAY_M}
 
 
+def highway_spans(steps: list[dict[str, Any]], highways: dict[str, int]) -> dict[str, list[list[int]]]:
+    """Where along the route (metres from the start) it runs on each of its national highways, from the road number
+    of each step (OSRM's ref, or the road Google names). The dashboard marks these stretches for reports that name a
+    highway but not a place on it."""
+    spans: dict[str, list[list[float]]] = {}
+    start = 0.0
+    for step in steps:
+        end = start + (step.get("distance_m") or 0)
+        for number in set(HIGHWAY_REF.findall(step.get("ref") or step.get("name") or "")):
+            key = f"NH-{number.upper()}"
+            if key not in highways or end <= start:
+                continue
+            runs = spans.setdefault(key, [])
+            if runs and start - runs[-1][1] < 1:
+                runs[-1][1] = end  # the same highway continues from the step before
+            else:
+                runs.append([start, end])
+        start = end
+    return {key: [[round(a), round(b)] for a, b in runs] for key, runs in spans.items()}
+
+
 def _route_steps(route: dict[str, Any]) -> list[dict[str, Any]]:
     """Turn-by-turn steps for navigation, in order: what to do at each point and how far it is to the next one.
 
@@ -344,6 +365,7 @@ def plan_route(payload) -> dict[str, Any]:
             "priority_rank": index + 1,
             "vehicle_suitability": "unknown",
             "exposure": route_exposure(route["geometry"], incident_items, route["highways"]),
+            "highway_spans": highway_spans(route["steps"], route["highways"]),
         })
     if payload.priority == "fastest":
         candidates.sort(key=lambda r: r["duration_s"])

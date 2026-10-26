@@ -164,6 +164,23 @@ export function bearingAt(prepared, distance) {
   return ((Math.atan2((b[0] - a[0]) * Math.cos((a[1] * Math.PI) / 180), b[1] - a[1]) * 180) / Math.PI + 360) % 360
 }
 
+/** The [lon, lat] point at a distance (metres from the start) along a prepared route. */
+export function pointAlong({ line, along }, distance) {
+  const index = along.findIndex((value) => value >= distance)
+  if (index === -1) return line.at(-1)
+  if (index === 0) return line[0]
+  const [from, to] = [along[index - 1], along[index]]
+  const share = to > from ? (distance - from) / (to - from) : 0
+  const [a, b] = [line[index - 1], line[index]]
+  return [a[0] + (b[0] - a[0]) * share, a[1] + (b[1] - a[1]) * share]
+}
+
+/** The route's line between two distances along it, as [lon, lat] points. */
+export function sliceRoute(prepared, from, to) {
+  const inner = prepared.line.filter((_, index) => prepared.along[index] > from && prepared.along[index] < to)
+  return [pointAlong(prepared, from), ...inner, pointAlong(prepared, to)]
+}
+
 /** "400 m", "1.2 km", "12 km". */
 export function distanceText(value) {
   if (value < 50) return `${Math.max(0, Math.round(value / 5) * 5)} m`

@@ -169,3 +169,15 @@ def test_highway_mentions_skip_listings_and_reports_placed_elsewhere_on_the_high
     assert exposure["highway_mentions"] == {"NH-6": ["report"]}
     assert exposure["place_match_ids"] == []
     assert exposure["unlocated_reports"] == 3
+
+
+def test_highway_spans_say_where_along_the_route_each_highway_runs():
+    from app.road_intelligence import highway_spans
+    steps = [{"ref": "", "name": "Mall Road", "distance_m": 1500},
+             {"ref": "NH44", "name": "Grand Trunk Road", "distance_m": 20000},
+             {"ref": "NH 44", "name": "", "distance_m": 5000},          # the same highway continues
+             {"ref": "", "name": "Bypass", "distance_m": 3000},
+             {"ref": "", "name": "GS Rd/NH 6", "distance_m": 4000},     # Google names the road instead of a ref
+             {"ref": "NH44;NH1A", "name": "", "distance_m": 2500},      # back on NH-44; NH-1A is too short for the route's list
+             {"ref": "", "name": "", "distance_m": 0}]
+    assert highway_spans(steps, {"NH-44": 27500, "NH-6": 4000}) == {"NH-44": [[1500, 26500], [33500, 36000]], "NH-6": [[29500, 33500]]}

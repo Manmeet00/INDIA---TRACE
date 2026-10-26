@@ -1168,3 +1168,21 @@ def test_on_a_public_site_visitors_plan_without_spending_searches_and_reviewers_
     expect(page.locator(".live-check")).not_to_contain_text("signed-in reviewers")
     expect(page.locator(".live-check")).to_contain_text("Live check")
     assert len(started) == 1
+
+
+# --- Reports that name a highway but no place on it ----------------------------------------
+
+def test_a_report_naming_only_a_highway_is_shown_on_that_stretch_of_the_route(dashboard, providers, add_incident):
+    providers["router.project-osrm.org"] = osrm_with_steps  # the route runs on NH-6 after its first 50 km
+    add_incident("hw", summary="Landslide on NH-6, traffic held")  # names the highway, no town or point
+    page = dashboard
+    page.open()
+    plan(page, "Guwahati", "Shillong")
+    marker = page.locator(".highway-report")
+    expect(marker).to_have_count(1)
+    expect(marker.locator("b")).to_have_text("NH-6 · 1")
+    expect(page.locator("path.highway-band")).to_have_count(1)  # only the NH-6 stretch, not the first 50 km
+    marker.hover()
+    expect(page.locator(".leaflet-tooltip")).to_contain_text("1 report names NH-6 · exact spot unknown")
+    marker.click()
+    expect(page.locator(".selected-incident h3")).to_have_text("Report hw")
