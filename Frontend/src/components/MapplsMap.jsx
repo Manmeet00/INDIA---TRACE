@@ -7,6 +7,8 @@ import { BORDER_COLOR, HERE_COLOR, MASK_COLOR, inIndia, mapplsHereZoom } from '.
 const COLORS = { route: '#0878e8', candidate: '#64748b', origin: '#079352', destination: '#e44a58', confirmed: '#df3946', stale: '#9ba8b8', other: '#e99b28' }
 const DEFAULT_VIEW = { center: { lat: 26.2, lng: 92.4 }, zoom: 6 }
 const READY_TIMEOUT_MS = 15000
+const IMAGERY_ID = 'india-trace-imagery'
+const IMAGERY_TILES = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
 let mapCount = 0
 
 function dot(color, size) {
@@ -18,6 +20,13 @@ function marker(mappls, map, { lat, lng, color, size, popup }) {
     offset: [0, size / 2], popupHtml: escapeHtml(popup) })
 }
 
+// Takes a route line, marker or layer off the map. When the map is being closed (switching to another map type),
+// React runs this after the map itself is gone, and the SDK throws for a map without a style: the layer went with it.
+function removeLayer(mappls, map, layer) {
+  if (map.__indiaTraceRemoved) return
+  try { mappls.remove({ map, layer }) } catch { /* the map was removed meanwhile */ }
+}
+
 // The Mappls Web SDK draws on its own canvas, so routes and markers are added and removed imperatively.
 // onUnavailable is called if the SDK cannot load or the map never becomes ready (for example an invalid key).
 // One polygon covering the world with India's land parts as holes, as standard GeoJSON ([lng, lat]).
@@ -27,13 +36,14 @@ function indiaMask(boundary) {
     geometry: { type: 'Polygon', coordinates: [[[-180, -89], [180, -89], [180, 89], [-180, 89], [-180, -89]], ...boundary] } }] }
 }
 
-export default function MapplsMap({ apiKey, plan, incidents, selectedRoute, selectedIncident, onSelectIncident, hiddenTypes, boundary, here, focusKey, onUnavailable }) {
+export default function MapplsMap({ apiKey, plan, incidents, selectedRoute, selectedIncident, onSelectIncident, hiddenTypes, boundary, here, focusKey, imagery = false, onUnavailable }) {
   // The SDK documents creating a map from its container's id.
   const [containerId] = useState(() => `mappls-map-${++mapCount}`)
   const select = useRef(onSelectIncident)
   const latestHere = useRef(here)
   const centered = useRef(false)
   const [map, setMap] = useState(null)
+  const baseLayers = useRef([]) // Mappls' own style layers, as loaded (before the mask, routes and markers)
 
   useEffect(() => { select.current = onSelectIncident }, [onSelectIncident])
   useEffect(() => { latestHere.current = here }, [here])
@@ -53,13 +63,20 @@ export default function MapplsMap({ apiKey, plan, incidents, selectedRoute, sele
       instance.addListener('load', () => {
         if (cancelled) return
         clearTimeout(timer)
+        try { baseLayers.current = instance.getStyle().layers.map(({ id, type }) => ({ id, type })) } catch { baseLayers.current = [] }
         setMap(instance)
       })
     }).catch((error) => { if (!cancelled) onUnavailable(error.message) })
     return () => {
       cancelled = true
       clearTimeout(timer)
-      instance?.remove?.()
+      // After this render's other clean-ups have taken their layers off, so none of them meets a removed map.
+      const closing = instance
+      queueMicrotask(() => {
+        if (!closing) return
+        closing.__indiaTraceRemoved = true
+        try { closing.remove?.() } catch { /* already gone */ }
+      })
     }
   }, [apiKey, containerId, onUnavailable])
 
@@ -70,8 +87,34 @@ export default function MapplsMap({ apiKey, plan, incidents, selectedRoute, sele
     if (!map || !boundary) return undefined
     const mappls = window.mappls
     const layer = mappls.addGeoJson({ map, data: indiaMask(boundary), cType: 1, fitbounds: false })
-    return () => mappls.remove({ map, layer })
+    return () => removeLayer(mappls, map, layer)
   }, [map, boundary])
+
+  // Satellite: Esri's imagery (as on the OpenStreetMap satellite view) under Mappls' own roads and names, so colony,
+  // mohalla and galli names show on the photo. Mappls' land, water and building fills are hidden; its roads, labels,
+  // the India mask, routes and markers stay above the imagery. Default restores the map as it was.
+  useEffect(() => {
+    if (!map || !imagery || !baseLayers.current.length) return undefined
+    const fills = baseLayers.current.filter(({ type }) => type === 'fill' || type === 'background' || type === 'fill-extrusion')
+    const above = baseLayers.current.find(({ type }) => type === 'line' || type === 'symbol')
+    const hidden = []
+    try {
+      map.addSource(IMAGERY_ID, { type: 'raster', tileSize: 256, maxzoom: 19, tiles: [IMAGERY_TILES] })
+      map.addLayer({ id: IMAGERY_ID, type: 'raster', source: IMAGERY_ID }, above?.id)
+      for (const { id } of fills) {
+        hidden.push([id, map.getLayoutProperty(id, 'visibility') || 'visible'])
+        map.setLayoutProperty(id, 'visibility', 'none')
+      }
+    } catch { /* the style changed underneath: the map keeps its own look */ }
+    return () => {
+      if (map.__indiaTraceRemoved) return
+      try {
+        hidden.forEach(([id, visibility]) => map.setLayoutProperty(id, 'visibility', visibility))
+        if (map.getLayer(IMAGERY_ID)) map.removeLayer(IMAGERY_ID)
+        if (map.getSource(IMAGERY_ID)) map.removeSource(IMAGERY_ID)
+      } catch { /* the map is closing */ }
+    }
+  }, [map, imagery])
 
   // Routes: the selected one on top, and the view fitted to it, as in the OpenStreetMap view.
   useEffect(() => {
@@ -91,7 +134,7 @@ export default function MapplsMap({ apiKey, plan, incidents, selectedRoute, sele
       map.setCenter(inIndia(position) ? { lat: position.latitude, lng: position.longitude } : DEFAULT_VIEW.center)
       map.setZoom(inIndia(position) ? mapplsHereZoom(position.latitude) : DEFAULT_VIEW.zoom)
     }
-    return () => layers.forEach((layer) => mappls.remove({ map, layer }))
+    return () => layers.forEach((layer) => removeLayer(mappls, map, layer))
   }, [map, plan, selectedRoute])
 
   // The blue dot; without a route the map centres on it once, and again whenever the person asks.
@@ -105,7 +148,7 @@ export default function MapplsMap({ apiKey, plan, incidents, selectedRoute, sele
       map.setCenter({ lat: here.latitude, lng: here.longitude })
       map.setZoom(mapplsHereZoom(here.latitude))
     }
-    return () => mappls.remove({ map, layer: dot })
+    return () => removeLayer(mappls, map, dot)
   }, [map, here, plan])
 
   useEffect(() => {
@@ -130,7 +173,7 @@ export default function MapplsMap({ apiKey, plan, incidents, selectedRoute, sele
         point.addListener('click', () => select.current(item.id))
         layers.push(point)
       })
-    return () => layers.forEach((layer) => mappls.remove({ map, layer }))
+    return () => layers.forEach((layer) => removeLayer(mappls, map, layer))
   }, [map, plan, incidents, selectedIncident, hiddenTypes])
 
   return <div id={containerId} className="map-canvas mappls-canvas" aria-label="Mappls map"/>

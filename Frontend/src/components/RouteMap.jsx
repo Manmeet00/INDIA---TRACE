@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Component, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import L from 'leaflet'
 import { Circle, CircleMarker, MapContainer, Marker, Pane, Polygon, Polyline, ScaleControl, TileLayer, Tooltip, WMSTileLayer, ZoomControl, useMap, useMapEvents } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -337,6 +337,16 @@ function useFullscreen(element) {
   return { on, toggle: () => (on ? exit() : enter()), enter, exit }
 }
 
+// A map that fails (a map provider's script throwing, say) never takes the dashboard down with it: onError hears what
+// went wrong, and the map is drawn again when resetKey changes (the Mappls map falling back to OpenStreetMap).
+class MapBoundary extends Component {
+  state = { failed: false }
+  static getDerivedStateFromError() { return { failed: true } }
+  componentDidCatch(error) { this.props.onError(error?.message || 'unknown error') }
+  componentDidUpdate(previous) { if (this.state.failed && previous.resetKey !== this.props.resetKey) this.setState({ failed: false }) }
+  render() { return this.state.failed ? <div className="map-canvas"/> : this.props.children }
+}
+
 // Mappls when the API has a Mappls key, OpenStreetMap otherwise. If Mappls cannot load (no internet, a rejected
 // key) the map falls back to OpenStreetMap and says so, so the dashboard never loses its map.
 // onStart begins navigation (null when the route cannot be followed); navigation is the followed route's state.
@@ -347,6 +357,15 @@ export default function RouteMap({ plan, mapConfig, here, hereProblem, onRetryHe
   const hereText = !here ? (hereProblem ? `${hereProblem} Showing Northeast India.` : 'Finding your location…')
     : inIndia(here) ? `Your location · accurate to about ${Math.max(1, Math.round(here.accuracy || 0))} m` : 'Your location is outside India. Showing Northeast India.'
   const [mapplsProblem, setMapplsProblem] = useState('')
+  const [mapProblem, setMapProblem] = useState('')
+  // After a map fails it is drawn again once or twice (as OpenStreetMap if Mappls was the one that failed); no more,
+  // so a map that keeps failing cannot loop.
+  const [mapAttempt, setMapAttempt] = useState(0)
+  const onMapError = (message) => {
+    if (mapConfig?.provider === 'mappls' && !mapplsProblem) onUnavailable(`The Mappls map stopped working (${message}).`)
+    else setMapProblem(message)
+    if (mapAttempt < 2) setMapAttempt((attempt) => attempt + 1)
+  }
   const [boundary, setBoundary] = useState(null)
   useEffect(() => {
     let active = true
@@ -402,13 +421,16 @@ export default function RouteMap({ plan, mapConfig, here, hereProblem, onRetryHe
   // drawn on the OpenStreetMap map, so choosing one of them switches to it, and Default brings Mappls back.
   const mapplsReady = mapConfig?.provider === 'mappls' && !mapplsProblem
   const details = layers.overlays.filter((key) => OVERLAYS[key].kind !== 'mappls')
-  const useMappls = mapplsReady && layers.base === 'default' && details.length === 0
-  const credit = `${useMappls ? 'Map © Mappls (MapmyIndia)' : [BASE_LAYERS[layers.base].credit, ...details.map((key) => OVERLAYS[key].credit)].join(' · ')} · India boundary: Survey of India`
+  // Satellite stays on Mappls too: its roads and names drawn over the imagery (see MapplsMap).
+  const useMappls = mapplsReady && (layers.base === 'default' || layers.base === 'satellite') && details.length === 0
+  const mapplsImagery = useMappls && layers.base === 'satellite'
+  const credit = `${useMappls ? `Map © Mappls (MapmyIndia)${mapplsImagery ? ' · Imagery © Esri, Maxar, Earthstar Geographics' : ''}` : [BASE_LAYERS[layers.base].credit, ...details.map((key) => OVERLAYS[key].credit)].join(' · ')} · India boundary: Survey of India`
   return <article className="panel map-panel" aria-label="Map">
     {mapplsProblem && <p className="map-fallback" role="status">{mapplsProblem} Showing OpenStreetMap instead.</p>}
-    <div className={`map-wrap${fullscreen.on ? ' fullscreen' : ''}${navigating ? ' navigating' : ''}${useMappls && !navigating ? ' on-mappls' : ''}`} ref={wrap}>{!mapConfig ? <div className="map-canvas"/> : useMappls && !navigating
-      ? <MapplsMap apiKey={mapConfig.mappls_key} plan={plan} boundary={boundary} here={here} focusKey={focusKey} {...mapProps} onUnavailable={onUnavailable}/>
-      : <DashboardMap plan={plan} boundary={boundary} here={here} focusKey={focusKey} base={layers.base} overlays={details} navigation={navigating ? { now, focus, ...view, onUserMove } : null} {...mapProps}/>}
+    {mapProblem && <p className="map-fallback" role="status">The map stopped working ({mapProblem}). Reload the page to draw it again.</p>}
+    <div className={`map-wrap${fullscreen.on ? ' fullscreen' : ''}${navigating ? ' navigating' : ''}${useMappls && !navigating ? ' on-mappls' : ''}`} ref={wrap}>{!mapConfig ? <div className="map-canvas"/> : <MapBoundary resetKey={`${useMappls && !navigating}-${mapAttempt}`} onError={onMapError}>{useMappls && !navigating
+      ? <MapplsMap apiKey={mapConfig.mappls_key} imagery={mapplsImagery} plan={plan} boundary={boundary} here={here} focusKey={focusKey} {...mapProps} onUnavailable={onUnavailable}/>
+      : <DashboardMap plan={plan} boundary={boundary} here={here} focusKey={focusKey} base={layers.base} overlays={details} navigation={navigating ? { now, focus, ...view, onUserMove } : null} {...mapProps}/>}</MapBoundary>}
       {navigation ? <NavigationPanel {...navigation} prepared={prepared} now={now} here={here} following={view.following}
         previewStep={previewing ? Math.min(previewStep, (prepared?.steps.length || 1) - 1) : null}
         onPreviewStep={(index) => { setPreviewStep(index); setView({ following: true, overview: false }) }}

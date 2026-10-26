@@ -373,11 +373,20 @@ window.mappls = {
     constructor(id, options) { super(); this.id = id; this.options = options; this.removed = false;
       document.getElementById(id).dataset.mappls = 'ready'; window.__mappls.maps.push(this); setTimeout(() => this.fire('load'), 0); }
     setCenter(center) { this.center = center; } setZoom(zoom) { this.zoom = zoom; } remove() { this.removed = true; }
+    // MapLibre's style API, which the Mappls map exposes: its own layers, and the ones the dashboard adds.
+    getStyle() { this.styleLayers ||= [{ id: 'land', type: 'background' }, { id: 'water', type: 'fill' }, { id: 'roads', type: 'line' }, { id: 'names', type: 'symbol' }];
+      return { layers: this.styleLayers }; }
+    addSource(id, source) { (this.sources ||= {})[id] = source; } getSource(id) { return this.sources?.[id]; } removeSource(id) { delete this.sources[id]; }
+    addLayer(layer, before) { const list = this.getStyle().layers; const at = list.findIndex((item) => item.id === before); list.splice(at < 0 ? list.length : at, 0, layer); }
+    getLayer(id) { return this.getStyle().layers.find((item) => item.id === id); }
+    removeLayer(id) { this.styleLayers = this.getStyle().layers.filter((item) => item.id !== id); }
+    setLayoutProperty(id, name, value) { this.getLayer(id)[name] = value; } getLayoutProperty(id, name) { return this.getLayer(id)[name]; }
   },
   Polyline: class { constructor(options) { this.options = options; this.removed = false; window.__mappls.polylines.push(this); } },
   Marker: class extends Listening { constructor(options) { super(); this.options = options; this.removed = false; window.__mappls.markers.push(this); } },
   addGeoJson(options) { const layer = { options, removed: false }; window.__mappls.geojson.push(layer); return layer; },
-  remove({ layer }) { layer.removed = true; },
+  // Like the real SDK: removing a layer from a map that was already removed throws (its style is gone).
+  remove({ map, layer }) { if (map.removed) throw new TypeError("Cannot read properties of undefined (reading 'getLayer')"); layer.removed = true; },
 };
 """
 
@@ -1202,10 +1211,19 @@ def test_with_mappls_every_layer_works_and_the_buttons_clear_its_controls(dashbo
     page.click(".layers-button")
     expect(page.locator(".layer-tile", has_text="Default")).to_contain_text("Mappls street names")
     expect(page.locator(".layer-tile", has_text="Traffic")).to_have_attribute("aria-pressed", "true")
-    page.locator(".layer-tile", has_text="Satellite").click()  # drawn on OpenStreetMap
+    page.locator(".layer-tile", has_text="Satellite").click()  # still Mappls: its roads and names over the imagery
+    expect(page.locator(".map-foot")).to_contain_text("Map © Mappls (MapmyIndia) · Imagery © Esri")
+    style = "window.__mappls.maps.at(-1).getStyle().layers.map((layer) => [layer.id, layer.visibility || 'visible'])"
+    page.wait_for_function(f"{style}.some(([id]) => id === 'india-trace-imagery')")
+    assert page.evaluate(style) == [["land", "none"], ["water", "none"], ["india-trace-imagery", "visible"], ["roads", "visible"], ["names", "visible"]]
+    page.locator(".layer-tile", has_text="Default").click()  # the map as it was
+    page.wait_for_function(f"!{style}.some(([id]) => id === 'india-trace-imagery')")
+    assert page.evaluate(style) == [["land", "visible"], ["water", "visible"], ["roads", "visible"], ["names", "visible"]]
+
+    page.locator(".layer-tile", has_text="Terrain").click()  # drawn on OpenStreetMap
     expect(page.locator(".leaflet-container")).to_have_count(1)
     expect(page.locator(".mappls-canvas")).to_have_count(0)
-    expect(page.locator(".map-foot")).to_contain_text("Imagery © Esri")
+    expect(page.locator(".map-foot")).to_contain_text("Terrain © OpenTopoMap")
     page.locator(".layer-tile", has_text="Rainfall").click()
     expect(page.locator(".layer-tile", has_text="Rainfall")).to_have_attribute("aria-pressed", "true")
 
@@ -1214,3 +1232,19 @@ def test_with_mappls_every_layer_works_and_the_buttons_clear_its_controls(dashbo
     expect(page.locator(".map-foot")).to_contain_text("Map © Mappls (MapmyIndia)")
     expect(page.locator(".layer-tile", has_text="Rainfall")).to_have_attribute("aria-pressed", "false")
     expect(page.locator(".layer-tile", has_text="Default")).to_have_attribute("aria-checked", "true")
+
+
+def test_switching_between_mappls_and_other_layers_never_breaks_the_dashboard(dashboard, mappls_key, add_incident):
+    add_incident("slide", "confirmed", 25.90, 91.80, summary="Landslide on NH-6")  # a marker to remove on each switch
+    page = dashboard  # the fixture fails the test on any script error in the page
+    page.route("https://sdk.mappls.com/**", lambda route: route.fulfill(status=200, body=FAKE_MAPPLS_SDK, headers={"content-type": "text/javascript"}))
+    page.add_init_script(geolocation("ok({ coords: { latitude: 30.34, longitude: 76.39, accuracy: 30 } })"))
+    page.open()
+    plan(page, "Guwahati", "Shillong")  # route lines too
+    expect(page.locator(".route-card")).to_have_count(2)
+    for layer, mappls in [("Terrain", 0), ("Default", 1), ("Satellite", 1), ("Terrain", 0), ("Satellite", 1), ("Default", 1)]:
+        page.click(".layers-button")
+        page.locator(".layer-tile", has_text=layer).click()
+        page.keyboard.press("Escape")
+        expect(page.locator(".mappls-canvas[data-mappls=ready]")).to_have_count(mappls)
+        expect(page.locator(".route-card")).to_have_count(2)  # the dashboard is still there

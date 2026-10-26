@@ -25,6 +25,7 @@ export function useMapLayers() {
   const toggleOverlay = useCallback((key) => setLayers((current) => ({
     ...current, overlays: current.overlays.includes(key) ? current.overlays.filter((item) => item !== key) : [...current.overlays, key],
   })), [])
-  const showDefault = useCallback(() => setLayers({ base: 'default', overlays: [] }), [])
+  // The Mappls map: a map type it draws (Default or Satellite), with no OpenStreetMap-only details on.
+  const showDefault = useCallback((base = 'default') => setLayers({ base, overlays: [] }), [])
   return { ...layers, setBase, toggleOverlay, showDefault }
 }
