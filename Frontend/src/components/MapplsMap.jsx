@@ -8,6 +8,8 @@ const COLORS = { route: '#0878e8', candidate: '#64748b', origin: '#079352', dest
 const DEFAULT_VIEW = { center: { lat: 26.2, lng: 92.4 }, zoom: 6 }
 const READY_TIMEOUT_MS = 15000
 const IMAGERY_ID = 'india-trace-imagery'
+// Google's satellite labels: white names on a dark halo.
+const SATELLITE_TEXT = { 'text-color': '#ffffff', 'text-halo-color': 'rgba(0, 0, 0, 0.82)', 'text-halo-width': 1.6, 'text-halo-blur': 0.5 }
 const IMAGERY_TILES = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
 let mapCount = 0
 
@@ -92,12 +94,15 @@ export default function MapplsMap({ apiKey, plan, incidents, selectedRoute, sele
 
   // Satellite: Esri's imagery (as on the OpenStreetMap satellite view) under Mappls' own roads and names, so colony,
   // mohalla and galli names show on the photo. Mappls' land, water and building fills are hidden; its roads, labels,
-  // the India mask, routes and markers stay above the imagery. Default restores the map as it was.
+  // the India mask, routes and markers stay above the imagery. Its names, drawn dark for a light map, turn white with
+  // a dark halo as on Google's satellite view (text inside a badge, like a highway number, keeps its colours). The
+  // font stays Open Sans: Mappls' font server has no other (it refuses Roboto). Default restores the map as it was.
   useEffect(() => {
     if (!map || !imagery || !baseLayers.current.length) return undefined
     const fills = baseLayers.current.filter(({ type }) => type === 'fill' || type === 'background' || type === 'fill-extrusion')
     const above = baseLayers.current.find(({ type }) => type === 'line' || type === 'symbol')
     const hidden = []
+    const painted = []
     try {
       map.addSource(IMAGERY_ID, { type: 'raster', tileSize: 256, maxzoom: 19, tiles: [IMAGERY_TILES] })
       map.addLayer({ id: IMAGERY_ID, type: 'raster', source: IMAGERY_ID }, above?.id)
@@ -105,11 +110,19 @@ export default function MapplsMap({ apiKey, plan, incidents, selectedRoute, sele
         hidden.push([id, map.getLayoutProperty(id, 'visibility') || 'visible'])
         map.setLayoutProperty(id, 'visibility', 'none')
       }
+      for (const { id } of baseLayers.current.filter(({ type }) => type === 'symbol')) {
+        if (!map.getLayoutProperty(id, 'text-field') || map.getLayoutProperty(id, 'icon-text-fit')) continue
+        for (const [name, value] of Object.entries(SATELLITE_TEXT)) {
+          painted.push([id, name, map.getPaintProperty(id, name)])
+          map.setPaintProperty(id, name, value)
+        }
+      }
     } catch { /* the style changed underneath: the map keeps its own look */ }
     return () => {
       if (map.__indiaTraceRemoved) return
       try {
         hidden.forEach(([id, visibility]) => map.setLayoutProperty(id, 'visibility', visibility))
+        painted.forEach(([id, name, value]) => map.setPaintProperty(id, name, value))
         if (map.getLayer(IMAGERY_ID)) map.removeLayer(IMAGERY_ID)
         if (map.getSource(IMAGERY_ID)) map.removeSource(IMAGERY_ID)
       } catch { /* the map is closing */ }

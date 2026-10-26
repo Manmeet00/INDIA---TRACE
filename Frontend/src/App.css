@@ -203,8 +203,9 @@
 .map-wrap { position: relative; height: clamp(340px, 48vh, 560px); background: #dfe8e4; }
 .map-canvas { z-index: 1; width: 100%; height: 100%; background: #e2ece7; }
 .leaflet-tile { filter: saturate(.8) contrast(.97); }
-.leaflet-container { font-family: var(--font-body); }
-.mappls-canvas { position: relative; font-family: var(--font-body); }
+/* Map text (tooltips, labels) in Roboto, as on Google Maps. */
+.leaflet-container { font-family: Roboto, Arial, sans-serif; }
+.mappls-canvas { position: relative; font-family: Roboto, Arial, sans-serif; }
 /* Map type and details, like a maps app's layers sheet */
 /* Positioned against the map itself, so the panel's height is limited to the map's. */
 /* The map's search bar, top left, like a maps app; the Layers button keeps the top right. */
@@ -340,7 +341,7 @@
 .incident-icon.selected { box-shadow: 0 0 0 3px var(--tone), 0 2px 8px rgba(0, 0, 0, .5); transform: scale(1.18); }
 /* A report that names a highway on the route but no place on it: its symbol sits on the shaded highway stretch. */
 .highway-report { position: relative; display: inline-flex; align-items: center; }
-.highway-report b { position: absolute; left: calc(100% + 5px); top: 50%; transform: translateY(-50%); padding: 2px 7px; border-radius: 6px; color: #1b1a14; background: #f2b705; box-shadow: 0 1px 3px rgba(0, 0, 0, .35); font: 800 11px/1.4 var(--font-display); white-space: nowrap; pointer-events: none; }
+.highway-report b { position: absolute; left: calc(100% + 5px); top: 50%; transform: translateY(-50%); padding: 2px 7px; border-radius: 6px; color: #1b1a14; background: #f2b705; box-shadow: 0 1px 3px rgba(0, 0, 0, .35); font: 700 11px/1.4 Roboto, Arial, sans-serif; white-space: nowrap; pointer-events: none; }
 .highway-band { cursor: pointer; }
 .incident-icon:hover { transform: scale(1.12); }
 .legend-symbol .incident-icon, .map-legend .legend-symbol .incident-icon { width: 18px; height: 18px; border-width: 1.5px; box-shadow: none; cursor: default; }

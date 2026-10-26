@@ -374,13 +374,16 @@ window.mappls = {
       document.getElementById(id).dataset.mappls = 'ready'; window.__mappls.maps.push(this); setTimeout(() => this.fire('load'), 0); }
     setCenter(center) { this.center = center; } setZoom(zoom) { this.zoom = zoom; } remove() { this.removed = true; }
     // MapLibre's style API, which the Mappls map exposes: its own layers, and the ones the dashboard adds.
-    getStyle() { this.styleLayers ||= [{ id: 'land', type: 'background' }, { id: 'water', type: 'fill' }, { id: 'roads', type: 'line' }, { id: 'names', type: 'symbol' }];
+    getStyle() { this.styleLayers ||= [{ id: 'land', type: 'background' }, { id: 'water', type: 'fill' }, { id: 'roads', type: 'line' },
+      { id: 'names', type: 'symbol', 'text-field': '{name}', 'text-color': '#333333' },
+      { id: 'shields', type: 'symbol', 'text-field': '{ref}', 'icon-text-fit': 'both', 'text-color': '#000' }];
       return { layers: this.styleLayers }; }
     addSource(id, source) { (this.sources ||= {})[id] = source; } getSource(id) { return this.sources?.[id]; } removeSource(id) { delete this.sources[id]; }
     addLayer(layer, before) { const list = this.getStyle().layers; const at = list.findIndex((item) => item.id === before); list.splice(at < 0 ? list.length : at, 0, layer); }
     getLayer(id) { return this.getStyle().layers.find((item) => item.id === id); }
     removeLayer(id) { this.styleLayers = this.getStyle().layers.filter((item) => item.id !== id); }
     setLayoutProperty(id, name, value) { this.getLayer(id)[name] = value; } getLayoutProperty(id, name) { return this.getLayer(id)[name]; }
+    setPaintProperty(id, name, value) { this.getLayer(id)[name] = value; } getPaintProperty(id, name) { return this.getLayer(id)[name]; }
   },
   Polyline: class { constructor(options) { this.options = options; this.removed = false; window.__mappls.polylines.push(this); } },
   Marker: class extends Listening { constructor(options) { super(); this.options = options; this.removed = false; window.__mappls.markers.push(this); } },
@@ -1215,10 +1218,14 @@ def test_with_mappls_every_layer_works_and_the_buttons_clear_its_controls(dashbo
     expect(page.locator(".map-foot")).to_contain_text("Map © Mappls (MapmyIndia) · Imagery © Esri")
     style = "window.__mappls.maps.at(-1).getStyle().layers.map((layer) => [layer.id, layer.visibility || 'visible'])"
     page.wait_for_function(f"{style}.some(([id]) => id === 'india-trace-imagery')")
-    assert page.evaluate(style) == [["land", "none"], ["water", "none"], ["india-trace-imagery", "visible"], ["roads", "visible"], ["names", "visible"]]
+    assert page.evaluate(style) == [["land", "none"], ["water", "none"], ["india-trace-imagery", "visible"], ["roads", "visible"],
+                                    ["names", "visible"], ["shields", "visible"]]
+    text = "Object.fromEntries(window.__mappls.maps.at(-1).getStyle().layers.filter((layer) => layer.type === 'symbol').map((layer) => [layer.id, [layer['text-color'], layer['text-halo-color']]]))"
+    assert page.evaluate(text) == {"names": ["#ffffff", "rgba(0, 0, 0, 0.82)"], "shields": ["#000", None]}  # white on a dark halo; badges keep theirs
     page.locator(".layer-tile", has_text="Default").click()  # the map as it was
     page.wait_for_function(f"!{style}.some(([id]) => id === 'india-trace-imagery')")
-    assert page.evaluate(style) == [["land", "visible"], ["water", "visible"], ["roads", "visible"], ["names", "visible"]]
+    assert page.evaluate(style) == [["land", "visible"], ["water", "visible"], ["roads", "visible"], ["names", "visible"], ["shields", "visible"]]
+    assert page.evaluate(text) == {"names": ["#333333", None], "shields": ["#000", None]}
 
     page.locator(".layer-tile", has_text="Terrain").click()  # drawn on OpenStreetMap
     expect(page.locator(".leaflet-container")).to_have_count(1)
