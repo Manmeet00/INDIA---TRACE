@@ -63,11 +63,13 @@ export default function MapplsMap({ apiKey, plan, incidents, selectedRoute, sele
     }
   }, [apiKey, containerId, onUnavailable])
 
-  // Only India: added before routes and markers, so they draw above it.
+  // Only India: added before routes and markers, so they draw above it. fitbounds: false keeps the view where it is;
+  // by default Mappls fits the map to the layer, which for this world-sized mask means zoom 1 centred on 0°, 0°
+  // (preserveViewport is not a Mappls option and does not prevent it).
   useEffect(() => {
     if (!map || !boundary) return undefined
     const mappls = window.mappls
-    const layer = mappls.addGeoJson({ map, data: indiaMask(boundary), cType: 1, preserveViewport: true })
+    const layer = mappls.addGeoJson({ map, data: indiaMask(boundary), cType: 1, fitbounds: false })
     return () => mappls.remove({ map, layer })
   }, [map, boundary])
 

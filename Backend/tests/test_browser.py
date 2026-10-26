@@ -409,6 +409,7 @@ def test_mappls_draws_routes_markers_and_selects_evidence(dashboard, mappls_key,
     mask = live(page, "geojson")[0]
     rings = mask["data"]["features"][0]["geometry"]["coordinates"]
     assert mask["cType"] == 1 and rings[0][0] == [-180, -89] and len(rings) == 59  # the world, with India's 58 land parts cut out
+    assert mask["fitbounds"] is False  # Mappls otherwise zooms out to fit the world-sized mask (zoom 1 at 0°, 0°)
 
     plan(page, "Guwahati, Assam", "Shillong, Meghalaya", "Cautious")
     expect(page.locator(".route-card")).to_have_count(2)
